@@ -1,27 +1,24 @@
 # StrideControl
 
-StrideControl is a custom hardware and software replacement project for professional-grade treadmills, specifically targeting the Sportsmaster T610 and Runfit 99 models. 
+Older commercial treadmills like the Sportsmaster T610 and Runfit 99 are built like tanks, but their control panels are completely outdated. No Bluetooth, no interval shortcuts, and clunky segment displays.
 
-The original hardware on these treadmills is mechanically excellent, but the user interface lacks modern features like quick-access interval keys and Bluetooth connectivity. This project uses an ESP32-S3 microcontroller to intercept the original hardware signals, allowing you to control the treadmill via a custom self-hosted web dashboard on a mounted tablet, while adding Bluetooth FTMS support for apps like Zwift.
+StrideControl is a hardware mod that fixes this. It uses an ESP32-S3 to hijack the internal keyboard bus (MitM) and reads raw hardware interrupts directly from the motor controller. This lets you control the machine from a web dashboard on a mounted tablet, while also broadcasting your actual speed and incline to Zwift via Bluetooth FTMS.
 
-## Core Capabilities
-* Tablet-optimized web interface replacing the original segment displays.
-* Hardware-level interval shortcuts (custom Rest and Sprint speeds).
-* Direct interrupt-based reading of the motor controller for true speed and distance tracking.
-* Bluetooth FTMS broadcasting.
-* Non-destructive Man-in-the-Middle (MitM) command injection via the internal keyboard bus.
+## What it does
+* Replaces the old panel interface with a self-hosted web dashboard.
+* Adds physical-feeling interval shortcuts (Rest/Sprint) that the original panel lacks.
+* Tracks true speed and distance by counting motor pulses, bypassing the inaccurate stock display.
+* Broadcasts data to Zwift and Strava over Bluetooth FTMS.
+* Leaves the original hardware intact: if the ESP32 dies, the original panel still works.
 
-## Bill of Materials (BOM)
-To build the hardware interface, the following components are required:
+## Parts Needed (BOM)
+To build the interface board, you need:
+* **MCU:** ESP32-S3-N16R8 (Dual Core, 16MB Flash, 8MB PSRAM). Get one with an external antenna connector; the motor casing has a lot of EMI.
+* **Display:** Lenovo Tab M10 FHD or any modern tablet.
+* **Analog Switch:** SN74HC4066 to intercept and inject signals into the 16-pin capacitive keyboard bus.
+* **Speed Isolation:** PC817 Optocoupler + 1k resistor. (The motor pulse is 12V, the ESP32 will fry without this).
+* **Incline Shifter:** BSS138 Logic Level Converter (Drops the 5V incline pulse to 3.3V).
+* **Serial Interface:** MAX3232 RS232-to-TTL module to read the treadmill's RJ45 CSAFE port.
 
-* Microcontroller: ESP32-S3-N16R8 Development Board (Dual Core, 16MB Flash, 8MB PSRAM, external antenna recommended).
-* Display: Lenovo Tab M10 FHD (10.1", WUXGA 1920x1200) or similar tablet.
-* Analog Switch: SN74HC4066 (Used to isolate the 16-pin capacitive keyboard bus during MitM injection).
-* Speed Signal Isolation: PC817 Optocoupler + 1k Ohm resistor (Steps down the 12V motor speed pulse).
-* Incline Signal Shifter: BSS138 Bi-directional Logic Level Converter (Steps down the 5V incline pulse).
-* Serial Interface: MAX3232 RS232-to-TTL module (Connects ESP32 to the treadmill's RJ45 CSAFE port).
-
-## Project Structure
-* `/src` - C++ firmware for the ESP32 (Divided into Sensors, Logic, MitM, and Webserver).
-* `/web` - HTML/CSS/JS files for the tablet dashboard (served via LittleFS).
-* `/docs` - Hardware schematics and logic analyzer logs.
+## Setup
+Everything you need to know about the hardware timings and pin logic is documented in [DESIGN_GUIDE.md](./DESIGN_GUIDE.md).
