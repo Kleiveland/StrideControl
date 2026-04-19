@@ -1,19 +1,3 @@
-Klart — her er **hele filen oppdatert**, med de forbedringene vi diskuterte:
-
-*   prosjektmål er med
-*   verifiserte funn er med
-*   valgte designregler er med
-*   CSAFE-delen er oppdatert mot koden som faktisk fungerte
-*   intern CSAFE-FSM er tatt med
-*   fail-safe MitM-kravet er lagt tilbake
-*   planlagt injeksjonssekvens er beholdt som **working rule**, ikke som ferdig verifisert sannhet
-*   ingen unødvendig spekulasjon
-
-Du kan lime dette rett inn i GitHub:
-
-````md
-# StrideControl Technical Design Guide
-
 ## 1. Project Goal
 
 The goal of the project is to build a safe and reversible ESP32-S3 based interface layer for the Sportsmaster T610 / Runfit 99 treadmill that:
@@ -503,10 +487,3 @@ Once the decoded front-panel bus is mapped, the ESP32 will listen for physical b
 *   decoded front-panel bus mapping
 *   final command injection method
 *   synchronization with physical console key presses
-
-```
-
-Hvis du vil, kan jeg også lage en **kort README-versjon** av denne i neste svar, så du får:
-- én full teknisk spesifikasjon
-- én kort prosjektoversikt til repo-forsiden.
-```
