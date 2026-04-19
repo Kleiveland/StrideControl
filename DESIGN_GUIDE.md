@@ -11,17 +11,19 @@ This document contains all verified physical measurements, protocol specificatio
 * **System Logging:** Comprehensive logging is required. All state transitions, FTMS connection events, and serial checksum errors must be written to a local buffer for debugging purposes.
 
 ## 2. Sensor Data and Calibration
-All values are based on physical logic analysis and load testing.
+All values are based on physical logic analysis, multimeter measurements, and load testing.
 
 ### Speed (Pin 7 - Motor Controller)
-* **Signal Type:** 12V pulse (Isolated via PC817).
+* **Signal Type:** 12V pulse. (Measured: 11.4V DC at rest, fluctuating between 5V and 13V at low speeds).
+* **Hardware Isolation:** Must be isolated using a PC817 Optocoupler. A **1k Ohm resistor** must be placed in series with the Pin 7 signal to limit the current from the 12-13V spikes before entering the optocoupler.
 * **Conversion Factor:** 1.1148.
 * **Calculation:** `Speed (km/h) = Frequency (Hz) * 1.1148`.
+* **Reference Values:** 10 km/h = 8.97 Hz | 25 km/h = 22.3 Hz.
 * **Distance:** 3.2292 pulses correspond to exactly 1 meter.
 
 ### Incline (Pin 11 - Elevation Motor)
-* **Signal Type:** 5V pulse (Shifted to 3.3V via BSS138).
-* **Active Frequency:** Emits a constant **394 Hz** whenever the physical motor is moving.
+* **Signal Type:** 5V TTL logic pulse. (Measured: 4.682V DC at rest, averaging 2.2V during movement). Shifted to 3.3V via BSS138 Bi-directional Logic Level Converter.
+* **Active Frequency:** Emits a constant **394 Hz** *only* when the physical motor is moving. It drops to approximately 0V or returns to 4.682V the moment movement stops.
 * **Resolution:** Approximately 1313 pulses equal 1% of incline travel.
 * **Mechanical Travel Time:** Measured under user load at 49 seconds (0% to 15%) and 48 seconds (15% to 0%).
 * **Homing Sequence:** Initiating a `QUICK START` command forces the incline motor to its physical baseline. The software must monitor the 394 Hz signal; once it drops to 0 Hz, the system calibrates its internal incline tracker to `0.0%`.
