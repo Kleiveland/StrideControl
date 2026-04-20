@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>StrideControl Precision UI</title>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #000; --surface: #111; --accent: #0a84ff; --danger: #ff453a;
+            --warning: #ff9f0a; --text: #fff; --text-dim: #8e8e93; --error-bg: #cc0000;
+            --status-color: var(--text-dim);
+        }
+        [data-state="starting"] { --status-color: var(--warning); }
+        [data-state="running"] { --status-color: var(--accent); }
+        [data-state="disconnected"] { --status-color: var(--error-bg); }
+
+        * { box-sizing: border-box; -webkit-user-select: none; user-select: none; margin: 0; padding: 0; touch-action: manipulation; }
+
+        body {
+            background: var(--bg); color: var(--text); font-family: 'Barlow Condensed', sans-serif;
+            width: 100vw; height: 100vh; overflow: hidden;
+            padding: 40px; display: grid;
+            grid-template-rows: 140px 1fr auto 1fr 140px; 
+            row-gap: 0; position: relative;
+        }
+
+        .error-banner {
+            position: absolute; top: 0; left: 0; width: 100%; background: var(--error-bg);
+            text-align: center; font-size: 24px; font-weight: 700; letter-spacing: 2px;
+            padding: 10px 0; z-index: 1000; transform: translateY(-100%); transition: transform 0.3s;
+        }
+        .error-banner.active { transform: translateY(0); }
+
+        /* --- MODAL / OPPSETT --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85);
+            z-index: 500; display: flex; justify-content: center; align-items: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.3s; backdrop-filter: blur(10px);
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-content { background: var(--surface); border: 2px solid #333; border-radius: 24px; padding: 50px 60px; width: 800px; display: flex; flex-direction: column; gap: 30px; max-height: 90vh; overflow-y: auto;}
+        .modal-title { font-size: 48px; font-weight: 700; text-align: center; letter-spacing: 2px; margin-bottom: 10px;}
+        
+        .setup-row { display: flex; justify-content: space-between; align-items: center; background: #000; padding: 20px 40px; border-radius: 16px; border: 2px solid #222;}
+        .setup-label { font-size: 36px; font-weight: 600; color: var(--text-dim);}
+        
+        .stepper { display: flex; align-items: center; gap: 30px; }
+        .stepper button { width: 80px; height: 80px; border-radius: 12px; background: #222; color: #fff; border: none; font-size: 40px; cursor: pointer; font-family: inherit;}
+        .stepper button:active { background: #444; }
+        .stepper span { font-size: 60px; font-weight: 700; width: 120px; text-align: center; font-variant-numeric: tabular-nums;}
+        
+        .btn-close-modal { background: var(--accent); color: #fff; font-size: 36px; font-weight: 600; border: none; padding: 20px; border-radius: 16px; cursor: pointer; font-family: inherit; margin-top: 10px;}
+
+        /* BLE Device List Styles */
+        .ble-list { display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 15px;}
+        .ble-device { display: flex; justify-content: space-between; align-items: center; background: #1a1a1a; padding: 15px 25px; border-radius: 12px; border: 1px solid #333;}
+        .ble-name { font-size: 28px; font-weight: 600; color: #fff; }
+        .ble-btn { background: #333; color: #fff; border: none; padding: 10px 20px; border-radius: 8px; font-size: 22px; font-weight: 600; cursor: pointer; font-family: inherit;}
+        .ble-btn.connected { background: var(--danger); color: #fff;}
+        .ble-btn:active { filter: brightness(1.2); }
+
+        /* --- VERKTØYRAD --- */
+        .util-row { 
+            position: absolute; top: 195px; left: 40px; right: 40px; 
+            display: flex; justify-content: space-between; align-items: center; 
+            z-index: 10; pointer-events: none; 
+        }
+        .sys-clock { font-size: 24px; font-weight: 600; color: var(--text-dim); letter-spacing: 1px; padding-left: 5px; }
+        .btn-setup {
+            background: transparent; border: 2px solid #222; color: #555; padding: 6px 18px;
+            border-radius: 8px; font-size: 18px; font-weight: 600; cursor: pointer; font-family: inherit; transition: color 0.2s; pointer-events: auto;
+        }
+        .btn-setup:active:not(.disabled) { background: #222; color: #fff;}
+        .btn-setup.disabled { opacity: 0.2; pointer-events: none; }
+
+        /* --- FELLES KNAPPE-STILER (Rad 1 og 5) --- */
+        .btn-row { display: flex; justify-content: space-between; height: 140px; gap: 15px; width: 100%; }
+        .btn {
+            flex: 1; background: var(--surface); border: 2px solid #222; border-radius: 18px;
+            display: flex; align-items: center; justify-content: center; font-size: 70px; font-weight: 600;
+            transition: transform 0.1s, filter 0.1s; cursor: pointer;
+        }
+        .btn:active:not(.disabled) { transform: scale(0.92); filter: brightness(1.4); }
+        .btn.disabled { opacity: 0.3; pointer-events: none; }
+        .btn-speed { border-bottom: 6px solid var(--danger); }
+        .btn-incline { border-bottom: 6px solid var(--accent); }
+        .pending { animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { border-color: #222; } 50% { border-color: var(--text); } }
+
+        /* --- RAD 2: TID --- */
+        .zone-time { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; transform: translateY(-15px); }
+        .hero-time-wrapper { position: relative; display: flex; flex-direction: column; align-items: center; }
+        .hero-time { font-size: 130px; font-weight: 800; line-height: 0.85; font-variant-numeric: tabular-nums; }
+        .status-msg { font-size: 26px; font-weight: 600; letter-spacing: 6px; color: var(--status-color); position: absolute; top: calc(100% + 15px); text-transform: uppercase; width: 400px; text-align: center; }
+
+        /* --- RAD 3: TELEMETRI --- */
+        .zone-telemetry { display: grid; grid-template-columns: repeat(3, 1fr); width: 85%; margin: 0 auto; transition: grid-template-columns 0.3s ease; }
+        .zone-telemetry.show-hr { grid-template-columns: repeat(4, 1fr); width: 95%; }
+        .col { display: flex; flex-direction: column; align-items: center; border-right: 2px solid #222; }
+        .col:last-child { border-right: none; }
+        .hr-col { display: none; }
+        .zone-telemetry.show-hr .hr-col { display: flex; }
+        .label { font-size: 26px; color: var(--text-dim); text-transform: uppercase; margin-bottom: 10px; line-height: 1;}
+        .value { font-size: 130px; font-weight: 800; line-height: 0.85; font-variant-numeric: tabular-nums; }
+        .val-hr { color: var(--text); } 
+
+        /* --- RAD 4: PRESETS --- */
+        .zone-actions { display: flex; justify-content: center; align-items: center; gap: 40px; width: 100%; height: 100%; transform: translateY(15px); }
+        .btn-action {
+            width: 380px; height: 130px; background: var(--surface); border: 2px solid #222; border-radius: 18px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: transform 0.1s;
+        }
+        .btn-action:active:not(.disabled) { transform: scale(0.96); filter: brightness(1.2); }
+        .btn-action.disabled { opacity: 0.3; pointer-events: none; }
+        .btn-action span:first-child { font-size: 46px; font-weight: 700; }
+        .btn-action span:last-child { font-size: 20px; color: var(--text-dim); margin-top: 5px; }
+
+        /* Simulator knapper */
+        .sim { position: fixed; bottom: 5px; right: 5px; opacity: 0.2; z-index: 2000; display: flex; gap: 5px;}
+        .sim button { padding: 5px 10px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; font-family: inherit;}
+    </style>
+</head>
+<body data-state="stopped">
+
+    <div id="error-banner" class="error-banner">INGEN KONTAKT MED MASKINEN - FORSØKER Å KOBLE TIL...</div>
+
+    <div class="modal-overlay" id="modal-setup">
+        <div class="modal-content">
+            <div class="modal-title">OPPSETT</div>
+            
+            <div class="setup-row">
+                <div class="setup-label">HVILE FART</div>
+                <div class="stepper">
+                    <button onclick="app.adjustPreset('hvile', -0.5)">-</button>
+                    <span id="setup-val-hvile">6.0</span>
+                    <button onclick="app.adjustPreset('hvile', 0.5)">+</button>
+                </div>
+            </div>
+            
+            <div class="setup-row">
+                <div class="setup-label">DRAG FART</div>
+                <div class="stepper">
+                    <button onclick="app.adjustPreset('drag', -0.5)">-</button>
+                    <span id="setup-val-drag">16.0</span>
+                    <button onclick="app.adjustPreset('drag', 0.5)">+</button>
+                </div>
+            </div>
+
+            <div class="setup-row" style="flex-direction: column; align-items: flex-start; gap: 10px;">
+                <div style="display: flex; justify-content: space-between; width: 100%; align-items: center;">
+                    <div class="setup-label">PULSBÅND (BLUETOOTH)</div>
+                    <button class="btn-setup" style="border-color: var(--accent); color: var(--accent); font-size: 24px; padding: 12px 24px;" onclick="app.scanHR()">SØK ETTER ENHETER</button>
+                </div>
+                
+                <div class="ble-list" id="ble-list">
+                    <div style="color: var(--text-dim); font-size: 24px; text-align: center; padding: 10px 0;">Ingen enheter tilkoblet.</div>
+                </div>
+            </div>
+
+            <button class="btn-close-modal" onclick="app.closeSetup()">LUKK OG LAGRE</button>
+        </div>
+    </div>
+
+    <div class="util-row">
+        <div class="sys-clock" id="sys-clock">12:18</div>
+        <button class="btn-setup" id="btn-setup" onclick="app.openSetup()">OPPSETT</button>
+    </div>
+
+    <div class="btn-row" id="incline-group">
+        <div class="btn btn-incline" data-type="incline" data-val="0">0</div>
+        <div class="btn btn-incline" data-type="incline" data-val="1">1</div>
+        <div class="btn btn-incline" data-type="incline" data-val="2">2</div>
+        <div class="btn btn-incline" data-type="incline" data-val="6">6</div>
+        <div class="btn btn-incline" data-type="incline" data-val="8">8</div>
+        <div class="btn btn-incline" data-type="incline" data-val="10">10</div>
+        <div class="btn btn-incline" data-type="incline" data-val="12">12</div>
+        <div class="btn btn-incline" data-type="incline" data-val="15">15</div>
+    </div>
+
+    <div class="zone-time">
+        <div class="hero-time-wrapper">
+            <div class="hero-time" id="cur-time">00:00</div>
+            <div class="status-msg" id="status-txt"></div>
+        </div>
+    </div>
+
+    <div class="zone-telemetry" id="telemetry-grid">
+        <div class="col"><div class="label">Stigning</div><div class="value" id="cur-incline">0.0</div></div>
+        <div class="col"><div class="label">Distanse</div><div class="value" id="cur-dist">12.57</div></div>
+        <div class="col hr-col"><div class="label">Puls</div><div class="value val-hr" id="cur-hr">--</div></div>
+        <div class="col"><div class="label">Fart</div><div class="value" id="cur-speed">0.0</div></div>
+    </div>
+
+    <div class="zone-actions" id="preset-group">
+        <div class="btn-action" style="border-bottom: 6px solid var(--text-dim)" data-type="speed" data-val="6" id="btn-preset-hvile">
+            <span>HVILE</span><span id="txt-preset-hvile">Fart: 6.0</span>
+        </div>
+        <div class="btn-action" style="border-bottom: 6px solid var(--danger)" data-type="speed" data-val="16" id="btn-preset-drag">
+            <span>DRAG</span><span id="txt-preset-drag">Fart: 16.0</span>
+        </div>
+    </div>
+
+    <div class="btn-row" id="speed-group">
+        <div class="btn btn-speed" data-type="speed" data-val="6">6</div>
+        <div class="btn btn-speed" data-type="speed" data-val="8">8</div>
+        <div class="btn btn-speed" data-type="speed" data-val="10">10</div>
+        <div class="btn btn-speed" data-type="speed" data-val="12">12</div>
+        <div class="btn btn-speed" data-type="speed" data-val="14">14</div>
+        <div class="btn btn-speed" data-type="speed" data-val="16">16</div>
+        <div class="btn btn-speed" data-type="speed" data-val="18">18</div>
+    </div>
+
+    <div class="sim">
+        <button onclick="sim.start()">SIM START</button>
+        <button onclick="sim.stop()">SIM STOPP/PAUSE</button>
+        <button onclick="sim.toggleConnection()">TEST FRAKOBLING</button>
+    </div>
+
+    <script>
+        const app = {
+            state: "stopped", isConnected: true,
+            hrDevice: null, // Holder styr på tilkoblet pulsbånd
+            presets: { hvile: 6.0, drag: 16.0 },
+            current: { speed: 0.0, incline: 0.0, dist: 12.57, timeSecs: 0, hr: 0 },
+            dom: {}, 
+            
+            init() {
+                this.dom = {
+                    body: document.body,
+                    sysClock: document.getElementById('sys-clock'),
+                    statusTxt: document.getElementById('status-txt'),
+                    errorBanner: document.getElementById('error-banner'),
+                    telemetryGrid: document.getElementById('telemetry-grid'),
+                    speed: document.getElementById('cur-speed'),
+                    incline: document.getElementById('cur-incline'),
+                    dist: document.getElementById('cur-dist'),
+                    time: document.getElementById('cur-time'),
+                    hr: document.getElementById('cur-hr'),
+                    btnSetup: document.getElementById('btn-setup'),
+                    bleList: document.getElementById('ble-list'),
+                    allBtns: document.querySelectorAll('[data-type]'),
+                    modal: document.getElementById('modal-setup'),
+                    valHvile: document.getElementById('setup-val-hvile'),
+                    valDrag: document.getElementById('setup-val-drag'),
+                    btnHvile: document.getElementById('btn-preset-hvile'),
+                    txtHvile: document.getElementById('txt-preset-hvile'),
+                    btnDrag: document.getElementById('btn-preset-drag'),
+                    txtDrag: document.getElementById('txt-preset-drag')
+                };
+
+                ['speed-group', 'incline-group', 'preset-group'].forEach(id => this.setupDelegation(id));
+                setInterval(() => this.updateSysClock(), 1000);
+                this.updateUI();
+                this.updateSysClock();
+            },
+
+            setupDelegation(id) {
+                document.getElementById(id).addEventListener('pointerdown', (e) => {
+                    const btn = e.target.closest('[data-type]');
+                    if (btn && !btn.classList.contains('disabled')) {
+                        this.handleInput(btn.dataset.type, parseFloat(btn.dataset.val), btn);
+                    }
+                });
+            },
+
+            handleInput(type, val, btn) {
+                if (!this.isConnected) return;
+                if (this.state === "starting") {
+                    this.clearPending();
+                    btn.classList.add('pending');
+                    sim.setPending(type, val);
+                } else if (this.state === "running") {
+                    this.clearPending();
+                    sim.setTarget(type, val);
+                }
+            },
+
+            clearPending() { document.querySelectorAll('.pending').forEach(b => b.classList.remove('pending')); },
+
+            openSetup() {
+                if (this.state === "starting" || this.state === "running") return;
+                this.dom.valHvile.innerText = this.presets.hvile.toFixed(1);
+                this.dom.valDrag.innerText = this.presets.drag.toFixed(1);
+                this.dom.modal.classList.add('active');
+            },
+
+            closeSetup() {
+                this.dom.modal.classList.remove('active');
+                this.dom.btnHvile.dataset.val = this.presets.hvile;
+                this.dom.txtHvile.innerText = `Fart: ${this.presets.hvile.toFixed(1)}`;
+                this.dom.btnDrag.dataset.val = this.presets.drag;
+                this.dom.txtDrag.innerText = `Fart: ${this.presets.drag.toFixed(1)}`;
+                this.updateUI(); // Sikrer at gridet oppdateres hvis puls ble koblet til
+            },
+
+            adjustPreset(type, amt) {
+                let val = Math.max(1.0, Math.min(25.0, this.presets[type] + amt));
+                this.presets[type] = val;
+                document.getElementById(`setup-val-${type}`).innerText = val.toFixed(1);
+            },
+
+            // --- BLUETOOTH SIMULERING ---
+            scanHR() {
+                this.dom.bleList.innerHTML = `<div style="color: var(--warning); font-size: 24px; text-align: center; padding: 10px 0;">Søker etter Bluetooth-enheter...</div>`;
+                
+                setTimeout(() => {
+                    // Simulerte enheter funnet
+                    const devices = [
+                        { id: "ble1", name: "Polar H10" },
+                        { id: "ble2", name: "Garmin HRM-Pro" }
+                    ];
+                    
+                    this.dom.bleList.innerHTML = devices.map(d => {
+                        const isConn = this.hrDevice === d.id;
+                        return `
+                        <div class="ble-device">
+                            <span class="ble-name">${d.name}</span>
+                            <button class="ble-btn ${isConn ? 'connected' : ''}" onclick="app.toggleHR('${d.id}')">
+                                ${isConn ? 'KOBLE FRA' : 'KOBLE TIL'}
+                            </button>
+                        </div>`;
+                    }).join('');
+                }, 1500);
+            },
+
+            toggleHR(id) {
+                if (this.hrDevice === id) {
+                    this.hrDevice = null; // Koble fra
+                    this.current.hr = 0;
+                } else {
+                    this.hrDevice = id; // Koble til
+                    this.current.hr = 65; // Start-puls
+                }
+                this.scanHR(); // Laster listen på nytt for å oppdatere knappene
+            },
+
+            updateUI() {
+                const d = this.dom;
+                if (!this.isConnected) {
+                    d.body.dataset.state = "disconnected";
+                    d.statusTxt.innerText = "F R A K O B L E T";
+                    d.errorBanner.classList.add('active');
+                } else {
+                    d.body.dataset.state = this.state;
+                    d.errorBanner.classList.remove('active');
+                    const statusTexts = { "stopped": "", "starting": "", "running": "", "paused": "P A U S E" };
+                    d.statusTxt.innerText = statusTexts[this.state] || "";
+                }
+
+                // Viser/Skjuler Puls-kolonne basert på hrDevice
+                if (this.hrDevice) {
+                    d.telemetryGrid.classList.add('show-hr');
+                    d.hr.innerText = this.current.hr > 0 ? Math.round(this.current.hr) : "--";
+                } else {
+                    d.telemetryGrid.classList.remove('show-hr');
+                }
+
+                d.speed.innerText = this.current.speed.toFixed(1);
+                d.incline.innerText = this.current.incline.toFixed(1);
+                d.dist.innerText = this.current.dist.toFixed(2);
+                
+                const m = Math.floor(this.current.timeSecs / 60), s = Math.floor(this.current.timeSecs % 60);
+                d.time.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+
+                const lockBtns = this.state === "stopped" || this.state === "paused" || !this.isConnected;
+                d.allBtns.forEach(b => {
+                    if(lockBtns) {
+                        b.classList.add('disabled');
+                        b.classList.remove('pending');
+                    } else {
+                        b.classList.remove('disabled');
+                    }
+                });
+                
+                (this.state === "starting" || this.state === "running" || !this.isConnected) ? d.btnSetup.classList.add('disabled') : d.btnSetup.classList.remove('disabled');
+            },
+
+            updateSysClock() {
+                const d = new Date();
+                this.dom.sysClock.innerText = `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+            }
+        };
+
+        // --- SIMULATOR ---
+        const sim = {
+            tSpd: 0, tInc: 0, pSpd: null, pInc: null,
+            baseHr: 65, targetHr: 65,
+            
+            start() {
+                if (app.state === "running" || app.state === "starting") return; 
+                app.state = "starting"; app.updateUI();
+                setTimeout(() => {
+                    if(app.state !== "starting") return; 
+                    app.state = "running"; app.clearPending();
+                    if (this.pSpd !== null) { this.tSpd = this.pSpd; this.pSpd = null; }
+                    if (this.pInc !== null) { this.tInc = this.pInc; this.pInc = null; }
+                    app.updateUI();
+                }, 3500);
+            },
+            
+            stop() { 
+                if (app.state === "running" || app.state === "starting") {
+                    app.state = "paused";
+                    this.tSpd = 0; 
+                    this.pSpd = this.pInc = null;
+                } else if (app.state === "paused") {
+                    app.state = "stopped";
+                    app.current.timeSecs = 0;
+                    app.current.dist = 12.57; 
+                }
+                app.updateUI(); 
+            },
+            
+            toggleConnection() { app.isConnected = !app.isConnected; app.updateUI(); },
+            setPending(t, v) { t === 'speed' ? this.pSpd = v : this.pInc = v; },
+            setTarget(t, v) { t === 'speed' ? this.tSpd = v : this.tInc = v; },
+            
+            runEngine() {
+                let c = app.current;
+                
+                if (app.hrDevice) {
+                    this.targetHr = this.baseHr + (c.speed * 6) + (c.incline * 3);
+                    if (app.state === "stopped") this.targetHr = this.baseHr;
+                    if (c.hr < this.targetHr) c.hr += 0.1;
+                    if (c.hr > this.targetHr) c.hr -= 0.1;
+                }
+
+                if (app.state === "running") {
+                    if (c.speed < this.tSpd) c.speed += 0.2;
+                    if (c.speed > this.tSpd) c.speed -= 0.4;
+                    if (Math.abs(c.speed - this.tSpd) < 0.2) c.speed = this.tSpd;
+                    
+                    if (c.incline < this.tInc) c.incline = Math.round((c.incline + 0.1) * 10) / 10;
+                    if (c.incline > this.tInc) c.incline = Math.round((c.incline - 0.1) * 10) / 10;
+                    
+                    c.timeSecs += 0.2; 
+                    c.dist += (c.speed / 3600) * 0.2;
+                } else {
+                    c.speed > 0 ? c.speed -= 0.5 : c.speed = 0;
+                }
+                app.updateUI();
+            }
+        };
+
+        app.init();
+        setInterval(() => sim.runEngine(), 200); 
+    </script>
+</body>
+</html>
