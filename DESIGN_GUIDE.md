@@ -173,7 +173,6 @@ Core 1:
 pulse counting interrupts for Pin 7 and Pin 11
 real-time GPIO injection tasks
 safety watchdog tasks
-
 Thread Safety & Data Synchronization: Because Core 0 (WebSockets/BLE) and Core 1 (Hardware/AutoCal) run simultaneously, any read or write access to the shared TreadmillData struct (globalState) MUST be protected by a global hardware spinlock (portMUX_TYPE). Direct manipulation of state variables without portENTER_CRITICAL and portEXIT_CRITICAL is strictly forbidden to prevent memory corruption and kernel panics.
 
 7.2 Safety and Logging
@@ -255,9 +254,7 @@ Raw state 6 transitions the system into PAUSED
 Raw state 5 completes the transition to RUNNING after the 3.5-second startup delay
 Raw state 5 may also be interpreted as IDLE if no valid startup sequence has been established
 Raw states 0, 1, 2, 3, and 15 force STOPPED, except for temporary 15 jitter during STARTING
-
 State Evaluation Rule: Internal C++ logic must strictly evaluate machine states using the SystemState enum class (e.g., SystemState::RUNNING). The use of "magic numbers" (like integer 2 or 4) for state checking is prohibited to prevent logic mismatch.
-
 Data Integrity
 The working CSAFE prototype did not validate the incoming checksum byte.
 Instead, frame validity was determined by:
@@ -315,9 +312,7 @@ display of actual incline
 display of treadmill state
 display of session time and related live workout data
 Because the tablet covers the original console view, actual speed and actual incline must always be available in the web UI whenever the treadmill is operating.
-
 UI Command Queuing Feedback: The web UI allows users to tap speed, incline, or preset buttons during the STARTING phase. The underlying state machine records these as "pending" and injects them when the RUNNING state is reached. However, to avoid visual clutter, the UI does not use complex visual animations to indicate pending status. Instead, the system relies on the treadmill's native acoustic feedback (beeps) to confirm to the user that a command has been registered and is waiting to execute.
-
 Actual vs Target Values
 actual speed is derived purely from Pin 7 pulses; actual incline is derived purely from Pin 11 pulses relative to the homed baseline. Target values are displayed only when explicitly commanded by the user via the tablet.
 Filesystem, Web UI and OTA Policy
