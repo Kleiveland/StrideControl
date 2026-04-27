@@ -380,7 +380,7 @@ Tabular Numbers: All telemetry fonts must enforce the CSS rule font-variant-nume
 Monochrome Heart Rate: The heart rate value must remain white (not red). Colors are reserved for active commands (Blue for incline, Red for speed).
 13.3 Interaction Model (Zero-Lag)
 Event Handling: Use pointerdown instead of click. This eliminates the built-in delay found in mobile browsers and provides instantaneous response upon touch.
-Haptic Feedback (Simulated): Buttons must scale down to 0.92 on press to provide immediate visual confirmation of the command.
+Haptic Feedback (Simulated): Buttons must use brightness filters (e.g., filter: brightness(1.5)) on press to provide immediate visual confirmation without triggering layout shifts or scaling artifacts.
 Floating Utilities: The System Clock and Setup button reside in an absolute positioned row (approx. 195px from top). This removes them from the grid calculation so they do not interfere with the primary data centering.
 13.4 Heart Rate Belt & Bluetooth LE (BLE) Discovery
 Device Management: The interface shall not use a simple toggle. It must implement a discovery engine.
@@ -395,7 +395,7 @@ Communication: Bi-directional data exchange via a single WebSocket stream (5-10 
 CSS Variable System: All colors and dimensions (e.g., --accent, --danger) are defined as :root variables for rapid global adjustments without logic modification.
 13.6 Contextual Logic
 P A U S E Status: Status overlays must be absolute positioned below the workout time, ensuring they float without displacing other grid elements.
-Incline Homing Display: During the homing process triggered by STARTING, the GUI must lock the incline display to 0.0% until the homing sequence is confirmed complete.
+Incline Homing Display: During the homing process triggered by STARTING, the GUI must lock the incline display to 0.0% until the homing sequence is confirmed complete. To prevent distraction and memory conflicts, access to the User Profile selector and the Setup modal must be strictly disabled while the internal state is STARTING or RUNNING. To maintain a clean 'Precision UI', technical terminology (e.g., 'ESP32') shall not be exposed to the user. Furthermore, textual status overlays in the center grid are strictly limited to the 'P A U S E' state; IDLE, STOPPED, or READY states shall remain text-free to minimize visual clutter.
 
 14. Current Open Items
 Unmapped harness lines:
