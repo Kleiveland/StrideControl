@@ -164,7 +164,9 @@ The device must be deployable and recoverable without requiring a USB cable. Fir
 ### 7.3 Command Injection and Math Logic
 * **Hardware-Synced Injection:** The ESP32 MUST attach hardware interrupts (`FALLING` edge) to the specific O1 Row pins (Pin 6 for Speed, Pin 4 for Incline). Command injection on the O2 bus only occurs within the ~3ms window when the target row is actively scanned by the treadmill's mainboard.
 * **Injection Timing:** Injection is asynchronous. User commands queue on Core 0. Core 1 waits for the exact O1 hardware interrupt (ISR), drops the 74HC4066N gate, executes the 8-bit hexadecimal frame payload on the O2 pins, and releases the gate.
-* **Fractional Target Math:** To bypass the console's whole-number limitations, the software uses integer `floor` logic. A target of 12.6 km/h injects the macro for 12, followed by exactly 6 discrete `Speed +` increments.
+* **Fractional Target Math (Nearest Integer Optimization):** To bypass the console's whole-number limitations while minimizing the number of injected frames on the O2 bus, the software uses `round()` logic to find the shortest path to the target. 
+  * *Example:* A target of `12.6 km/h` injects the macro for the nearest integer (`13`), followed by exactly 4 discrete `Speed -` decrements. 
+  * This optimization significantly reduces the total injection time and UI latency compared to strictly adding upon `floor()` values.
 * **Elevation Gain Integration:** The FTMS specification requires Positive Elevation Gain, which the hardware does not natively provide. The software must algorithmically accumulate this in the main loop by integrating the current incline percentage over the distance traveled during each tick (`Elevation Gain = Distance_interval * (Incline / 100)`).
 * **Fan Quarantine:** Fan control commands are disabled (`TODO` status).
 
