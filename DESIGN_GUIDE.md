@@ -63,7 +63,7 @@ The treadmill itself remains responsible for:
 
 **Pins with dynamic behavior (Telemetry):**
 * **Pin 7 (Speed):** `11.4V DC` at rest. At low speed, DC reading fluctuates rapidly. Emits `8.97 Hz` at 10 km/h, and `22.3 Hz` at 25 km/h.
-* **Pin 11 (Incline):** `4.682V` lower DC at rest. Outputs a constant `394 Hz` while the incline is physically moving. Returns to approx `0V` or `4.682V` when motion stops.
+* **Pin 11 (Incline):** `4.682V` DC at rest. Outputs a constant `394 Hz` while the incline is physically moving. Returns to approx `0V` or `4.682V` when motion stops.
 * **Pin 10:** `0.09V DC` at rest. Not used in the current design.
 
 ### 3.3 Front-Panel Bus Mapping (Verified)
@@ -120,8 +120,8 @@ The physical Speed (+/-) and Incline (+/-) buttons are **ignored** by the treadm
 ### 6.1 MCU and Isolation
 * **Controller:** ESP32-S3 (Dual-Core). 
 * **Hardware Requirement:** **N16R8** (16MB Flash, 8MB PSRAM) is strictly required. The PSRAM is critical to support the dual-role BLE stack, WebSockets, and `ArduinoJson` serialization without heap fragmentation over time. The 16MB Flash provides sufficient space for the custom partition table handling the LittleFS web assets and OTA updates.
-* **Speed Isolation (Pin 7):** 100% optically isolated using a `PC817` optocoupler. The ESP32 reads the signal via an internal pull-up (`INPUT_PULLUP`), protecting the 3.3V logic completely from the treadmill's high-voltage/noisy motor controller.
-* **Incline Interface (Pin 11):** Isolated and stepped down to 3.3V using a `BSS138` level shifter / optocoupler configuration.
+* **Speed Isolation (Pin 7):** 100% optically isolated using a PC817 optocoupler. While the PC817 has microsecond-level switching latency, the treadmill's low frequency output (8-25 Hz) makes this negligible. The ESP32 reads the signal via an internal pull-up (INPUT_PULLUP), and software-level blanking completely mitigates any edge jitter, fully protecting the 3.3V logic from the treadmill's high-voltage/noisy motor controller.
+* **Incline Interface (Pin 11):** Stepped down to a safe 3.3V logic level using a BSS138 MOSFET bi-directional level shifter.
 * **Logic Level Translation:** Two `TXS0108E` 8-channel bi-directional level shifters safely bridge the 5V O1 and O2 buses to the 3.3V ESP32 GPIOs.
 
 ### 6.2 The "Data Gate" (Mute Circuit)
@@ -177,7 +177,7 @@ Real-time pulse capture, WebSocket rendering, CSAFE parsing, and FTMS broadcasti
 The firmware shall separate persistent values into classes:
 1. **Hardware calibration:** Speed factor, pulses per meter, incline span, homing parameters.
 2. **Device preferences:** WiFi settings, FTMS device name, debug mode.
-3. **User profile settings:** Drag target defaults, preset values.
+3. **User profile settings:** Drag and Rest speed/incline defaults, and last-used interval configurations (work/rest durations, series, and reps).
 4. **Runtime-only state:** Raw counters, current treadmill state.
 
 > **Safety rule:** Runtime-only state must never be treated as durable calibration data.
@@ -239,6 +239,58 @@ The firmware shall separate persistent values into classes:
 * **Contextual Logic:** Status overlays absolute positioned. Setup and User Profile selectors disabled during STARTING or RUNNING.
 * **Heart Rate Proxy & BLE Discovery:** The interface implements a discovery engine. Workflow: User initiates "SCAN FOR DEVICES". ESP32 returns a JSON list of available BLE heart rate monitors (e.g., "Polar H10"). The ESP32 connects to the selected belt as a BLE Client and acts as an HR Proxy, natively forwarding the pulse data seamlessly within the combined FTMS broadcast signal. Connection status is persisted in NVS for automatic reconnection.
 
+### 12.1 Pro Interval Coach (Visual Guidance Engine)
+To support advanced structured workouts without compromising the safety and predictability of manual control, the UI implements a standalone "Visual Coach".
+
+* **No Automatic Actuation:** The interval engine is purely visual and auditory. It tracks phases (Work, Rest, Cooldown) and prompts the user, but **never** injects speed or incline commands automatically. The user remains in full control via the persistent `HVILE` and `DRAG` macro buttons.
+* **Focus Mode UI:** When a workout begins, the DOM transitions into a `focus-mode` state via CSS class toggling. Telemetry data shrinks and moves to the periphery, while the countdown timer scales up significantly in the mathematical center. 
+* **Dynamic Workout Graph:** A CSS-based flexbox graph dynamically generates a timeline of the session (including nested series and series-rests), providing peripheral progression feedback.
+* **Web Audio API Cues:** To support "hands-free" and "eyes-free" operation, the UI utilizes the native browser Web Audio API to generate synthetic oscillator beeps (3-2-1 countdowns and phase-shift alerts), avoiding external `.mp3` dependencies.
+* **On-the-Fly Adjustments:** The engine exposes emergency UI controls during active intervals:
+  * **Lifebuoy (+30s):** Allows the user to dynamically extend a resting phase without breaking the workout structure.
+  * **Skip Phase (⏭):** Allows the user to truncate a phase and immediately jump to the next block.
+* **Profile-Linked Persistence:** The interval engine must remember the user's last configured workout. When a user is selected via the Active User Indicator, the interval modal automatically pre-loads their specific last-used settings (Work/Rest durations, Reps, Series) from `profiles.json` (or `localStorage`), preventing repetitive data entry.
+* **Signature Workouts:** The engine includes predefined, hardcoded workout templates (e.g., "Olympiatoppen 4x4", "Pyramid") that dynamically populate the workout array to override manual step inputs.
+* **Font Constraints:** To prevent rendering artifacts on the primary timer and action buttons using the *Barlow Condensed* font, the Norwegian letter "Ø" is strictly avoided in the UI copy (e.g., using "AVBRYT" instead of "KLARGJØR ØKT").
+
+### 12.2 Interval Data Structures (Examples)
+To ensure consistent parsing between the web UI and the LittleFS backend, interval configurations follow strict JSON schemas.
+
+**1. User Profile Persistence (`profiles.json`)**
+Each user object in the profiles array stores their `last_interval` settings alongside their speed presets. When a user is selected, the UI populates the modal fields using this exact object:
+
+```json
+{
+  "users": [
+    {
+      "name": "Kristian",
+      "presets": { "hvile": 6.0, "drag": 16.0 },
+      "last_interval": {
+        "work_m": 0,
+        "work_s": 45,
+        "rest_m": 0,
+        "rest_s": 15,
+        "reps": 10,
+        "series": 2,
+        "series_rest_m": 3
+      }
+    }
+  ]
+}
+
+**2. The Dynamic Schedule Array (In-Memory Engine)**
+Regardless of whether the user inputs manual fields or selects a "Signature Workout" (like a Pyramid), the UI JavaScript compiles the workout into a flat, sequential array of objects before execution. This makes it trivial to implement complex workouts.
+
+Example: The first 3 steps of a Pyramid Workout:
+
+JSON
+[
+  { "type": "work", "time": 60, "name": "DRAG 1 MIN" },
+  { "type": "rest", "time": 60, "name": "PAUSE" },
+  { "type": "work", "time": 120, "name": "DRAG 2 MIN" },
+  { "type": "rest", "time": 60, "name": "PAUSE" }
+]
+Note: time is always evaluated in total seconds. The type key dictates both CSS graph coloring (red/green) and the Audio Cue triggered upon entering the phase.
 ---
 
 ## 13. Current Open Items
