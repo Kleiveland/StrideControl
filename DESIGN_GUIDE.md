@@ -277,19 +277,20 @@ Each user object in the profiles array stores their `last_interval` settings alo
     }
   ]
 }
-
+```
 **2. The Dynamic Schedule Array (In-Memory Engine)**
 Regardless of whether the user inputs manual fields or selects a "Signature Workout" (like a Pyramid), the UI JavaScript compiles the workout into a flat, sequential array of objects before execution. This makes it trivial to implement complex workouts.
 
 Example: The first 3 steps of a Pyramid Workout:
 
- ```json
+```json
 [
   { "type": "work", "time": 60, "name": "DRAG 1 MIN" },
   { "type": "rest", "time": 60, "name": "PAUSE" },
   { "type": "work", "time": 120, "name": "DRAG 2 MIN" },
   { "type": "rest", "time": 60, "name": "PAUSE" }
 ]
+```
 
 Note: time is always evaluated in total seconds. The type key dictates both CSS graph coloring (red/green) and the Audio Cue triggered upon entering the phase.
 
