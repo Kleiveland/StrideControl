@@ -259,7 +259,7 @@ To ensure consistent parsing between the web UI and the LittleFS backend, interv
 **1. User Profile Persistence (`profiles.json`)**
 Each user object in the profiles array stores their `last_interval` settings alongside their speed presets. When a user is selected, the UI populates the modal fields using this exact object:
 
-```json
+json
 {
   "users": [
     {
