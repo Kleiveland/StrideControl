@@ -259,7 +259,7 @@ To ensure consistent parsing between the web UI and the LittleFS backend, interv
 **1. User Profile Persistence (`profiles.json`)**
 Each user object in the profiles array stores their `last_interval` settings alongside their speed presets. When a user is selected, the UI populates the modal fields using this exact object:
 
-json
+ ```json
 {
   "users": [
     {
@@ -283,14 +283,16 @@ Regardless of whether the user inputs manual fields or selects a "Signature Work
 
 Example: The first 3 steps of a Pyramid Workout:
 
-JSON
+ ```json
 [
   { "type": "work", "time": 60, "name": "DRAG 1 MIN" },
   { "type": "rest", "time": 60, "name": "PAUSE" },
   { "type": "work", "time": 120, "name": "DRAG 2 MIN" },
   { "type": "rest", "time": 60, "name": "PAUSE" }
 ]
+
 Note: time is always evaluated in total seconds. The type key dictates both CSS graph coloring (red/green) and the Audio Cue triggered upon entering the phase.
+
 ---
 
 ## 13. Current Open Items
