@@ -266,6 +266,16 @@ Persistent values are separated into four classes to prevent runtime state from 
 * **WebSocket Reconnect Policy:** The tablet UI must implement automatic reconnect with exponential backoff (starting at 1s, max 10s). A visible "DISCONNECTED" overlay must be displayed whenever the WebSocket is not in `OPEN` state. All displayed telemetry values must be grayed out or cleared when disconnected to prevent stale data being interpreted as live.
 * **BLE Heart Rate Discovery:** The UI implements a BLE device discovery flow. The ESP32 scans for nearby HR monitors, returns a JSON list, and upon selection acts as an **HR Proxy** — forwarding pulse data natively within the FTMS broadcast. The selected device MAC is persisted in NVS for automatic reconnection.
 
+### 11.1 Quick Keys and Macro Presets
+To ensure zero-latency control, eliminate the need for virtual keyboards, and avoid continuous physical button holding, the UI relies exclusively on large, static touch targets strategically placed at the outer edges of the screen.
+
+* **Incline Grid (Top Row):** The top edge of the screen consists of an 8-button symmetrical grid mapping to the most frequently used incline levels (0 through 12). To provide immediate visual grouping, these buttons feature a distinct **blue bottom border** (`var(--accent)`).
+* **Speed Grid (Bottom Row):** The bottom edge of the screen mirrors this layout with an 8-button grid for target speeds (4 through 18 km/h). These buttons feature a **red bottom border** (`var(--danger)`).
+* **Personalized Macro Presets (HVILE / DRAG):** Positioned directly below the central telemetry zone, these two dominant action buttons allow single-tap transitions between recovery and target intensity. The absolute speed values are dynamically populated from the active user's `presets` in `profiles.json`. 
+  * The **HVILE** (Rest) button is styled with a **neutral gray border** (`var(--text-dim)`).
+  * The **DRAG** (Work) button is styled with a **red border** (`var(--danger)`), matching the main speed grid.
+* **Persistent Availability:** To guarantee user safety and predictable manual override capabilities, the Quick Key grids and Macro Presets remain active and fully functional at all times, including when the Interval Coach is actively running in `focus-mode`. Pressing any of these keys queues an immediate hardware injection sequence for that specific target.
+  
 ---
 
 ## 12. Pro Interval Coach (Visual Engine)
@@ -290,12 +300,21 @@ Persistent values are separated into four classes to prevent runtime state from 
 
 ### 13.1 User Profile Schema (profiles.json)
 
+To ensure consistent parsing between the web UI and the LittleFS backend, configurations follow a strict JSON schema. The `presets` object dictates the target speeds injected by the HVILE and DRAG macro buttons, while the `quick_keys` arrays dynamically populate the 8-button speed and incline grids. The `history` array functions as a circular buffer (e.g., max 10 entries) to persist post-workout RPE evaluations.
+
 ```json
 {
   "users": [
     {
       "name": "Kristian",
-      "presets": { "hvile": 6.0, "drag": 16.0 },
+      "presets": { 
+        "hvile": 6.0, 
+        "drag": 16.0 
+      },
+      "quick_keys": {
+        "speed": [4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0],
+        "incline": [0, 1, 2, 4, 6, 8, 10, 12]
+      },
       "last_interval": {
         "work_m": 0,
         "work_s": 45,
@@ -304,7 +323,15 @@ Persistent values are separated into four classes to prevent runtime state from 
         "reps": 10,
         "series": 2,
         "series_rest_m": 3
-      }
+      },
+      "history": [
+        {
+          "timestamp": 1715512800,
+          "signature": "4515",
+          "rpe_score": 8,
+          "completed": true
+        }
+      ]
     }
   ]
 }
