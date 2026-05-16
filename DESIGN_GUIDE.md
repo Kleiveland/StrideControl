@@ -101,35 +101,34 @@ Physical Speed (+/−) and Incline (+/−) buttons are **ignored** by the treadm
 
 ### 4.1 Speed (Pin 7)
 
-For å lese farten feilfritt fra tredemølla, bruker vi en kombinasjon av optisk maskinvare-isolasjon og et "Confirm and Discard"-filter i programvaren.
+To read the speed flawlessly from the treadmill, we use a combination of optical hardware isolation and a "Confirm and Discard" software filter.
 
-#### 1. Maskinvaren og problemet ("The Slow Rise")
-Vi bruker en PC817 optokobler for å skille ESP32-ens 3.3V-logikk fra tredemøllas 5V-logikk og motorstøy.
-* Når magneten treffer sensoren, slår PC817 seg på og trekker pinnen knallhardt ned til jord (0V). Dette gir et perfekt, rent signal inn.
-* Når magneten forlater sensoren, slår PC817 seg av. Nå må en 10k pull-up motstand trekke spenningen tilbake opp til 3.3V. Fordi spenningen må dras opp gjennom en motstand, stiger den litt sakte.
+#### 1. The Hardware and the Problem ("The Slow Rise")
+We use a PC817 optocoupler to isolate the ESP32's 3.3V logic from the treadmill's 5V logic and motor noise.
+* When the magnet hits the sensor, the PC817 turns on and pulls the pin hard down to ground (0V). This provides a perfect, clean input signal.
+* When the magnet leaves the sensor, the PC817 turns off. Now, a 10k pull-up resistor must pull the voltage back up to 3.3V. Because the voltage is being pulled up through a resistor, it rises slowly.
 
-**Problemet:** Akkurat i det denne sakte stigende spenningen krysser ESP32-ens grense for hva som er HØY og LAV, oppstår det mikroskopisk elektrisk dirring. ESP32-en er så rask at den leser denne dirringen som helt nye, falske pulser.
+**The Problem:** Exactly when this slowly rising voltage crosses the ESP32's threshold for HIGH and LOW, microscopic electrical bouncing occurs. The ESP32 is so fast that it reads this bouncing as entirely new, false pulses.
 
-#### 2. Programvaren ("Confirm and Discard")
-I stedet for å bygge komplisert matematikk for å ignorere disse falske pulsene, løser vi det med en brutal og enkel sjekk i selve avlesningen (ISR):
-Når ESP32-en kjenner at signalet går LAVT, vet vi at en ekte magnet vil holde signalet nede i minst 40 millisekunder. Elektrisk dirring og støy fra motoren varer bare i noen få mikrosekunder. Derfor gjør vi følgende:
-1. Pinnen går LAV → Avlesningen starter.
-2. Vi tvinger koden til å vente i 500 mikrosekunder (`delayMicroseconds`).
-3. Sjekk pinnen på nytt: Er den fortsatt LAV? Da er det den ekte magneten. Har den sprettet tilbake til HØY? Da var det bare støy/dirring fra pull-up motstanden, og vi kaster pulsen i søpla.
+#### 2. The Software ("Confirm and Discard")
+Instead of building complex mathematics to ignore these false pulses, we solve it with a brutal and simple check inside the Interrupt Service Routine (ISR):
+When the ESP32 detects the signal going LOW, we know that a real magnet will keep the signal down for at least 40 milliseconds. Electrical bouncing and motor noise only last for a few microseconds. Therefore, we do the following:
+1. Pin goes LOW → Reading starts.
+2. We force the code to wait for 500 microseconds (`delayMicroseconds`).
+3. Check the pin again: Is it still LOW? Then it is the real magnet. Has it bounced back to HIGH? Then it was just noise/bouncing from the pull-up resistor, and we discard the pulse.
 
-**Verifisert kode (Speed ISR):**
-
+**Verified code (Speed ISR):**
 ```cpp
 void IRAM_ATTR isrSpeed() {
-    // 1. Svelger dirring fra 10k pull-up motstanden og motorstøy
+    // 1. Swallow bouncing from the 10k pull-up resistor and motor noise
     delayMicroseconds(500); 
-    if (digitalRead(PIN_SPEED) == HIGH) return; // Var bare støy, avbryt!
+    if (digitalRead(PIN_SPEED) == HIGH) return; // Just noise, abort!
 
-    // 2. Tidsregistrering for den ekte pulsen
+    // 2. Timestamp the actual pulse
     unsigned long now = micros();
     unsigned long delta = now - isr_lastPulseUs;
 
-    // 3. Tillater maks 50 pulser i sekundet (20ms sperre)
+    // 3. Allow max 50 pulses per second (20ms lockout)
     if (delta > 20000UL) {
         isr_intervalUs  = delta;
         isr_lastPulseUs = now;
@@ -321,9 +320,9 @@ To ensure zero-latency control, eliminate the need for virtual keyboards, and av
 * **Signature Workouts:** Predefined hardcoded templates (e.g., "Olympiatoppen 4x4", "Pyramid") populate the workout schedule array dynamically, overriding manual step inputs.
 * **Profile Binding:** Interval targets are stored in `profiles.json` and dynamically loaded based on the active user. When a user is selected, the interval modal pre-populates with their last-used settings.
 * **Psychological & Motivational Overlays:** To reduce cognitive load and provide mental anchoring during high-intensity phases, the engine implements the following deterministic micro-interactions:
-  * **ETA Projection:** The UI must continuously calculate and display the absolute finish time (Estimated Time of Arrival, e.g., "Ferdig kl. 19:42") adjacent to the primary timer. This relies on the system clock and the remaining sequence duration, shifting user focus from elapsed duration to a fixed completion milestone.
-  * **Phase Split-Banner:** Upon the successful completion of a `work` phase, a UI banner is briefly displayed for exactly 4 seconds (e.g., "Drag 3 fullført"). This provides immediate positive reinforcement without requiring the user to parse the main telemetry grid.
-  * **The Halfway Hump:** The engine pre-calculates the 50% threshold of the total scheduled `work` phases. Upon initiating the phase that crosses this median, the UI triggers a distinct visual cue (e.g., "Halvveis!") to shift the user's mental model from counting completed phases to counting remaining phases.
+  * **ETA Projection:** The UI must continuously calculate and display the absolute finish time (Estimated Time of Arrival, e.g., "Done at 19:42") adjacent to the primary timer. This relies on the system clock and the remaining sequence duration, shifting user focus from elapsed duration to a fixed completion milestone.
+  * **Phase Split-Banner:** Upon the successful completion of a `work` phase, a UI banner is briefly displayed for exactly 4 seconds (e.g., "Interval 3 completed"). This provides immediate positive reinforcement without requiring the user to parse the main telemetry grid.
+  * **The Halfway Hump:** The engine pre-calculates the 50% threshold of the total scheduled `work` phases. Upon initiating the phase that crosses this median, the UI triggers a distinct visual cue (e.g., "Halfway!") to shift the user's mental model from counting completed phases to counting remaining phases.
   * **Post-Workout RPE Logging:** Upon entering the `cooldown` phase, the UI intercepts the session termination by prompting the user for a Rate of Perceived Exertion (RPE) score (scale 1–10). This subjective metric is paired with the session's execution data and written to a local log buffer before the UI fully reverts to the standard running state.
 
 ---
@@ -465,6 +464,6 @@ A button is uniquely identified by its **KEY Byte**, **Frame Sequence**, and act
 
 > *Num 5 (formerly ROW_B) and Num 7 (formerly ROW_D) were revised to ROW_A based on raw log re-analysis: 111/114 and 107/111 synchronized O1 hits respectively.*
 >
-> *Num 6: O1 row assignment (ROW_C) is based on legacy fasit analysis. Fresh raw analysis was inconclusive due to insufficient recording overlap between O1 and O2 captures. Verify with a new simultaneous capture.*
+> *Num 6: O1 row assignment (ROW_C) is based on legacy baseline analysis. Fresh raw analysis was inconclusive due to insufficient recording overlap between O1 and O2 captures. Verify with a new simultaneous capture.*
 >
 > *Fan Low uses the shortest frame in the entire table (3 bytes before sync). KEY=0x03 is safe because the sequence 0x01→0x03→0x00→0xFF is unique — no other button uses this exact sequence.*
