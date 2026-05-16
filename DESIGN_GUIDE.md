@@ -1,6 +1,6 @@
-# StrideControl Technical Design Guide (V2.9)
+# StrideControl Technical Design Guide (V3.0)
 
-This document contains all verified physical measurements, protocol specifications, architecture rules, and implementation decisions required to operate the StrideControl system (V2.9 Architecture) safely and predictably.
+This document contains all verified physical measurements, protocol specifications, architecture rules, and implementation decisions required to operate the StrideControl system (V3.0 Architecture) safely and predictably.
 
 > **Primary UI Goal**
 > StrideControl provides a clean, tablet-based web interface for direct speed and incline control. Because the tablet completely covers the original console, the UI must display the treadmill's **actual speed** and **actual incline** derived from post-EMA hardware feedback, not just requested target values.
@@ -101,11 +101,42 @@ Physical Speed (+/−) and Incline (+/−) buttons are **ignored** by the treadm
 
 ### 4.1 Speed (Pin 7)
 
-Read via a PC817 optocoupler for 100% isolation. The software applies a Minimum Pulse Width (blanking) filter to strip AC motor noise, followed by an Exponential Moving Average (EMA) filter. The post-EMA value is the single source of truth for actual speed exposed to the UI and FTMS.
+For å lese farten feilfritt fra tredemølla, bruker vi en kombinasjon av optisk maskinvare-isolasjon og et "Confirm and Discard"-filter i programvaren.
 
-> **PC817 response time:** Typical rise time is 4 µs, fall time 18 µs — but under high pull-up resistance, fall time can reach 50–80 µs. This is negligible at the expected 9–22 Hz pulse range, but must be accounted for in the blanking filter.
->
-> **Blanking threshold:** Set minimum pulse width to 2 ms (500 Hz equivalent). This safely rejects AC motor switching noise while remaining well below the minimum expected speed pulse at 1 km/h (~1–2 Hz).
+#### 1. Maskinvaren og problemet ("The Slow Rise")
+Vi bruker en PC817 optokobler for å skille ESP32-ens 3.3V-logikk fra tredemøllas 5V-logikk og motorstøy.
+* Når magneten treffer sensoren, slår PC817 seg på og trekker pinnen knallhardt ned til jord (0V). Dette gir et perfekt, rent signal inn.
+* Når magneten forlater sensoren, slår PC817 seg av. Nå må en 10k pull-up motstand trekke spenningen tilbake opp til 3.3V. Fordi spenningen må dras opp gjennom en motstand, stiger den litt sakte.
+
+**Problemet:** Akkurat i det denne sakte stigende spenningen krysser ESP32-ens grense for hva som er HØY og LAV, oppstår det mikroskopisk elektrisk dirring. ESP32-en er så rask at den leser denne dirringen som helt nye, falske pulser.
+
+#### 2. Programvaren ("Confirm and Discard")
+I stedet for å bygge komplisert matematikk for å ignorere disse falske pulsene, løser vi det med en brutal og enkel sjekk i selve avlesningen (ISR):
+Når ESP32-en kjenner at signalet går LAVT, vet vi at en ekte magnet vil holde signalet nede i minst 40 millisekunder. Elektrisk dirring og støy fra motoren varer bare i noen få mikrosekunder. Derfor gjør vi følgende:
+1. Pinnen går LAV → Avlesningen starter.
+2. Vi tvinger koden til å vente i 500 mikrosekunder (`delayMicroseconds`).
+3. Sjekk pinnen på nytt: Er den fortsatt LAV? Da er det den ekte magneten. Har den sprettet tilbake til HØY? Da var det bare støy/dirring fra pull-up motstanden, og vi kaster pulsen i søpla.
+
+**Verifisert kode (Speed ISR):**
+
+```cpp
+void IRAM_ATTR isrSpeed() {
+    // 1. Svelger dirring fra 10k pull-up motstanden og motorstøy
+    delayMicroseconds(500); 
+    if (digitalRead(PIN_SPEED) == HIGH) return; // Var bare støy, avbryt!
+
+    // 2. Tidsregistrering for den ekte pulsen
+    unsigned long now = micros();
+    unsigned long delta = now - isr_lastPulseUs;
+
+    // 3. Tillater maks 50 pulser i sekundet (20ms sperre)
+    if (delta > 20000UL) {
+        isr_intervalUs  = delta;
+        isr_lastPulseUs = now;
+        isr_newPulse    = true;
+    }
+}
+```
 
 ### 4.2 Incline (Pin 11)
 
@@ -197,7 +228,7 @@ A full InstantSpeed sequence (7–8 frames × ~3 ms ≈ 25 ms total) must not be
 
 **FTMS Elevation Gain:**
 The FTMS spec requires Positive Elevation Gain, which the hardware does not natively provide. Accumulate algorithmically per tick:
-```
+```text
 elevation_gain += distance_interval_km * 1000 * (incline_pct / 100)
 ```
 
@@ -294,6 +325,7 @@ To ensure zero-latency control, eliminate the need for virtual keyboards, and av
   * **Phase Split-Banner:** Upon the successful completion of a `work` phase, a UI banner is briefly displayed for exactly 4 seconds (e.g., "Drag 3 fullført"). This provides immediate positive reinforcement without requiring the user to parse the main telemetry grid.
   * **The Halfway Hump:** The engine pre-calculates the 50% threshold of the total scheduled `work` phases. Upon initiating the phase that crosses this median, the UI triggers a distinct visual cue (e.g., "Halvveis!") to shift the user's mental model from counting completed phases to counting remaining phases.
   * **Post-Workout RPE Logging:** Upon entering the `cooldown` phase, the UI intercepts the session termination by prompting the user for a Rate of Perceived Exertion (RPE) score (scale 1–10). This subjective metric is paired with the session's execution data and written to a local log buffer before the UI fully reverts to the standard running state.
+
 ---
 
 ## 13. Interval Data Structures
