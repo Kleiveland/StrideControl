@@ -103,12 +103,90 @@ Physical Speed (+/−) and Incline (+/−) buttons are **ignored** by the treadm
 
 To read the speed flawlessly from the treadmill, we use a combination of optical hardware isolation and a "Confirm and Discard" software filter.
 
-#### 1. The Hardware and the Problem ("The Slow Rise")
-We use a PC817 optocoupler to isolate the ESP32's 3.3V logic from the treadmill's 5V logic and motor noise.
-* When the magnet hits the sensor, the PC817 turns on and pulls the pin hard down to ground (0V). This provides a perfect, clean input signal.
-* When the magnet leaves the sensor, the PC817 turns off. Now, a 10k pull-up resistor must pull the voltage back up to 3.3V. Because the voltage is being pulled up through a resistor, it rises slowly.
-
-**The Problem:** Exactly when this slowly rising voltage crosses the ESP32's threshold for HIGH and LOW, microscopic electrical bouncing occurs. The ESP32 is so fast that it reads this bouncing as entirely new, false pulses.
+## 4.1.1 Hardware Configuration — PC817 Output Stage
+ 
+The PC817 output is a transistor switch — it cannot produce voltage or current on its own. It can only connect or disconnect two wires. This determines the entire pull-up architecture.
+ 
+---
+ 
+### Wiring (Collector Side)
+ 
+```
+3.3V ──── 10kΩ ──┬──── GPIO 3 (SPEED_IN)
+                 │
+             PC817 Pin 4 (Collector)
+             PC817 Pin 3 (Emitter) ──── GND
+```
+ 
+---
+ 
+### Why the Pull-up Resistor is Mandatory
+ 
+Without it, GPIO 3 is connected to nothing when the PC817 is off. A floating pin acts as an antenna — it picks up WiFi signals, static electricity, and AC motor EMI, producing hundreds of false readings per second.
+ 
+The 10 kΩ pull-up resistor solves this by acting as a stiff spring holding the door closed:
+ 
+| PC817 State | Transistor | GPIO Voltage | ESP32 Reads |
+|---|---|---|---|
+| **OFF** (no magnet) | Open | Pulled to 3.3V by resistor | Stable **HIGH** |
+| **ON** (magnet present) | Closed (path to GND) | Collapses to 0V | **LOW** |
+ 
+> **Why GND always wins:** Current takes the path of least resistance. GND has 0 Ω, the pull-up has 10,000 Ω. All voltage collapses to 0V the instant the transistor closes.
+ 
+---
+ 
+### The Slow-Rise Side Effect
+ 
+When the PC817 switches **off**, the 10 kΩ resistor must pull the voltage back up to 3.3V. This rise is **not instant** — during the transition, the signal bounces across the ESP32's logic threshold.
+ 
+This is the root cause of the **42 ms ghost pulse** described in [Section 4.1.3](#413-verified-debugging-history--speed-isr), and why the 500 µs confirmation delay exists in the ISR.
+ 
+```
+Voltage
+ 3.3V ─────────────╮          ╭─ bouncing ─╮          ╭──────────
+                   │          │            │          │
+                   ╰──────────╯            ╰──────────╯
+                   ↑                       ↑
+               Magnet in              Magnet out
+               (clean LOW)         (slow rise + bounce)
+```
+ 
+---
+ 
+### Verified Resistor Values
+ 
+| Sensor | Source Voltage | Series Resistor (LED Side) | Forward Current | Pull-up (Collector Side) |
+|---|---|---|---|---|
+| **Speed** (Pin 7) | 11.4V | 10 kΩ | ~1.1 mA | 10 kΩ to 3.3V |
+| **Incline** (Pin 11) | 4.68V | 1 kΩ | ~3.8 mA | 10 kΩ to 3.3V |
+ 
+> The difference in series resistance reflects the different source voltages on the LED side. Both instances use identical pull-up architecture on the collector side.
+ 
+---
+ 
+### Complete Circuit (Both Sensors)
+ 
+**Speed (Pin 7 → GPIO 3):**
+```
+Pin 7 (11.4V) ──── 10kΩ ──── PC817-1 Anode
+                              PC817-1 Katode ──── GND
+ 
+3.3V ──── 10kΩ ──┬──── GPIO 3
+                 │
+             PC817-1 Collector
+             PC817-1 Emitter ──── GND
+```
+ 
+**Incline (Pin 11 → GPIO 14):**
+```
+Pin 11 (4.68V) ──── 1kΩ ──── PC817-2 Anode
+                              PC817-2 Katode ──── GND
+ 
+3.3V ──── 10kΩ ──┬──── GPIO 14
+                 │
+             PC817-2 Collector
+             PC817-2 Emitter ──── GND
+```
 
 #### 2. The Software ("Confirm and Discard")
 Instead of building complex mathematics to ignore these false pulses, we solve it with a brutal and simple check inside the Interrupt Service Routine (ISR):
