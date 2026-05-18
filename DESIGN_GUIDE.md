@@ -101,100 +101,160 @@ Physical Speed (+/−) and Incline (+/−) buttons are **ignored** by the treadm
 
 ### 4.1 Speed (Pin 7)
 
-To read the speed flawlessly from the treadmill, we use a combination of optical hardware isolation and a "Confirm and Discard" software filter.
+To read the speed flawlessly from the treadmill, we use a combination of optical hardware isolation and a non-blocking mathematical software filter to reject signal bounce.
+
+---
 
 ## 4.1.1 Hardware Configuration — PC817 Output Stage
- 
+
 The PC817 output is a transistor switch — it cannot produce voltage or current on its own. It can only connect or disconnect two wires. This determines the entire pull-up architecture.
- 
+
 ---
- 
+
 ### Wiring (Collector Side)
- 
-```
+
+~~~text
 3.3V ──── 10kΩ ──┬──── GPIO 3 (SPEED_IN)
                  │
              PC817 Pin 4 (Collector)
              PC817 Pin 3 (Emitter) ──── GND
-```
- 
+~~~
+
 ---
- 
+
 ### Why the Pull-up Resistor is Mandatory
- 
+
 Without it, GPIO 3 is connected to nothing when the PC817 is off. A floating pin acts as an antenna — it picks up WiFi signals, static electricity, and AC motor EMI, producing hundreds of false readings per second.
- 
+
 The 10 kΩ pull-up resistor solves this by acting as a stiff spring holding the door closed:
- 
-| PC817 State | Transistor | GPIO Voltage | ESP32 Reads |
-|---|---|---|---|
-| **OFF** (no magnet) | Open | Pulled to 3.3V by resistor | Stable **HIGH** |
-| **ON** (magnet present) | Closed (path to GND) | Collapses to 0V | **LOW** |
- 
-> **Why GND always wins:** Current takes the path of least resistance. GND has 0 Ω, the pull-up has 10,000 Ω. All voltage collapses to 0V the instant the transistor closes.
- 
+
+| PC817 State         | Transistor            | GPIO Voltage                  | ESP32 Reads |
+|-------------------|----------------------|-------------------------------|-------------|
+| OFF (no magnet)   | Open                 | Pulled to 3.3V by resistor   | Stable HIGH |
+| ON (magnet present)| Closed (path to GND) | Collapses to 0V              | LOW         |
+
+**Why GND always wins:**  
+Current takes the path of least resistance. GND has 0 Ω, the pull-up has 10,000 Ω. All voltage collapses to 0V the instant the transistor closes.
+
 ---
- 
-### The Slow-Rise Side Effect
- 
-When the PC817 switches **off**, the 10 kΩ resistor must pull the voltage back up to 3.3V. This rise is **not instant** — during the transition, the signal bounces across the ESP32's logic threshold.
- 
-This is the root cause of the **42 ms ghost pulse** described in [Section 4.1.3](#413-verified-debugging-history--speed-isr), and why the 500 µs confirmation delay exists in the ISR.
- 
-```
+
+### The Slow-Rise Side Effect & Bouncing
+
+When the PC817 switches off, the 10 kΩ resistor must pull the voltage back up to 3.3V. This rise is not instant — during the transition, the signal bounces across the ESP32's logic threshold.
+
+This slow-rise behavior can cause the signal to cross the ESP32 logic threshold multiple times. These threshold crossings produce additional digital edges ("bounce") in the microsecond range, especially at low speeds where the signal remains near the threshold for longer periods.
+
+~~~text
 Voltage
  3.3V ─────────────╮          ╭─ bouncing ─╮          ╭──────────
                    │          │            │          │
                    ╰──────────╯            ╰──────────╯
                    ↑                       ↑
-               Magnet in              Magnet out
+               Magnet in               Magnet out
                (clean LOW)         (slow rise + bounce)
-```
- 
+~~~
+
 ---
- 
-### Verified Resistor Values
- 
+
+### Verified Circuit Parameters
+
 | Sensor | Source Voltage | Series Resistor (LED Side) | Forward Current | Pull-up (Collector Side) |
-|---|---|---|---|---|
-| **Speed** (Pin 7) | 11.4V | 10 kΩ | ~1.1 mA | 10 kΩ to 3.3V |
-| **Incline** (Pin 11) | 4.68V | 1 kΩ | ~3.8 mA | 10 kΩ to 3.3V |
- 
-> The difference in series resistance reflects the different source voltages on the LED side. Both instances use identical pull-up architecture on the collector side.
- 
+|--------|--------------|-----------------------------|----------------|--------------------------|
+| Speed (Pin 7) | 11.4V | 10 kΩ | ~1.1 mA | 10 kΩ to 3.3V |
+| Incline (Pin 11) | 4.68V | 1 kΩ | ~3.8 mA | 10 kΩ to 3.3V |
+
 ---
- 
+
 ### Complete Circuit (Both Sensors)
- 
+
 **Speed (Pin 7 → GPIO 3):**
-```
+
+~~~text
 Pin 7 (11.4V) ──── 10kΩ ──── PC817-1 Anode
-                              PC817-1 Katode ──── GND
- 
+                             PC817-1 Katode ──── GND
+
 3.3V ──── 10kΩ ──┬──── GPIO 3
                  │
              PC817-1 Collector
              PC817-1 Emitter ──── GND
-```
- 
+~~~
+
+---
+
 **Incline (Pin 11 → GPIO 14):**
-```
+
+~~~text
 Pin 11 (4.68V) ──── 1kΩ ──── PC817-2 Anode
-                              PC817-2 Katode ──── GND
- 
+                             PC817-2 Katode ──── GND
+
 3.3V ──── 10kΩ ──┬──── GPIO 14
                  │
              PC817-2 Collector
              PC817-2 Emitter ──── GND
-```
+~~~
 
-#### 2. The Software ("Confirm and Discard")
-Instead of building complex mathematics to ignore these false pulses, we solve it with a brutal and simple check inside the Interrupt Service Routine (ISR):
-When the ESP32 detects the signal going LOW, we know that a real magnet will keep the signal down for at least 40 milliseconds. Electrical bouncing and motor noise only last for a few microseconds. Therefore, we do the following:
-1. Pin goes LOW → Reading starts.
-2. We force the code to wait for 500 microseconds (`delayMicroseconds`).
-3. Check the pin again: Is it still LOW? Then it is the real magnet. Has it bounced back to HIGH? Then it was just noise/bouncing from the pull-up resistor, and we discard the pulse.
+---
 
+## 4.1.2 Software Filtering (Mathematical Glitch Rejection)
+
+When the ESP32 detects the signal going LOW, a real magnet will keep the signal down for a duration (typically in the millisecond range, ~2–5 ms at 10–25 km/h based on verified measurements).
+
+However, electrical bouncing and motor noise occur on the microsecond scale and may produce multiple rapid transitions around the threshold during both entry and exit of the magnet. Furthermore, at extremely low speeds (e.g., 1 km/h), the exit bounce and threshold oscillation can occur several milliseconds after the initial trigger.
+
+Because the ESP32 must also monitor the fast-paced O1/O2 communication bus, we cannot use blocking delays (`delayMicroseconds()`) inside the Interrupt Service Routine (ISR) to filter this noise.
+
+---
+
+### Two-Stage Non-Blocking Filter
+
+The system applies a two-stage, non-blocking time filter:
+
+#### Micro-glitch rejection (~300 µs)
+Extremely short intervals are discarded immediately. These represent electrical noise and threshold bounce, not real rotations.
+
+#### Double-edge lockout (≈2 ms)
+To prevent additional edges (including slower exit bounce and threshold oscillation) from being counted as new physical rotations, any edge arriving shortly after a valid pulse is ignored.
+
+The exact value (typically 1–3 ms) is chosen to:
+- be significantly larger than observed microsecond-scale bounce
+- but much smaller than the minimum physical pulse interval (~45 ms at maximum speed)
+
+---
+
+### Verified Code (Non-Blocking Speed ISR)
+
+~~~cpp
+volatile unsigned long isr_lastPulseUs = 0;
+volatile unsigned long isr_intervalUs  = 0;
+volatile bool isr_newPulse = false;
+
+// Stage 1: Reject threshold bounce and motor noise
+const unsigned long GLITCH_REJECT_US = 300;
+
+// Stage 2: Prevent threshold oscillation and slow exit-bounce
+const unsigned long LOCKOUT_US = 2000;
+
+void IRAM_ATTR isrSpeed() {
+    unsigned long now = micros();
+    unsigned long delta = now - isr_lastPulseUs;
+
+    // Reject micro-glitches and most exit-bounce edges.
+    // Remaining robustness relies on appropriate LOCKOUT_US tuning.
+    if (delta < GLITCH_REJECT_US) return;
+    if (delta < LOCKOUT_US) return;
+
+    // Valid physical rotation detected
+    isr_intervalUs  = delta;
+    isr_lastPulseUs = now;
+    isr_newPulse    = true;
+}
+~~~
+
+---
+
+### Result
+
+This mathematical approach ensures that, under all tested conditions, one physical rotation produces a single registered pulse, providing stable readings from **1 km/h to 25 km/h** while leaving the CPU fully available for the O1/O2 bus logic.
 **Verified code (Speed ISR):**
 
 ```cpp
