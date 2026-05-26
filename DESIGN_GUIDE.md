@@ -178,17 +178,27 @@ Injection sequence must include:
 
 This ensures the treadmill controller reliably registers injected signals.
 
-### 4.7 Console Button Behavior (Verified)
+### 4.7 Fractional Speed Targeting (Nearest Integer Optimization)
+
+To minimize total injection time and UI latency for fractional speed values, the system uses `round()` to find the nearest whole-number base speed, then adjusts by discrete Speed +/− increments.
+
+* **Example 1:** Target 12.6 km/h → inject 13 via InstantSpeed macro, then 4× Speed−.
+* **Example 2:** Target 12.4 km/h → inject 12 via InstantSpeed macro, then 4× Speed+.
+* **Boundary Clamping:** `round()` can produce values outside the 1–20 km/h range at the extremes. The target must be clamped after rounding before injection.
+* **Rate Limiting:** A full InstantSpeed sequence (~25 ms total) must not be re-triggered while already in progress. Enforce a minimum 500 ms cooldown between complete sequences when driven by FTMS.
+* **Constraint:** Injection sequences must not overlap with O1 scan timing windows. All adjustments must remain bounded within valid injection frames.
+
+### 4.8 Console Button Behavior (Verified)
 
 Physical Speed (+/−) and Incline (+/−) buttons are **ignored** by the treadmill mainboard unless the belt is actively moving. It is not possible to pre-set a target speed or incline via the console before starting. This constraint also applies to injected commands — do not queue Speed/Incline injections before the RUNNING state is confirmed.
 
-### 4.8 Mechanical Incline Behavior
+### 4.9 Mechanical Incline Behavior
 
 - A QUICK START command always drives the incline physically to 0% as a homing sequence.
 - Measured travel time under user load: 0% → 15% = 49 seconds, 15% → 0% = 48 seconds.
 - This is used as the incline homing baseline in software.
 
-### 4.9 Hardware Architecture — Two-Board MitM Design
+### 4.10 Hardware Architecture — Two-Board MitM Design
 
 The physical implementation uses a split-board approach to separate 5V switching logic from 3.3V microelectronics.
 
@@ -218,6 +228,17 @@ The physical implementation uses a split-board approach to separate 5V switching
 No subsystem (UI, FTMS, command queue) may override or infer these values independently.
 
 All output systems must consume the same internal state variables.
+
+### 5.3 Cadence (LSM6DSOX)
+
+An LSM6DSOX IMU is mounted to the lower treadmill frame via I2C. It uses the built-in hardware step counter to derive cadence from footstrike shockwaves. The I2C bus is actively terminated via an LTC4311 extender to handle the 2-meter cable run from the frame to the motor compartment.
+
+* **Cabling:** Shielded repurposed USB cable to protect against 3.5 HP motor EMI.
+* **Connectors:** Wago 221 vibration-proof connectors at the frame splice; GX12 Aviation plug at the ESP32 enclosure for modularity.
+* **Graceful Degradation:** If the sensor disconnects or the I2C bus faults, cadence defaults to 0 SPM. This must not trigger a crash or interfere with Core 1 motor pulse processing.
+* **Polling:** Must be polled asynchronously to prevent blocking Core 1 interrupts.
+* **Constraint:** The cadence subsystem must run entirely on Core 0 and must never interfere with ISR timing or injection logic.
+
 
 ---
 
@@ -510,6 +531,15 @@ Rules:
 - Firmware OTA and filesystem OTA are treated as separate artifacts
 - Configuration changes should be written atomically (tmp-write + rename)
 
+* **Custom Partition Table:** A custom CSV partition scheme is strictly required. The default partitions will fail due to the heavy flash footprint of Dual-Role BLE and AsyncWebServer combined. Allocate a minimum of `1.8 MB` for the primary application partition (`app0`), leaving the remainder for the LittleFS data partition.
+* **OTA Constraint:** If OTA updates are required, a dual-application layout (`app0` + `app1`) must be used. This reduces available application size and must be considered when defining partition sizes.
+
+### 10.4 Bootstrap, Recovery & AP Mode
+
+* **Network Fallback:** The device must be deployable and recoverable without serial/USB intervention. If pre-configured WiFi credentials fail or are missing, the system must gracefully fall back to an Access Point (AP) mode.
+* **Trigger Condition:** AP mode must activate after repeated connection failures (e.g. >5 retries or ~30 seconds timeout during boot).
+* **Configuration Portal:** In AP mode, a lightweight captive portal must be exposed to allow the user to input new WiFi credentials, configure device settings (including FTMS name), and execute the manual **Re-home Incline** calibration routine.
+``
 ---
 
 ## 11. CSAFE Rules (RS232)
@@ -552,16 +582,67 @@ Application code must never read UART directly. CSAFE must be handled as a dedic
 - Speed format: integer with 0.01 resolution (e.g., 12.50 km/h → 1250)
 - Incline format: integer with 0.1 resolution (e.g., 3.5% → 35)
 - Loss of BLE client must not stop telemetry capture or corrupt treadmill state tracking
+- * **FTMS Elevation Gain:** The FTMS specification requires Positive Elevation Gain, which the hardware does not natively provide. Accumulate algorithmically per update:
+  `elevation_gain += distance_interval_km * 1000 * (incline_pct / 100)`
+
+* **Cadence Integration:** Cadence derived from the LSM6DSOX hardware step-counter must be included in the FTMS payload when available.
+
+* **BLE Heart Rate Proxy (Dual-Role):** The NimBLE stack must operate in **Dual-Role** mode. The ESP32 acts as:
+  - a **Client** to scan and connect to external BLE Heart Rate monitors
+  - a **Server** to broadcast FTMS data
+
+  The proxy injects received HR data into the FTMS payload. The selected device MAC must be persisted in NVS for automatic reconnection.
+
+* **Constraint:** All BLE operations must remain on Core 0. BLE scanning, connections, and FTMS broadcasting must never interfere with Core 1 ISR timing or injection logic.
 
 ---
 
-## 14. GUI & Frontend Rules (High-Level)
+## 14. GUI Architecture & Interval Coach
 
-- Vanilla JavaScript only (no frameworks)
-- Stateless UI rendering from WebSocket telemetry
-- WebSocket update rate bounded (5–10 Hz)
-- Use `pointerdown` events for low-latency interaction
-- Avoid visual flicker (tabular numbers; sensible distance resolution)
+### 14.1 Stateless UI & Quick Keys
+* **Stack:** Vanilla JavaScript only. No frameworks. Stateless UI rendering from WebSocket telemetry.
+* **Interaction:** `pointerdown` events bypass mobile browser tap delay.
+* **Quick Keys (Grid):** 8-button symmetrical grids at the top (Incline) and bottom (Speed) for instant manual control.
+* **Macro Presets (HVILE / DRAG):** Prominent action buttons populated dynamically from `profiles.json`.
+* **Persistent Availability:** Manual controls must always be available, even during interval focus mode.
+
+### 14.2 Pro Interval Coach (Visual Engine)
+* **No Automated Control:** The interval engine is strictly visual and auditory. It never injects commands automatically.
+* **Focus Mode:** UI transitions to `focus-mode`, minimizing distractions and centering countdown timers.
+* **Audio Cues:** Beeps generated using Web Audio API. No external audio files required.
+* **Psychological Overlays:**
+  - ETA projection (finish time)
+  - Phase completion banners
+  - Post-workout RPE prompt
+
+### 14.3 User Profile Schema (profiles.json)
+
+```json
+{
+  "users": [
+    {
+      "name": "Kristian",
+      "presets": {
+        "hvile": 6.0,
+        "drag": 16.0
+      },
+      "quick_keys": {
+        "speed": [4, 6, 8, 10, 12, 14, 16, 18],
+        "incline": [0, 1, 2, 4, 6, 8, 10, 12]
+      },
+      "last_interval": {
+        "work_m": 0,
+        "work_s": 45,
+        "rest_m": 0,
+        "rest_s": 15,
+        "reps": 10,
+        "series": 2,
+        "series_rest_m": 3
+      },
+      "history": []
+    }
+  ]
+}
 
 ---
 
