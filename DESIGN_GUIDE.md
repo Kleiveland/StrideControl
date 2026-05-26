@@ -239,6 +239,48 @@ An LSM6DSOX IMU is mounted to the lower treadmill frame via I2C. It uses the bui
 * **Polling:** Must be polled asynchronously to prevent blocking Core 1 interrupts.
 * **Constraint:** The cadence subsystem must run entirely on Core 0 and must never interfere with ISR timing or injection logic.
 
+### 5.3 Runner Presence Detection (Cadence Validation)
+
+To prevent false activity logging in external systems (e.g. Zwift, sports watches), the system must detect whether a runner is physically present on the treadmill.
+
+This is derived from cadence (LSM6DSOX) in combination with measured speed.
+
+#### Operational Rule
+
+If:
+
+- **Measured speed > 0 km/h** (Pin 7 indicates belt is moving)
+- AND **Cadence = 0 SPM** (no footstrike detected for a defined timeout window)
+
+Then:
+
+- The system must classify this as **"No Runner Present"** (ghost running condition)
+
+#### Effects
+
+When "No Runner Present" is active:
+
+- **FTMS speed output must be forced to 0**
+- **Distance accumulation must be paused or suppressed**
+- **Cadence remains 0**
+- Internal treadmill state remains unchanged (no interference with motor control)
+
+#### Timeout Definition
+
+- A cadence timeout window of approximately **2–3 seconds** is recommended to prevent false triggering during step transitions.
+
+#### Safety Constraint
+
+- This logic **must not interfere with Core 1 real-time processing**
+- Detection and filtering must be handled on Core 0
+
+#### Design Intent
+
+This feature ensures that external systems:
+
+- do not log running activity when the user steps off the treadmill
+- maintain accurate training data integrity
+
 ---
 
 ## 6. Speed Sensor (Pin 7)
@@ -698,3 +740,31 @@ To avoid unnecessary flash wear and prevent runtime state from being persisted a
 ### A.5 BLE MTU Negotiation Optimization
 
 To reduce latency and avoid payload splitting, the software may request MTU negotiation (e.g., `setMTU(64)`) at BLE stack initialization. This is an optional optimization and must be tested against the target client applications, as support and benefit vary by receiver Bluetooth stack.
+
+### A.6 Future Enhancement: IMU-Based Incline Verification
+
+The current incline model is based on homing and pulse counting (open-loop estimation). While this is sufficient for normal operation, it does not verify actual physical incline.
+
+#### Proposed Enhancement
+
+The LSM6DSOX IMU may be used to measure absolute tilt (gravity vector) of the treadmill deck to:
+
+- verify actual incline against expected model
+- detect drift or missed pulses
+- provide automatic recalibration without requiring a full homing cycle
+
+#### Potential Use Cases
+
+- Detect mechanical slip or missed incline pulses
+- Validate NVS-stored incline position after power loss
+- Improve long-term accuracy without manual recalibration
+
+#### Constraints
+
+- IMU readings are subject to vibration noise from the motor and user impact
+- Filtering and averaging are required (low-pass filtering / Kalman filtering)
+- Must not interfere with Core 1 timing or real-time injection logic
+
+#### Status
+
+This feature is **not part of V3.5 operational logic** and is reserved for future development (e.g. V3.6+)
