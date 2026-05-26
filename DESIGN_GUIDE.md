@@ -1,6 +1,6 @@
-# StrideControl Technical Design Guide (V3.1)
+# StrideControl Technical Design Guide (V3.3)
 
-This document contains verified physical measurements, protocol specifications, architecture rules, and implementation decisions required to operate the StrideControl system (V3.1 Architecture) safely and predictably.
+This document contains verified physical measurements, protocol specifications, architecture rules, and implementation decisions required to operate the StrideControl system (V3.3 Architecture) safely and predictably.
 
 > **Primary UI Goal**
 > StrideControl provides a clean, tablet-based web interface for direct speed and incline control. Because the tablet completely covers the original console, the UI must display the treadmill's **actual speed** and **actual incline** derived from hardware feedback, not just requested target values.
@@ -55,13 +55,10 @@ Loss of ESP32 power must never interrupt:
 
 ### 2.4 ISR Design Rule
 
-All Interrupt Service Routines must be:
+ISRs must be minimal and non-blocking where possible, limited to timestamping and minimal validation. No logging, UI updates, networking, or serial I/O is allowed inside ISRs.
 
-- Non-blocking (no `delayMicroseconds()`, no waiting)
-- Constant-time execution
-- Limited to timestamping and minimal validation
-
-No logging, UI updates, networking, or serial I/O is allowed inside ISRs.
+- **Exception Rule:** Short blocking delays are strictly prohibited *unless* required for critical signal validation and EMI rejection, and must be explicitly documented.
+- *Current Exception:* The Incline ISR (Pin 11) uses a brief `delayMicroseconds(10)` to filter heavy motor noise on the falling edge.
 
 ---
 
@@ -127,15 +124,49 @@ Console communication uses time-division multiplexing across two 5V logic buses:
 
 > **TXS0108E OE pin:** The TXS0108E is passive (all channels high-impedance) until OE is driven HIGH. If OE is left floating or pulled LOW, O1 and O2 communication will silently fail with no error indication. Tie OE directly to 3.3V, or drive via a GPIO set HIGH in `setup()` before any interrupt is attached.
 
+> **MUTE_PIN Configuration:** The physical MUTE line has a hardware pull-up to 5V on the switch board. To protect the 3.3V ESP32, the `MUTE_PIN` **must** be configured as `OUTPUT_OPEN_DRAIN` in software. It pulls LOW to mute, and releases (high-impedance) to close the gates.
+
 ### 4.4 Frame Injection Protocol
 
 Each button press is uniquely identified by the combination of its KEY byte, the specific frame sequence (O2), and the active O1 row pattern.
 
 - **Sync Pulse:** 0xFF (all O2 lines HIGH) terminates every frame at ~330 Hz.
 - **Injection Window:** Injection occurs strictly within the ~3 ms window triggered by a hardware interrupt detecting the correct O1 row FALLING edge.
-- **Mute Duration:** The 74HC4066 gate is opened (MUTE_PIN HIGH) for the duration of one frame only (~3 ms), then immediately released.
+- **Mute Duration (Active-Low):** The 74HC4066 gate is opened by pulling the line to GND (**MUTE_PIN LOW**) for the duration of one frame only (~3 ms), then immediately released to its default 5V pull-up state.
 
-### 4.5 Injection Timing Detail
+### 4.5 Button Command Mapping (O2 Bus Injection)
+
+Each physical button on the console is identified by a specific 8-bit frame (KEY byte) injected onto the O2 bus during its corresponding O1 Row scan window. The frame sequences below denote the exact byte order pumped to the O2 bus per scan cycle.
+
+*Verified Injection Matrix (from log analysis Appendix A):*
+
+| Function | KEY Byte | Frame Sequence (O2) | O1 Row | Pattern |
+|---|---|---|---|---|
+| **Speed +** | `0x23` | `0x01` → `0x23` → `0x00` → `0xFF` | ROW_D | `0x2D` |
+| **Speed −** | `0x13` | `0x01` → `0x13` → `0x00` → `0xFF` | ROW_E | `0x1F` |
+| **Incline +** | `0x83` | `0x01` → `0x83` → `0x00` → `0xFF` | ROW_A | `0x3C` |
+| **Incline −** | `0x07` | `0x01` → `0x07` → `0x00` → `0xFF` | ROW_C | `0x35` |
+| **Quick Start** | `0x0B` | `0x01` → `0x0B` → `0x00` → `0xFF` | ROW_C | `0x35` |
+| **Stop** | `0x43` | `0x01` → `0x43` → `0x00` → `0xFF` | ROW_C | `0x35` |
+| **Enter** | `0x11` | `0x01` → `0x11` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_C | `0x35` |
+| **Clear** | `0x81` | `0x81` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_D | `0x2D` |
+| **Instant Speed** | `0x03` | `0x01` → `0x03` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_E | `0x1F` |
+| **Instant Incline** | `0x03` | `0x03` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_D | `0x2D` |
+| **Num 0** | `0x05` | `0x01` → `0x05` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_E | `0x1F` |
+| **Num 1** | `0x41` | `0x41` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_E | `0x1F` |
+| **Num 2** | `0x09` | `0x01` → `0x09` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_C | `0x35` |
+| **Num 3** | `0x21` | `0x01` → `0x21` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_C | `0x35` |
+| **Num 4** | `0x21` | `0x21` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_D | `0x2D` |
+| **Num 5** | `0x09` | `0x09` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_A | `0x3C` |
+| **Num 6** | `0x41` | `0x01` → `0x41` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_C | `0x35` |
+| **Num 7** | `0x11` | `0x11` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_A | `0x3C` |
+| **Num 8** | `0x05` | `0x05` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_E | `0x1F` |
+| **Num 9** | `0x81` | `0x01` → `0x81` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_D | `0x2D` |
+| **Fan High** | `0x09` | `0x01` → `0x09` → `0x03` → `0x00` → `0xFF` | IDLE | `0x3F` |
+| **Fan Low** | `0x03` | `0x01` → `0x03` → `0x00` → `0xFF` | IDLE | `0x3F` |
+| **Fan On/Off** | `0x05` | `0x01` → `0x05` → `0x03` → `0x00` → `0xFF` | ROW_D | `0x2D` |
+
+### 4.6 Injection Timing Detail
 
 Injection sequence must include:
 
@@ -147,15 +178,32 @@ Injection sequence must include:
 
 This ensures the treadmill controller reliably registers injected signals.
 
-### 4.6 Console Button Behavior (Verified)
+### 4.7 Console Button Behavior (Verified)
 
 Physical Speed (+/−) and Incline (+/−) buttons are **ignored** by the treadmill mainboard unless the belt is actively moving. It is not possible to pre-set a target speed or incline via the console before starting. This constraint also applies to injected commands — do not queue Speed/Incline injections before the RUNNING state is confirmed.
 
-### 4.7 Mechanical Incline Behavior
+### 4.8 Mechanical Incline Behavior
 
 - A QUICK START command always drives the incline physically to 0% as a homing sequence.
 - Measured travel time under user load: 0% → 15% = 49 seconds, 15% → 0% = 48 seconds.
 - This is used as the incline homing baseline in software.
+
+### 4.9 Hardware Architecture — Two-Board MitM Design
+
+The physical implementation uses a split-board approach to separate 5V switching logic from 3.3V microelectronics.
+
+- **Board 1 (Switch Board / 5V Logic):**
+  - Located inline between the console (INN) and motor controller (UT).
+  - Contains 2x 74HC4066 chips acting as gates on the O2 bus (lines 9-16).
+  - O1 bus (lines 3-8) and power pass directly through via Y-junctions (TAPs).
+  - **MUTE control:** Hardware 10kΩ pull-up to 5V ensures fail-safe CLOSED state.
+  - Outputs all 16 signals via a TAP ribbon cable.
+
+- **Board 2 (Brain Board / Level Shifting):**
+  - Takes the 16-pin TAP cable from Board 1.
+  - Contains 2x TXS0108E bidirectional level shifters.
+  - Translates 5V signals to 3.3V safe logic for the ESP32-S3.
+  - Outputs directly to ESP32 GPIOs.
 
 ---
 
@@ -188,6 +236,7 @@ The PC817 output is a transistor switch — it cannot produce voltage or current
                  │
              PC817 Pin 4 (Collector)
              PC817 Pin 3 (Emitter) ──── GND
+
 ```
 
 #### Why the Pull-up Resistor is Mandatory
@@ -208,12 +257,13 @@ Voltage
                    ↑                       ↑
                Magnet in               Magnet out
                (clean LOW)         (slow rise + bounce)
+
 ```
 
 #### Verified Circuit Parameters
 
 | Sensor | Source Voltage | Series Resistor (LED Side) | Forward Current | Pull-up (Collector Side) |
-|--------|--------------|-----------------------------|----------------|--------------------------|
+| --- | --- | --- | --- | --- |
 | Speed (Pin 7) | 11.4V | 10 kΩ | ~1.1 mA | 10 kΩ to 3.3V |
 | Incline (Pin 11) | 4.68V | 1 kΩ | ~3.8 mA | 10 kΩ to 3.3V |
 
@@ -229,13 +279,13 @@ Because the ESP32 must also monitor the fast-paced O1/O2 communication bus, we c
 
 #### Two-Stage Non-Blocking Filter
 
-- **Micro-glitch rejection (~300 µs):** Extremely short intervals are discarded immediately.
-- **Double-edge lockout (≈2 ms):** Prevents additional edges after a valid pulse from being counted as a new physical rotation.
+* **Micro-glitch rejection (~300 µs):** Extremely short intervals are discarded immediately.
+* **Double-edge lockout (≈2 ms):** Prevents additional edges after a valid pulse from being counted as a new physical rotation.
 
 The exact value (typically 1–3 ms) is chosen to:
 
-- be significantly larger than observed microsecond-scale bounce
-- but much smaller than the minimum physical pulse interval (~45 ms at maximum speed)
+* be significantly larger than observed microsecond-scale bounce
+* but much smaller than the minimum physical pulse interval (~45 ms at maximum speed)
 
 #### Verified Code (Non-Blocking Speed ISR)
 
@@ -264,35 +314,38 @@ void IRAM_ATTR isrSpeed() {
     isr_lastPulseUs = now;
     isr_newPulse    = true;
 }
+
 ```
 
 ### 6.3 Expected Speed Signal Characteristics (Post-Filtering)
 
-- One valid falling edge per physical rotation
-- No additional edges within <2 ms after a valid pulse
-- Stable frequency corresponding to:
-  - ~2 Hz at 1 km/h
-  - ~9 Hz at 10 km/h
-  - ~22 Hz at 25 km/h
+* One valid falling edge per physical rotation
+* No additional edges within <2 ms after a valid pulse
+* Stable frequency corresponding to:
+* ~2 Hz at 1 km/h
+* ~9 Hz at 10 km/h
+* ~22 Hz at 25 km/h
+
+
 
 ### 6.4 Speed Continuity & Fault Handling
 
 #### Speed Continuity Rule
 
-- Last valid speed value may be maintained briefly if pulses are temporarily missing
-- If no valid pulse is received within a timeout window → speed is set to 0
+* Last valid speed value may be maintained briefly if pulses are temporarily missing
+* If no valid pulse is received within a timeout window → speed is set to 0
 
 #### Speed Signal Fault Detection (Ghost Running)
 
 If:
 
-- CSAFE reports RUNNING
-- and no valid speed pulses are detected for >2 seconds
+* CSAFE reports RUNNING
+* and no valid speed pulses are detected for >2 seconds
 
 Then:
 
-- UI resets speed to 0
-- a fault condition is logged
+* UI resets speed to 0
+* a fault condition is logged
 
 ---
 
@@ -316,6 +369,7 @@ Pin 11 (4.68V) ──── 1kΩ ──── PC817-2 Anode
                  │
              PC817-2 Collector
              PC817-2 Emitter ──── GND
+
 ```
 
 **Legacy/previously used interface (still relevant for troubleshooting):** BSS138-based level shifting has been used successfully in some prototypes. If incline is already stable and verified in a given build, it may remain unchanged until a full system regression test is complete.
@@ -336,40 +390,43 @@ Incline pulse count is committed to persistent storage when movement stops (or w
 
 Verified reference points:
 
-- 10 km/h = 8.97 Hz
-- 25 km/h = 22.3 Hz
+* 10 km/h = 8.97 Hz
+* 25 km/h = 22.3 Hz
 
 Working conversion:
 
-- `Speed (km/h) = Frequency (Hz) * 1.1148` (anchored to 10 km/h)
+* `Speed (km/h) = Frequency (Hz) * 1.1148` (anchored to 10 km/h)
 
 Derived odometer constant:
 
-- `1 meter = 3.2292 pulses`
+* `1 meter = 3.2292 pulses`
 
 ### 8.2 Speed Calibration and AutoCal
 
 The system supports a dynamic calibration model:
 
-- Base conversion uses a fixed factor (`km/h = Hz * constant`)
-- A correction table refines accuracy per speed range
-- Linear interpolation is used between known calibration points
+* Base conversion uses a fixed factor (`km/h = Hz * constant`)
+* A correction table refines accuracy per speed range
+* Linear interpolation is used between known calibration points
 
 Learning rules:
 
-- Calibration updates occur only when speed is stable
-- Values are updated in RAM during operation
-- Persistent writes occur only when treadmill enters STOPPED state
+* Calibration updates occur only when speed is stable
+* Values are updated in RAM during operation
+* Persistent writes occur only when treadmill enters STOPPED state
 
 This minimizes flash wear and prevents incorrect learning during transient states.
 
-### 8.3 Incline Calibration
+### 8.3 Incline Calibration (Verified)
 
-- Pin 11 emits ~394 Hz while incline is moving
-- QUICK START homes incline to 0%
-- Full travel is ~49 s upward and ~48 s downward under load
+* Pin 11 emits ~394 Hz while incline is moving.
+* A QUICK START command homes the incline to 0%.
+* Physical measurements confirm an asymmetry in pulse counts due to gravity assist on descent.
 
-A final fixed pulses-per-percent constant is intentionally not declared until a full measured 0% → 15% sweep pulse count has been captured and validated.
+*Verified calibration constants (from physical sweep):*
+
+* `PULSES_PER_PERCENT_UP = 3086.0f`
+* `PULSES_PER_PERCENT_DOWN = 2943.0f`
 
 ---
 
@@ -377,28 +434,28 @@ A final fixed pulses-per-percent constant is intentionally not declared until a 
 
 ### 9.1 MCU & Profile
 
-- Controller: ESP32-S3 (dual-core)
-- Required profile: N16R8 (for long-session stability with WiFi + BLE + web assets)
+* Controller: ESP32-S3 (dual-core)
+* Required profile: N16R8 (for long-session stability with WiFi + BLE + web assets)
 
 ### 9.2 Logic Level Translation
 
-- Two TXS0108E 8-channel bi-directional level shifters bridge 5V O1/O2 buses to 3.3V GPIO
-- OE must be held HIGH at all times
+* Two TXS0108E 8-channel bi-directional level shifters bridge 5V O1/O2 buses to 3.3V GPIO
+* OE must be held HIGH at all times
 
 ### 9.3 Data Gate (Mute Circuit)
 
-- Hardware: SN74HC4066N inline on O2 data bus
-- Default state must preserve native console communication
-- Fail-safe pull-down on MUTE_PIN ensures pass-through on MCU reset/power loss
+* Hardware: SN74HC4066N inline on O2 data bus
+* Default state must preserve native console communication
+* **Fail-safe hardware pull-up (5V)** on the MUTE line ensures the 4066 gates default to CLOSED (conducting). This guarantees pass-through of native console signals upon MCU reset or power loss. (MUTE_PIN HIGH = switches closed/normal operation. MUTE_PIN LOW = switches open/injection active).
 
 ### 9.4 Power Supply
 
-- HLK-PM01 AC-to-5V module for permanent internal power
-- Mains-side fusing and isolation are required
+* HLK-PM01 AC-to-5V module for permanent internal power
+* Mains-side fusing and isolation are required
 
 ### 9.5 CSAFE Physical Interface
 
-- RJ45 to MAX3232 (9600 baud, 8-N-1)
+* RJ45 to MAX3232 (9600 baud, 8-N-1)
 
 ---
 
@@ -406,12 +463,12 @@ A final fixed pulses-per-percent constant is intentionally not declared until a 
 
 ### 10.1 Dual-Core Task Split
 
-- **Core 0:** WiFi, Web server, WebSockets, LittleFS, Bluetooth FTMS, system logging
-- **Core 1:** Sensor ISRs (Pin 7, Pin 11), injection timing tasks, safety watchdog tasks
+* **Core 0:** WiFi, Web server, WebSockets, LittleFS, Bluetooth FTMS, system logging
+* **Core 1:** Sensor ISRs (Pin 7, Pin 11), injection timing tasks, safety watchdog tasks
 
 Thread safety:
 
-- Shared state between cores must be protected by a global `portMUX_TYPE` spinlock.
+* Shared state between cores must be protected by a global `portMUX_TYPE` spinlock.
 
 ### 10.2 Telemetry Rate Control & Backpressure
 
@@ -419,40 +476,40 @@ Real-time pulse capture, WebSocket rendering, CSAFE parsing, and FTMS broadcasti
 
 Rules:
 
-- Hardware capture is interrupt-driven
-- No UI/network work inside ISR
-- Downstream consumers read from internal state at fixed rates
-- If consumers cannot keep up, newest state replaces pending state (stale frames may be dropped)
-- Pulse counters and homing-critical state must never be dropped
+* Hardware capture is interrupt-driven
+* No UI/network work inside ISR
+* Downstream consumers read from internal state at fixed rates
+* If consumers cannot keep up, newest state replaces pending state (stale frames may be dropped)
+* Pulse counters and homing-critical state must never be dropped
 
 ### 10.3 Filesystem, Persistence & OTA
 
-- Web assets and configuration are stored in LittleFS
-- Persistent writes are batched and only committed on STOPPED transitions where possible
-- Firmware OTA and filesystem OTA are treated as separate artifacts
-- Configuration changes should be written atomically (tmp-write + rename)
+* Web assets and configuration are stored in LittleFS
+* Persistent writes are batched and only committed on STOPPED transitions where possible
+* Firmware OTA and filesystem OTA are treated as separate artifacts
+* Configuration changes should be written atomically (tmp-write + rename)
 
 ---
 
 ## 11. CSAFE Rules (RS232)
 
-- Connection: RJ45 to MAX3232 (9600 baud, 8-N-1)
-- Polling is split into two separate frames (merging may destabilize the treadmill serial controller):
+* Connection: RJ45 to MAX3232 (9600 baud, 8-N-1)
+* Polling is split into two separate frames (merging may destabilize the treadmill serial controller):
+* Keep-alive: `0xF1 0x85 0x85 0xF2`
+* Status request: `0xF1 0x80 0x80 0xF2`
 
-  - Keep-alive: `0xF1 0x85 0x85 0xF2`
-  - Status request: `0xF1 0x80 0x80 0xF2`
 
-- Polling interval: 200–250 ms
+* Polling interval: 200–250 ms
 
 Forbidden commands (do not send):
 
-- `0xAA`, `0xA5`, `0x9C` (known to cause buffer corruption on DK-City mainboard)
+* `0xAA`, `0xA5`, `0x9C` (known to cause buffer corruption on DK-City mainboard)
 
 Frame handling:
 
-- Reset buffer on `0xF1`
-- Parse only when `0xF2` is received
-- State byte extracted and mapped to internal enums
+* Reset buffer on `0xF1`
+* Parse only when `0xF2` is received
+* State byte extracted and mapped to internal enums
 
 Application code must never read UART directly. CSAFE must be handled as a dedicated transport/parser layer.
 
@@ -460,37 +517,37 @@ Application code must never read UART directly. CSAFE must be handled as a dedic
 
 ## 12. Timing & Safety Rules
 
-- **Incline Timeout:** Maximum continuous incline motion is capped at 60 seconds.
-- **3.5s Startup Sync:** Ignore speed/distance accumulation for 3.5 seconds after STARTING to align with console countdown.
-- **700 ms Resume Debounce:** Debounce when transitioning from PAUSED to RUNNING.
-- **1500 ms CSAFE Watchdog:** If no valid CSAFE end frame is received for 1500 ms, force internal state to STOPPED.
-- **Ghost-Running Detection:** If CSAFE reports RUNNING but Pin 7 reads 0 Hz for >2 seconds, log mismatch fault.
-- **Command Queue Expiry:** Commands queued during STARTING expire after 5 seconds if RUNNING is not reached.
+* **Incline Timeout:** Maximum continuous incline motion is capped at 60 seconds.
+* **3.5s Startup Sync:** Ignore speed/distance accumulation for 3.5 seconds after STARTING to align with console countdown.
+* **700 ms Resume Debounce:** Debounce when transitioning from PAUSED to RUNNING.
+* **1500 ms CSAFE Watchdog:** If no valid CSAFE end frame is received for 1500 ms, force internal state to STOPPED.
+* **Ghost-Running Detection:** If CSAFE reports RUNNING but Pin 7 reads 0 Hz for >2 seconds, log mismatch fault.
+* **Command Queue Expiry:** Commands queued during STARTING expire after 5 seconds if RUNNING is not reached.
 
 ---
 
 ## 13. Bluetooth FTMS Rules
 
-- BLE stack: NimBLE-Arduino
-- Broadcast rate: 1 Hz
-- Speed format: integer with 0.01 resolution (e.g., 12.50 km/h → 1250)
-- Incline format: integer with 0.1 resolution (e.g., 3.5% → 35)
-- Loss of BLE client must not stop telemetry capture or corrupt treadmill state tracking
+* BLE stack: NimBLE-Arduino
+* Broadcast rate: 1 Hz
+* Speed format: integer with 0.01 resolution (e.g., 12.50 km/h → 1250)
+* Incline format: integer with 0.1 resolution (e.g., 3.5% → 35)
+* Loss of BLE client must not stop telemetry capture or corrupt treadmill state tracking
 
 ---
 
 ## 14. GUI & Frontend Rules (High-Level)
 
-- Vanilla JavaScript only (no frameworks)
-- Stateless UI rendering from WebSocket telemetry
-- WebSocket update rate bounded (5–10 Hz)
-- Use `pointerdown` events for low-latency interaction
-- Avoid visual flicker (tabular numbers; sensible distance resolution)
+* Vanilla JavaScript only (no frameworks)
+* Stateless UI rendering from WebSocket telemetry
+* WebSocket update rate bounded (5–10 Hz)
+* Use `pointerdown` events for low-latency interaction
+* Avoid visual flicker (tabular numbers; sensible distance resolution)
 
 ---
 
 ## 15. Open Items
 
-- Final incline span calibration (0% → 15% pulse count)
-- Verification of any remaining bus mapping details
-- Validation of injection timing margins on final hardware (stabilization and settle delays)
+* [x] Final incline span calibration *(Closed: 3086/2943 pulses per percent).*
+* [x] Verification of bus mapping *(Closed: Split-board MitM architecture verified).*
+* [ ] Validation of injection timing margins (stabilization and settle delays) on final ESP32 hardware.
