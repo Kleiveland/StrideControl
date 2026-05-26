@@ -229,7 +229,7 @@ No subsystem (UI, FTMS, command queue) may override or infer these values indepe
 
 All output systems must consume the same internal state variables.
 
-### 5.3 Cadence (LSM6DSOX)
+### 5.2 Cadence (LSM6DSOX)
 
 An LSM6DSOX IMU is mounted to the lower treadmill frame via I2C. It uses the built-in hardware step counter to derive cadence from footstrike shockwaves. The I2C bus is actively terminated via an LTC4311 extender to handle the 2-meter cable run from the frame to the motor compartment.
 
@@ -238,7 +238,6 @@ An LSM6DSOX IMU is mounted to the lower treadmill frame via I2C. It uses the bui
 * **Graceful Degradation:** If the sensor disconnects or the I2C bus faults, cadence defaults to 0 SPM. This must not trigger a crash or interfere with Core 1 motor pulse processing.
 * **Polling:** Must be polled asynchronously to prevent blocking Core 1 interrupts.
 * **Constraint:** The cadence subsystem must run entirely on Core 0 and must never interfere with ISR timing or injection logic.
-
 
 ---
 
@@ -539,7 +538,7 @@ Rules:
 * **Network Fallback:** The device must be deployable and recoverable without serial/USB intervention. If pre-configured WiFi credentials fail or are missing, the system must gracefully fall back to an Access Point (AP) mode.
 * **Trigger Condition:** AP mode must activate after repeated connection failures (e.g. >5 retries or ~30 seconds timeout during boot).
 * **Configuration Portal:** In AP mode, a lightweight captive portal must be exposed to allow the user to input new WiFi credentials, configure device settings (including FTMS name), and execute the manual **Re-home Incline** calibration routine.
-``
+
 ---
 
 ## 11. CSAFE Rules (RS232)
@@ -582,7 +581,7 @@ Application code must never read UART directly. CSAFE must be handled as a dedic
 - Speed format: integer with 0.01 resolution (e.g., 12.50 km/h → 1250)
 - Incline format: integer with 0.1 resolution (e.g., 3.5% → 35)
 - Loss of BLE client must not stop telemetry capture or corrupt treadmill state tracking
-- * **FTMS Elevation Gain:** The FTMS specification requires Positive Elevation Gain, which the hardware does not natively provide. Accumulate algorithmically per update:
+- **FTMS Elevation Gain:** The FTMS specification requires Positive Elevation Gain, which the hardware does not natively provide. Accumulate algorithmically per update:
   `elevation_gain += distance_interval_km * 1000 * (incline_pct / 100)`
 
 * **Cadence Integration:** Cadence derived from the LSM6DSOX hardware step-counter must be included in the FTMS payload when available.
@@ -643,7 +642,7 @@ Application code must never read UART directly. CSAFE must be handled as a dedic
     }
   ]
 }
-
+```
 ---
 
 ## 15. Open Items
