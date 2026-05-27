@@ -119,6 +119,8 @@ Console communication uses time-division multiplexing across two 5V logic buses:
 | **CSAFE_RX/TX** | GPIO 16 / 17 | MAX3232 Interface |
 | **SPEED_IN** | GPIO 3 | Pin 7 (via PC817) |
 | **INCLINE_IN** | GPIO 14 | Pin 11 (via PC817) |
+| **I2C SDA** | GPIO 47 | LSM6DSOX SDA (4.7kΩ pull-up on Board 2) |
+| **I2C SCL** | GPIO 48 | LSM6DSOX SCL (4.7kΩ pull-up on Board 2) |
 
 > **Note:** `GPIO.out_w1ts` / `GPIO.out_w1tc` control GPIO 0–31 only. GPIO 41 and 42 (O2 bits 0–1) must be written via `GPIO.out1_w1ts.val` / `GPIO.out1_w1tc.val`. This split must be handled in `writeO2Fast()`.
 
@@ -171,7 +173,7 @@ Each physical button on the console is identified by a specific 8-bit frame (KEY
 Injection sequence must include:
 
 - Gate open (74HC4066 enable)
-- Stabilization delay (~1 ms)
+- Stabilization delay (~100 µs)
 - Frame transmission
 - Settle delay (~2 ms)
 - Gate release
@@ -231,7 +233,7 @@ All output systems must consume the same internal state variables.
 
 ### 5.2 Cadence (LSM6DSOX)
 
-An LSM6DSOX IMU is mounted to the lower treadmill frame via I2C. It uses the built-in hardware step counter to derive cadence from footstrike shockwaves. The I2C bus is actively terminated via an LTC4311 extender to handle the 2-meter cable run from the frame to the motor compartment.
+An LSM6DSOX IMU is mounted to the lower treadmill frame via I2C (SDA: GPIO 47, SCL: GPIO 48). It uses the built-in hardware step counter to derive cadence from footstrike shockwaves. The I2C bus is actively terminated via an LTC4311 extender to handle the 2-meter cable run from the frame to the motor compartment.
 
 * **Cabling:** Shielded repurposed USB cable to protect against 3.5 HP motor EMI.
 * **Connectors:** Wago 221 vibration-proof connectors at the frame splice; GX12 Aviation plug at the ESP32 enclosure for modularity.
@@ -364,8 +366,9 @@ void IRAM_ATTR isrSpeed() {
     unsigned long now = micros();
     unsigned long delta = now - isr_lastPulseUs;
 
-    // Reject micro-glitches and most exit-bounce edges.
-    // Remaining robustness relies on appropriate LOCKOUT_US tuning.
+    // Note: The first check (GLITCH_REJECT_US) is technically caught by the 
+    // second check (LOCKOUT_US), but both are explicitly kept for readability 
+    // and future individual tuning of bounce vs. oscillation metrics.
     if (delta < GLITCH_REJECT_US) return;
     if (delta < LOCKOUT_US) return;
 
@@ -680,11 +683,13 @@ Application code must never read UART directly. CSAFE must be handled as a dedic
         "series": 2,
         "series_rest_m": 3
       },
-      "history": []
+      "history": [] 
     }
   ]
 }
 ```
+*Note: The `history: []` array is reserved for future implementation of RPE (Rate of Perceived Exertion) logging and session history.*
+
 ---
 
 ## 15. Open Items
@@ -692,6 +697,7 @@ Application code must never read UART directly. CSAFE must be handled as a dedic
 - [x] Final incline span calibration *(Closed: 3086/2943 pulses per percent).*
 - [x] Verification of bus mapping *(Closed: Split-board MitM architecture verified).*
 - [ ] Validation of injection timing margins (stabilization and settle delays) on final ESP32 hardware.
+- [ ] Num 6 O1 row confirmation — pending simultaneous O1/O2 capture.
 
 ---
 
@@ -768,3 +774,18 @@ The LSM6DSOX IMU may be used to measure absolute tilt (gravity vector) of the tr
 #### Status
 
 This feature is **not part of V3.5 operational logic** and is reserved for future development (e.g. V3.6+)
+
+### A.7 TXS0108E Power Sequencing Requirement (Bring-up Lesson)
+
+During hardware bring-up, one TXS-2 was permanently damaged (latch-up) due to 
+5V arriving at VCCB before 3.3V was stable at VCCA. The IC stopped translating 
+signals entirely — VCCA/VCCB/OE all measured correct, but no signal propagated 
+from B-side to A-side.
+
+**Required power-on sequence:**
+1. Disconnect treadmill (no 5V on high-side rail)
+2. Apply USB power to ESP32 (3.3V stabilizes on VCCA)
+3. Wait ~2 seconds
+4. Connect treadmill (5V arrives on VCCB)
+
+3.3V must always be stable before 5V is applied. This is non-negotiable.3.3V must always be stable before 5V is applied. This is non-negotiable.
