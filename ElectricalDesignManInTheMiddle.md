@@ -59,7 +59,7 @@ The CD4066 bilateral switches require 5V on their control pins to remain CLOSED 
 
 ## 3. O1 Bus (Sniffing / Scanning via IC1)
 
-The O1 scanner signals pass straight through the PCB uninterrupted. They are passively "tapped" via IC1 and shifted down to 3.3V for the ESP32 to monitor.
+The O1 scanner signals pass straight through the PCB uninterrupted. They are passively "tapped" via IC1 and shifted down to 3.3V for the ESP32 to monitor. IC1 also handles the MUTE signal mapping.
 
 * **Pin 3 (ROW_A):** Console -> Pass-through -> Motor Controller
   * *Tapped:* `B1 -> A1 -> GPIO 4`
@@ -73,10 +73,11 @@ The O1 scanner signals pass straight through the PCB uninterrupted. They are pas
   * *Tapped:* `B4 -> A4 -> GPIO 7`
 * **Pin 8 (ROW_E):** Console -> Pass-through -> Motor Controller
   * *Tapped:* `B5 -> A5 -> GPIO 15`
+* **MUTE (Channel 8):** `ESP32 GPIO 21 -> IC1 A8 -> IC1 B8 -> MUTE trace -> IC3/IC4 control pins`
 
 > **Design Rules for IC1 (TXS0108E):**
 > 1. **Software PinMode:** GPIOs 4, 5, 6, 7, and 15 must be explicitly configured as `INPUT` in the ESP32 firmware to prevent bus contention on the bi-directional level shifter.
-> 2. **Unused Channels:** Channels 6 and 7 on IC1 are unused. To prevent noise and ghost-switching, tie pins **A6** and **A7** directly to GND. (Leave B6 and B7 floating).
+> 2. **Unused Channels:** Channels 6 and 7 on IC1 are unused. Leave both the A and B sides floating. The TXS0108E features internal 40kΩ pull-up resistors, so unused pins will safely default to HIGH without requiring external pull-downs.
 
 ---
 
