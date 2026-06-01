@@ -114,19 +114,31 @@ Console communication uses time-division multiplexing across two 5V logic buses:
 | **PIN_ROW_D** | GPIO 7 | O1 Line 4+7 (ROW_D) |
 | **PIN_ROW_E** | GPIO 15 | O1 Line 8 (ROW_E) |
 | **O2_BUS (0-7)** | 41, 42, 8, 9, 10, 11, 12, 13 | O2 Lines 9-16 |
-| **MUTE_PIN** | GPIO 21 | Controls 74HC4066 gates |
-| **TXS_OE (×2)** | 3.3V or dedicated GPIO | TXS0108E Output Enable — must be HIGH at all times |
+| **MUTE_PIN** | GPIO 21 | Controls 74HC4066 gates via IC1 |
+| **TXS_OE (×2)** | GPIO 2 | TXS0108E Output Enable (Both ICs) |
 | **CSAFE_RX/TX** | GPIO 16 / 17 | MAX3232 Interface |
 | **SPEED_IN** | GPIO 3 | Pin 7 (via PC817) |
 | **INCLINE_IN** | GPIO 14 | Pin 11 (via PC817) |
 | **I2C SDA** | GPIO 47 | LSM6DSOX SDA (4.7kΩ pull-up on Board 2) |
 | **I2C SCL** | GPIO 48 | LSM6DSOX SCL (4.7kΩ pull-up on Board 2) |
 
-> **Note:** `GPIO.out_w1ts` / `GPIO.out_w1tc` control GPIO 0–31 only. GPIO 41 and 42 (O2 bits 0–1) must be written via `GPIO.out1_w1ts.val` / `GPIO.out1_w1tc.val`. This split must be handled in `writeO2Fast()`.
+> **Note:** `GPIO.out_w1ts` / `GPIO.out_w1tc` control GPIO 0–31 only. GPIO 41 and 42 must use `GPIO.out1_*`.
 
-> **TXS0108E OE pin:** The TXS0108E is passive (all channels high-impedance) until OE is driven HIGH. If OE is left floating or pulled LOW, O1 and O2 communication will silently fail with no error indication. Tie OE directly to 3.3V, or drive via a GPIO set HIGH in `setup()` before any interrupt is attached.
+> **TXS0108E OE pin & Safe Boot:**  
+The TXS0108E is passive until OE is HIGH.  
+**OE MUST start LOW** to prevent latch-up if 5V arrives before 3.3V.  
 
-> **MUTE_PIN Configuration:** The physical MUTE line has a hardware pull-up to 5V on the switch board. To protect the 3.3V ESP32, the `MUTE_PIN` **must** be configured as `OUTPUT_OPEN_DRAIN` in software. It pulls LOW to mute, and releases (high-impedance) to close the gates.
+This is enforced by a **10 kΩ pull-down resistor (R1) to GND**.  
+ESP32 drives GPIO 2 HIGH after power is stable.  
+
+> **MUTE_PIN Configuration:**  
+The MUTE line has a **10 kΩ pull-up to 5V (R2)** for fail-safe CLOSED state.  
+
+The signal is routed through TXS0108E (3.3V → 5V), therefore:  
+- must be configured as `OUTPUT`  
+- NOT open drain  
+- active LOW = mute
+``
 
 ### 4.4 Frame Injection Protocol
 
@@ -200,22 +212,19 @@ Physical Speed (+/−) and Incline (+/−) buttons are **ignored** by the treadm
 - Measured travel time under user load: 0% → 15% = 49 seconds, 15% → 0% = 48 seconds.
 - This is used as the incline homing baseline in software.
 
-### 4.10 Hardware Architecture — Two-Board MitM Design
-
-The physical implementation uses a split-board approach to separate 5V switching logic from 3.3V microelectronics.
-
-- **Board 1 (Switch Board / 5V Logic):**
-  - Located inline between the console (INN) and motor controller (UT).
-  - Contains 2x 74HC4066 chips acting as gates on the O2 bus (lines 9-16).
-  - O1 bus (lines 3-8) and power pass directly through via Y-junctions (TAPs).
-  - **MUTE control:** Hardware 10kΩ pull-up to 5V ensures fail-safe CLOSED state.
-  - Outputs all 16 signals via a TAP ribbon cable.
-
 - **Board 2 (Brain Board / Level Shifting):**
-  - Takes the 16-pin TAP cable from Board 1.
-  - Contains 2x TXS0108E bidirectional level shifters.
-  - Translates 5V signals to 3.3V safe logic for the ESP32-S3.
-  - Outputs directly to ESP32 GPIOs.
+  - Takes the 16-pin TAP cable from Board 1
+  - Contains 2x TXS0108E bidirectional level shifters
+  - Translates 5V signals to 3.3V safe logic for the ESP32-S3
+
+  - **MUTE signal:**  
+    Level-shifted via TXS0108E from ESP32 (3.3V) to 5V to override R2 pull-up
+
+  - **TXS Output Enable (OE):**  
+    Held LOW by hardware **10 kΩ pull-down (R1)** during boot  
+    Enabled by ESP32 GPIO 2 after power stabilization
+
+  - Outputs directly to ESP32 GPIOs
 
 ---
 
@@ -282,6 +291,37 @@ This feature ensures that external systems:
 
 - do not log running activity when the user steps off the treadmill
 - maintain accurate training data integrity
+  
+### 5.3 Runner Presence Detection (Cadence Validation)
+
+To prevent false activity logging (Zwift, watches), detect if runner is present.
+
+#### Rule
+
+If:
+
+- **Speed > 0 km/h**
+- AND **Cadence = 0 SPM**
+
+Then:
+
+- classify as **No Runner Present**
+
+#### Effects
+
+- FTMS speed → 0
+- Distance paused
+- Cadence stays 0
+- No motor control change
+
+#### Timeout
+
+- ~2–3 seconds
+
+#### Constraint
+
+- Must run on Core 0
+- Must not affect real-time Core 1 logic
 
 ---
 
@@ -502,33 +542,49 @@ This minimizes flash wear and prevents incorrect learning during transient state
 
 ### 9.2 Logic Level Translation
 
-- Two TXS0108E 8-channel bi-directional level shifters bridge 5V O1/O2 buses to 3.3V GPIO
-- OE must be held HIGH at all times
+- Two TXS0108E 8-channel bi-directional level shifters
+- Bridge 5V O1/O2 buses to 3.3V GPIO
+
+- **OE Control Rule:**
+  - OE must **start LOW via 10 kΩ pull-down (R1)**
+  - Prevents latch-up during power sequencing
+  - ESP32 must actively drive OE HIGH after boot
 
 ### 9.3 Data Gate (Mute Circuit)
 
 - Hardware: SN74HC4066N inline on O2 data bus
-- Default state must preserve native console communication
-- **Fail-safe hardware pull-up (5V)** on the MUTE line ensures the 4066 gates default to CLOSED (conducting). This guarantees pass-through of native console signals upon MCU reset or power loss.
+- Default must preserve native console communication
 
-> ⚠️ **FUNCTIONAL REQUIREMENT: Active-Low MUTE Logic Clarification**
-> **Consequences if ignored:** Inverting this logic in software can disconnect the console during normal operation (treadmill appears dead) and risks bus contention if the ESP32 drives an unisolated 5V bus.
-> **Logic Rule:** Board 1 implements a permanent 10 kΩ pull-up to 5V. The logic is therefore strictly **active-low**. The pin must be configured as `OUTPUT_OPEN_DRAIN` and held released (high-impedance) for pass-through. Drive **LOW** only during the injection window.
+- **Fail-safe design:**
+  - 10 kΩ pull-up to 5V (R2)
+  - Default = CLOSED (pass-through)
 
-> 🧪 **VALIDATION REQUIRED: Mute Settle-Time Verification**
-> After asserting MUTE (active-low) and before driving the O2 bus, a deliberate stabilization delay (settle time) of approximately **100 µs** should be used as an initial bring-up value. This must be measured and validated on the final hardware and cabling using a logic analyzer to confirm that the 74HC4066 gates have fully opened and the bus is isolated before the ESP32 drives the lines.
+> ⚠️ **FUNCTIONAL REQUIREMENT: Active-Low MUTE Logic**
+
+- Board 1 implements permanent pull-up (R2)
+- MUTE is strictly **active-low**
+
+- **Important change:**
+  - Signal passes through TXS0108E
+  - Therefore ESP32 pin must be `OUTPUT` (not open-drain)
+
+- Drive LOW → open gate (inject)
+- Release → pass-through
+
+> **VALIDATION REQUIRED:**
+Approx. **100 µs settle delay** required after asserting MUTE
 
 ### 9.4 Power Supply
 
 - HLK-PM01 AC-to-5V module for permanent internal power
 - Mains-side fusing and isolation are required
 
-> ⚠️ **FUNCTIONAL REQUIREMENT: Power Budget & Thermal Margin**
+>  **FUNCTIONAL REQUIREMENT: Power Budget & Thermal Margin**
 > **Consequences if ignored:** When WiFi, BLE, and the WebSocket server operate simultaneously, current draw can spike. Insufficient margin can cause unpredictable brownout resets during operation.
 > **Power Rule:** Continuous load must remain comfortably below the power supply's rated continuous capacity to preserve thermal margin. Short peaks are acceptable, but must not be sustained.
 > **Design Target:** Continuous load should remain below ~70–80% of the PSU rated continuous capacity to maintain thermal margin and long-term stability.
 
-> 🧪 **VALIDATION REQUIRED: Hardware Power Verification Protocol**
+>  **VALIDATION REQUIRED: Hardware Power Verification Protocol**
 > Before final enclosure assembly, perform the following:
 > 1. **Sustained Load Measurement:** Measure steady-state current draw under full wireless load (WiFi + BLE FTMS + WebSocket at 10 Hz).
 > 2. **Peak Capture:** Capture voltage sags on 3.3V and 5V rails during radio activity using an oscilloscope.
@@ -777,15 +833,28 @@ This feature is **not part of V3.5 operational logic** and is reserved for futur
 
 ### A.7 TXS0108E Power Sequencing Requirement (Bring-up Lesson)
 
-During hardware bring-up, one TXS-2 was permanently damaged (latch-up) due to 
-5V arriving at VCCB before 3.3V was stable at VCCA. The IC stopped translating 
-signals entirely — VCCA/VCCB/OE all measured correct, but no signal propagated 
-from B-side to A-side.
+During hardware bring-up, one TXS0108E was permanently damaged due to latch-up.
 
-**Required power-on sequence:**
-1. Disconnect treadmill (no 5V on high-side rail)
-2. Apply USB power to ESP32 (3.3V stabilizes on VCCA)
+Cause:
+- 5V arrived before 3.3V
+
+Result:
+- IC stopped translating signals (silent failure)
+
+#### Required power-on sequence
+
+1. No 5V present
+2. Apply ESP32 power (3.3V)
 3. Wait ~2 seconds
-4. Connect treadmill (5V arrives on VCCB)
+4. Apply 5V
 
-3.3V must always be stable before 5V is applied. This is non-negotiable.3.3V must always be stable before 5V is applied. This is non-negotiable.
+#### Rule
+
+3.3V MUST be stable before 5V is applied.
+
+#### Final solution
+
+- Hardware **10 kΩ pull-down (R1)** on OE
+- Forces HIGH-Z state during power-up
+- Prevents latch-up regardless of supply order
+``
