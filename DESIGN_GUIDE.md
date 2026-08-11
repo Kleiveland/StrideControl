@@ -1,9 +1,10 @@
-# StrideControl Technical Design Guide (V3.5)
+# StrideControl Technical Design Guide (V4)
 
-This document contains verified physical measurements, protocol specifications, architecture rules, and implementation decisions required to operate the StrideControl system (V3.5 Architecture) safely and predictably.
+This document contains verified physical measurements, protocol specifications, architecture rules, and implementation decisions required to operate the StrideControl system (V4 Architecture) safely and predictably.
 
 > **Primary UI Goal**
-> StrideControl provides a clean, tablet-based web interface for direct speed and incline control. Because the tablet completely covers the original console, the UI must display the treadmill's **actual speed** and **actual incline** derived from hardware feedback, not just requested target values.
+>
+> StrideControl provides a clean, tablet-based web interface for direct speed and incline control. Because the tablet completely covers the original console, the UI must display **measured belt speed** and the **hardware-tracked incline estimate** derived from physical hardware feedback, not just requested target values. When IMU verification is available and calibrated, the UI may additionally identify the incline estimate as IMU-verified.
 
 ---
 
@@ -13,7 +14,7 @@ The objective is to build a safe, reversible ESP32-S3 interface layer for the Sp
 
 - Hosts a local web interface for a tablet.
 - Allows direct user control of speed and incline.
-- Reads actual physical state directly from the hardware.
+- Measures physical belt speed from the treadmill speed-feedback signal and tracks incline position from homing and calibrated movement-pulse integration.
 - Parses machine state from the CSAFE port.
 - Broadcasts telemetry via Bluetooth FTMS.
 - Preserves original hardware safety features (the console must work if the ESP32 loses power).
@@ -86,122 +87,416 @@ ISRs must be minimal and non-blocking where possible, limited to timestamping an
 
 > **Historical note (still useful):** Several harness lines can measure ~4.3V in standby depending on probe/reference and scanning activity. If mapping is incomplete, document remaining unmapped pins explicitly.
 
-### 4.2 Front-Panel Bus Mapping
 
-Console communication uses time-division multiplexing across two 5V logic buses:
+## 4.2 Verified O1/O2 Bus Model
 
-- **O1 Bus (Scanner):** Pins 3, 4, 5, 6, 7, 8. Line 4 acts as a shared active line, pulled LOW during ROW_A through ROW_D scans. Scan rate: ~167 Hz per row, full cycle ~6 ms.
-- **O2 Bus (Data/Inject):** Pins 9 through 16. An 8-bit parallel data bus used to return key presses during specific O1 scan windows. Frame rate: ~330 Hz.
+The treadmill console uses two related parallel logic buses:
 
-**O1 Row Scan Sequence:** ROW_B → ROW_C → ROW_D → ROW_E → ROW_A → IDLE → repeat
+- **O1** is the scanner and phase-reference bus.
+- **O2** is the response bus used by the physical control panels to report button states to the treadmill controller.
 
-| Row | Lines LOW | O1 Pattern |
-|---|---|---|
-| ROW_A | 3 + 4 | 0x3C |
-| ROW_B | 4 + 5 | 0x39 |
-| ROW_C | 4 + 6 | 0x35 |
-| ROW_D | 4 + 7 | 0x2D |
-| ROW_E | 8 only | 0x1F |
-| IDLE | none | 0x3F |
+The ESP32 does not generate or modify O1. O1 remains a physical pass-through signal and is read-only from the ESP32.
 
-### 4.3 GPIO Mapping (ESP32-S3 N16R8)
+During command injection, the ESP32 isolates the physical O2 sources and temporarily generates the complete O2 response expected by the treadmill controller.
 
-| Signal | ESP32 GPIO | Connection Target |
+### 4.2.1 O1 GPIO Mapping
+
+O1 is read as a 5-bit value:
+
+| O1 bit | ESP32 GPIO |
+|---:|---:|
+| Bit 0 | GPIO 4 |
+| Bit 1 | GPIO 5 |
+| Bit 2 | GPIO 6 |
+| Bit 3 | GPIO 7 |
+| Bit 4 | GPIO 15 |
+
+### 4.2.2 Verified O1 Phases
+
+The following O1 values are the authoritative phase model:
+
+| Phase | O1 value | Normal O2 baseline |
+|---|---:|---:|
+| Phase A | `0x0F` | `0x80` |
+| Phase B | `0x17` | `0x80` |
+| Phase C | `0x1B` | `0x80` |
+| Phase D | `0x1D` | `0xC0` |
+| Idle | `0x1F` | Time-dependent |
+
+The previous ROW_A–ROW_E model and O1 patterns such as `0x3C`, `0x39`, `0x35`, `0x2D`, and `0x3F` are superseded and must not be used by the active emulator.
+
+### 4.2.3 Idle Response
+
+Idle does not use one fixed O2 value.
+
+When O1 enters `0x1F`, the emulator must generate:
+
+- O2 `0x00` during the first 1200 µs
+- O2 `0xFF` after 1200 µs
+
+The phase timer is restarted whenever O1 changes into a new phase. Idle therefore cannot be implemented correctly as one static lookup-table value.
+
+---
+
+## 4.3 GPIO Mapping, O2 Bus, and Physical Isolation
+
+### 4.3.1 ESP32-S3 GPIO Mapping
+
+| Signal | ESP32 GPIO | Function |
 |---|---:|---|
-| **PIN_ROW_A** | GPIO 4 | O1 Line 3+4 (ROW_A) |
-| **PIN_ROW_B** | GPIO 5 | O1 Line 4+5 (ROW_B) |
-| **PIN_ROW_C** | GPIO 6 | O1 Line 4+6 (ROW_C) |
-| **PIN_ROW_D** | GPIO 7 | O1 Line 4+7 (ROW_D) |
-| **PIN_ROW_E** | GPIO 15 | O1 Line 8 (ROW_E) |
-| **O2_BUS (0-7)** | 41, 42, 8, 9, 10, 11, 12, 13 | O2 Lines 9-16 |
-| **MUTE_PIN** | GPIO 21 | Controls 74HC4066 gates via IC1 |
-| **TXS_OE (×2)** | GPIO 2 | TXS0108E Output Enable (Both ICs) |
-| **CSAFE_RX/TX** | GPIO 16 / 17 | MAX3232 Interface |
-| **SPEED_IN** | GPIO 3 | Pin 7 (via PC817) |
-| **INCLINE_IN** | GPIO 14 | Pin 11 (via PC817) |
-| **I2C SDA** | GPIO 47 | LSM6DSOX SDA (4.7kΩ pull-up on Board 2) |
-| **I2C SCL** | GPIO 48 | LSM6DSOX SCL (4.7kΩ pull-up on Board 2) |
+| O1 bit 0 | GPIO 4 | Read-only phase input |
+| O1 bit 1 | GPIO 5 | Read-only phase input |
+| O1 bit 2 | GPIO 6 | Read-only phase input |
+| O1 bit 3 | GPIO 7 | Read-only phase input |
+| O1 bit 4 | GPIO 15 | Read-only phase input |
+| O2 bit 0 | GPIO 41 | Bidirectional O2 data |
+| O2 bit 1 | GPIO 42 | Bidirectional O2 data |
+| O2 bit 2 | GPIO 8 | Bidirectional O2 data |
+| O2 bit 3 | GPIO 9 | Bidirectional O2 data |
+| O2 bit 4 | GPIO 10 | Bidirectional O2 data |
+| O2 bit 5 | GPIO 11 | Bidirectional O2 data |
+| O2 bit 6 | GPIO 12 | Bidirectional O2 data |
+| O2 bit 7 | GPIO 13 | Bidirectional O2 data |
+| Shared MUTE | GPIO 21 | Active-low isolation of physical O2 sources |
+| TXS0108E OE | GPIO 2 | Output enable for both TXS0108E devices |
+| CSAFE RX/TX | GPIO 16 / 17 | MAX3232 interface |
+| Speed input | GPIO 3 | Isolated speed-pulse input |
+| Incline input | GPIO 14 | Isolated incline-pulse input |
+| I2C SDA | GPIO 47 | LSM6DSOX data |
+| I2C SCL | GPIO 48 | LSM6DSOX clock |
 
-> **Note:** `GPIO.out_w1ts` / `GPIO.out_w1tc` control GPIO 0–31 only. GPIO 41 and 42 must use `GPIO.out1_*`.
+### 4.3.2 O2 Bus
 
-> **TXS0108E OE pin & Safe Boot:**  
-The TXS0108E is passive until OE is HIGH.  
-**OE MUST start LOW** to prevent latch-up if 5V arrives before 3.3V.  
+O2 is an 8-bit parallel response bus.
 
-This is enforced by a **10 kΩ pull-down resistor (R1) to GND**.  
-ESP32 drives GPIO 2 HIGH after power is stable.  
+GPIO 41 and GPIO 42 are located in the upper ESP32 GPIO register bank. Atomic O2 output updates must therefore use both register groups:
 
-> **MUTE_PIN Configuration:**  
-The MUTE line has a **10 kΩ pull-up to 5V (R2)** for fail-safe CLOSED state.  
+- GPIO 0–31 through `GPIO.out_w1ts` and `GPIO.out_w1tc`
+- GPIO 32 and above through `GPIO.out1_w1ts` and `GPIO.out1_w1tc`
 
-The signal is routed through TXS0108E (3.3V → 5V), therefore:  
-- must be configured as `OUTPUT`  
-- NOT open drain  
-- active LOW = mute
-``
+O2 must be updated as one logical byte. Sequential `digitalWrite()` calls are not suitable for phase-critical output updates.
 
-### 4.4 Frame Injection Protocol
+### 4.3.3 Atomic Direction Change
 
-Each button press is uniquely identified by the combination of its KEY byte, the specific frame sequence (O2), and the active O1 row pattern.
+The required O2 output value must be preloaded into the GPIO output latches before the O2 pins are changed from `INPUT` to `OUTPUT`.
 
-- **Sync Pulse:** 0xFF (all O2 lines HIGH) terminates every frame at ~330 Hz.
-- **Injection Window:** Injection occurs strictly within the ~3 ms window triggered by a hardware interrupt detecting the correct O1 row FALLING edge.
-- **Mute Duration (Active-Low):** The 74HC4066 gate is opened by pulling the line to GND (**MUTE_PIN LOW**) for the duration of one frame only (~3 ms), then immediately released to its default 5V pull-up state.
+For the final implementation, the direction change should also be performed as one logical bus operation through the ESP32 GPIO-enable registers rather than through eight sequential `pinMode(..., OUTPUT)` calls.
 
-### 4.5 Button Command Mapping (O2 Bus Injection)
+The implementation must account for both GPIO register banks:
 
-Each physical button on the console is identified by a specific 8-bit frame (KEY byte) injected onto the O2 bus during its corresponding O1 Row scan window. The frame sequences below denote the exact byte order pumped to the O2 bus per scan cycle.
+- GPIO 0–31 through the corresponding `GPIO.enable_w1ts` and `GPIO.enable_w1tc` registers
+- GPIO 32 and above through the corresponding upper-bank GPIO-enable registers
 
-*Verified Injection Matrix (from log analysis Appendix A):*
+This prevents a short transition window where only part of the O2 byte is actively driven.
 
-| Function | KEY Byte | Frame Sequence (O2) | O1 Row | Pattern |
-|---|---|---|---|---|
-| **Speed +** | `0x23` | `0x01` → `0x23` → `0x00` → `0xFF` | ROW_D | `0x2D` |
-| **Speed −** | `0x13` | `0x01` → `0x13` → `0x00` → `0xFF` | ROW_E | `0x1F` |
-| **Incline +** | `0x83` | `0x01` → `0x83` → `0x00` → `0xFF` | ROW_A | `0x3C` |
-| **Incline −** | `0x07` | `0x01` → `0x07` → `0x00` → `0xFF` | ROW_C | `0x35` |
-| **Quick Start** | `0x0B` | `0x01` → `0x0B` → `0x00` → `0xFF` | ROW_C | `0x35` |
-| **Stop** | `0x43` | `0x01` → `0x43` → `0x00` → `0xFF` | ROW_C | `0x35` |
-| **Enter** | `0x11` | `0x01` → `0x11` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_C | `0x35` |
-| **Clear** | `0x81` | `0x81` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_D | `0x2D` |
-| **Instant Speed** | `0x03` | `0x01` → `0x03` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_E | `0x1F` |
-| **Instant Incline** | `0x03` | `0x03` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_D | `0x2D` |
-| **Num 0** | `0x05` | `0x01` → `0x05` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_E | `0x1F` |
-| **Num 1** | `0x41` | `0x41` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_E | `0x1F` |
-| **Num 2** | `0x09` | `0x01` → `0x09` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_C | `0x35` |
-| **Num 3** | `0x21` | `0x01` → `0x21` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_C | `0x35` |
-| **Num 4** | `0x21` | `0x21` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_D | `0x2D` |
-| **Num 5** | `0x09` | `0x09` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_A | `0x3C` |
-| **Num 6** | `0x41` | `0x01` → `0x41` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_C | `0x35` |
-| **Num 7** | `0x11` | `0x11` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_A | `0x3C` |
-| **Num 8** | `0x05` | `0x05` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_E | `0x1F` |
-| **Num 9** | `0x81` | `0x01` → `0x81` → `0x01` → `0x03` → `0x00` → `0xFF` | ROW_D | `0x2D` |
-| **Fan High** | `0x09` | `0x01` → `0x09` → `0x03` → `0x00` → `0xFF` | IDLE | `0x3F` |
-| **Fan Low** | `0x03` | `0x01` → `0x03` → `0x00` → `0xFF` | IDLE | `0x3F` |
-| **Fan On/Off** | `0x05` | `0x01` → `0x05` → `0x03` → `0x00` → `0xFF` | ROW_D | `0x2D` |
+**Current implementation:** The required O2 value is preloaded into the output latches before the O2 pins are changed sequentially with `pinMode(..., OUTPUT)`.
 
-### 4.6 Injection Timing Detail
+**Target implementation:** Change all O2 direction bits atomically through the GPIO-enable registers after the register behavior has been validated on the ESP32-S3.
 
-Injection sequence must include:
+Until atomic direction switching has been physically validated, sequential pin-direction changes remain an implementation limitation and must be treated as a timing-margin item.
 
-- Gate open (74HC4066 enable)
-- Stabilization delay (~100 µs)
-- Frame transmission
-- Settle delay (~2 ms)
-- Gate release
+### 4.3.4 Physical Panel Isolation
 
-This ensures the treadmill controller reliably registers injected signals.
+The physical touch console and the separate side panel are independent signal sources, but both are isolated using one shared MUTE control.
 
-### 4.7 Fractional Speed Targeting (Nearest Integer Optimization)
+The installed analog switches are `SN74HC4066N` devices.
 
-To minimize total injection time and UI latency for fractional speed values, the system uses `round()` to find the nearest whole-number base speed, then adjusts by discrete Speed +/− increments.
+The shared MUTE node is controlled by:
 
-* **Example 1:** Target 12.6 km/h → inject 13 via InstantSpeed macro, then 4× Speed−.
-* **Example 2:** Target 12.4 km/h → inject 12 via InstantSpeed macro, then 4× Speed+.
-* **Boundary Clamping:** `round()` can produce values outside the 1–20 km/h range at the extremes. The target must be clamped after rounding before injection.
-* **Rate Limiting:** A full InstantSpeed sequence (~25 ms total) must not be re-triggered while already in progress. Enforce a minimum 500 ms cooldown between complete sequences when driven by FTMS.
-* **Constraint:** Injection sequences must not overlap with O1 scan timing windows. All adjustments must remain bounded within valid injection frames.
+- ESP32 GPIO 21
+- TXS0108E level translation from 3.3 V to 5 V
+- A 10 kΩ pull-up on the 5 V side
 
+MUTE behavior:
+
+| MUTE state | Physical panel state |
+|---|---|
+| HIGH | SN74HC4066N channels closed; physical panels connected |
+| LOW | SN74HC4066N channels open; physical panel outputs isolated |
+
+MUTE is strictly active-low.
+
+The shared MUTE signal isolates the relevant output paths from both:
+
+- the touch-console controller
+- the separate side-panel switches
+
+The emergency-stop circuit is not part of the switched or injected signal path.
+
+### 4.3.5 TXS0108E OE and Safe Startup
+
+The TXS0108E devices are passive while OE is LOW.
+
+OE must start LOW to avoid undefined translation during power sequencing. This is enforced by a 10 kΩ hardware pull-down to GND.
+
+The required startup sequence is:
+
+1. Configure TXS OE as `OUTPUT` and drive it LOW.
+2. Configure MUTE as `OUTPUT` and drive it HIGH.
+3. Configure all O1 and O2 GPIOs as `INPUT`.
+4. Drive TXS OE HIGH after the GPIO states are safe.
+
+### 4.3.6 Passive State
+
+When command injection is inactive:
+
+- O1 GPIOs remain configured as `INPUT`.
+- O2 GPIOs remain configured as `INPUT`.
+- MUTE remains HIGH.
+- TXS0108E OE remains HIGH after safe startup.
+- Physical console and side-panel operation pass through normally.
+
+---
+
+## 4.4 Verified O2 Emulation Principle
+
+The treadmill is not controlled by replaying a captured multi-byte frame.
+
+The verified control method is continuous, phase-dependent O2 emulation.
+
+During injection, the ESP32 generates the complete expected O2 baseline for every observed O1 phase. A button is represented by replacing the normal O2 value in one specific phase while maintaining the normal response in all other phases.
+
+### 4.4.1 Baseline Generation
+
+The baseline response is:
+
+- O1 `0x0F` → O2 `0x80`
+- O1 `0x17` → O2 `0x80`
+- O1 `0x1B` → O2 `0x80`
+- O1 `0x1D` → O2 `0xC0`
+- O1 `0x1F` → O2 `0x00`, followed by `0xFF` after 1200 µs
+
+The baseline must continue:
+
+- before a button becomes active
+- during pauses between macro steps
+- after a button is released
+- until the physical panels are reconnected
+
+The ESP32 must never inject only the changed bit while leaving the remaining O2 lines undefined. The complete O2 byte must always be driven.
+
+### 4.4.2 Command Injection Sequence
+
+The verified control sequence is:
+
+1. Keep the physical panels connected while observing O1.
+2. Wait for a valid O1 phase transition.
+3. Determine the active O1 phase.
+4. Calculate the correct O2 baseline for that phase.
+5. Preload the ESP32 O2 output latches with the baseline.
+6. Assert the shared MUTE signal LOW.
+7. Change all O2 GPIOs from `INPUT` to `OUTPUT` as one logical bus operation where supported.
+8. Continuously generate the required O2 response for every O1 phase.
+9. Apply the selected button response for the configured hold period.
+10. Return to complete baseline emulation between button steps.
+11. Keep MUTE active for the entire command or macro.
+12. After the final step, continue baseline emulation until O1 enters IDLE.
+13. Wait until the emulator is safely inside the IDLE phase.
+14. Return all O2 GPIOs to `INPUT`.
+15. Release MUTE HIGH and reconnect the physical panels.
+16. Allow a settling period before passive physical-button monitoring resumes.
+
+The physical panels must not be disconnected while the ESP32 O2 bus is undefined.
+
+---
+
+## 4.5 Verified Button Response Matrix
+
+The authoritative button mapping is the combination of:
+
+- the active O1 phase
+- the complete O2 value generated during that phase
+
+All phases not listed for a selected button retain their normal baseline values.
+
+| Function | Active O1 phase | Active O2 value |
+|---|---:|---:|
+| Instant Incline | `0x0F` | `0xC0` |
+| Number 1 | `0x0F` | `0x82` |
+| Number 4 | `0x0F` | `0x84` |
+| Number 5 | `0x0F` | `0x90` |
+| Number 7 | `0x0F` | `0x88` |
+| Number 8 | `0x0F` | `0xA0` |
+| Instant Speed | `0x17` | `0xC0` |
+| Enter | `0x17` | `0x88` |
+| Number 0 | `0x17` | `0xA0` |
+| Number 2 | `0x17` | `0x90` |
+| Number 3 | `0x17` | `0x84` |
+| Number 6 | `0x17` | `0x81` |
+| Number 9 preload | `0x17` | `0x81` |
+| Number 9 active phase | `0x1B` | `0x81` |
+| Fan On/Off | `0x1B` | `0xA0` |
+| Fan High | `0x1B` | `0x90` |
+| Fan Low | `0x1B` | `0xC0` |
+| Speed + | `0x1D` | `0xC4` |
+| Speed − | `0x1D` | `0xC8` |
+| Incline + | `0x1D` | `0xC1` |
+| Incline − | `0x1D` | `0xE0` |
+| Physical Quick Start | `0x1D` | `0xD0` |
+| Physical Stop | `0x1D` | `0xC2` |
+
+### 4.5.1 Number 9 Exception
+
+Number 9 is a confirmed timing exception.
+
+A response that changes O2 to `0x81` only after O1 has entered Phase C is too late for reliable detection.
+
+The required behavior is:
+
+- While Number 9 is active and O1 is Phase B, output `0x81`.
+- Continue outputting `0x81` when O1 transitions into Phase C.
+- Return to the normal baseline outside the required preload and active phases.
+
+This early-preload rule is specific to Number 9 and must not be generalized to other buttons without physical verification.
+
+### 4.5.2 Quick Start and Stop
+
+The confirmed physical values are:
+
+- Quick Start: O1 `0x1D`, O2 `0xD0`
+- Stop: O1 `0x1D`, O2 `0xC2`
+
+These functions are retained for passive recognition.
+
+The current control architecture does not expose Quick Start or Stop as web-injected commands. They are treated as physical, read-only events.
+
+---
+
+## 4.6 Timing, Watchdog, and Recovery Rules
+
+### 4.6.1 Initial Synchronization
+
+Before asserting MUTE, the emulator must observe O1 while the physical panel remains connected.
+
+A command may begin only after:
+
+- O1 changes from the previously observed value
+- the new O1 value is one of the valid phases:
+  - `0x0F`
+  - `0x17`
+  - `0x1B`
+  - `0x1D`
+  - `0x1F`
+
+If no valid phase transition is observed within the configured synchronization timeout, injection must not begin.
+
+### 4.6.2 Current Timing Values
+
+The following timing values are the verified operational configuration:
+
+- Button hold time: 500 ms
+- Baseline pause between steps: 100 ms
+- Initial O1 synchronization timeout: 20 ms
+- O1 phase watchdog: 25 ms
+- Final IDLE search timeout: 25 ms
+- Minimum IDLE age before reconnect: 200 µs
+- O2/MUTE transition stabilization: 50 µs
+- Passive monitor restart delay after reconnect: 10 ms
+
+The 500 ms button hold and 100 ms pause are the verified conservative operational values. Any later reduction must be regression-tested across all mapped commands before adoption.
+
+### 4.6.3 Phase Watchdog
+
+While the ESP32 controls O2, valid O1 phase transitions must continue.
+
+If no valid O1 phase transition is observed for more than 25 ms:
+
+1. Abort the active command.
+2. Return every O2 GPIO to `INPUT`.
+3. Wait 50 µs to ensure that the ESP32 has released the O2 bus.
+4. Release MUTE HIGH.
+5. Wait 10 ms for bus and panel settling.
+6. Re-enable passive physical-button monitoring.
+7. Clear the active-hardware state.
+8. Report the command as failed.
+
+An unknown O1 value must not count as a valid watchdog-resetting phase transition.
+
+The same ordered recovery sequence and timing margins apply to every abnormal exit path, including:
+
+- initial synchronization failure
+- phase watchdog timeout
+- failure to locate IDLE before reconnect
+- future hardware-state-machine faults
+
+### 4.6.4 Controlled Reconnect
+
+After the last command step:
+
+1. Return to normal O2 baseline generation.
+2. Wait for O1 to enter IDLE.
+3. Continue generating the correct time-dependent IDLE response.
+4. Wait until IDLE has been active for at least 200 µs.
+5. Set O2 to `INPUT`.
+6. Wait 50 µs to ensure that the ESP32 has released the bus.
+7. Release MUTE HIGH.
+8. Wait 10 ms before restarting passive button monitoring.
+
+If IDLE is not observed within the timeout, the command is aborted through the same controlled recovery path.
+
+---
+
+## 4.7 Command and Macro Execution
+
+The browser sends user intent rather than a timed sequence of individual button presses.
+
+Examples:
+
+- Set speed to 15.7 km/h
+- Set incline to 5.5%
+- Press Speed+
+- Press Incline−
+
+The ESP32 validates and plans the complete sequence.
+
+### 4.7.1 Fractional Target Algorithm
+
+For fractional targets:
+
+1. Round the requested value to the nearest valid integer.
+2. Clamp the integer to the permitted range.
+3. Execute the corresponding Instant Speed or Instant Incline sequence.
+4. Enter the integer using the number buttons.
+5. Send Enter.
+6. Apply the required number of `+` or `−` adjustments.
+
+Examples:
+
+- 12.6 → base 13, followed by four Speed− steps
+- 12.4 → base 12, followed by four Speed+ steps
+
+Valid command ranges:
+
+- Speed: 0.8–25.0 km/h
+- Incline: 0.0–15.0%
+
+### 4.7.2 Macro Isolation Rule
+
+A complete macro is executed during one continuous O2-ownership period.
+
+The physical panels are not reconnected between:
+
+- Instant Speed or Instant Incline
+- number entry
+- Enter
+- fractional `+` or `−` adjustments
+
+Normal O2 baseline is generated during the pause between all individual macro steps.
+
+### 4.7.3 Command Queue and Status
+
+Command requests are transferred to the hardware task through a bounded FreeRTOS queue.
+
+Supported command states are:
+
+- `queued`
+- `started`
+- `step`
+- `completed`
+- `rejected`
+- `failed`
+
+A new request must never overwrite an active command. Commands are either queued, rejected, or executed sequentially.
 ### 4.8 Console Button Behavior (Verified)
 
 Physical Speed (+/−) and Incline (+/−) buttons are **ignored** by the treadmill mainboard unless the belt is actively moving. It is not possible to pre-set a target speed or incline via the console before starting. This constraint also applies to injected commands — do not queue Speed/Incline injections before the RUNNING state is confirmed.
@@ -233,16 +528,16 @@ Physical Speed (+/−) and Incline (+/−) buttons are **ignored** by the treadm
 ### 5.1 Data Authority Rules
 
 - **Speed** is derived exclusively from Pin 7
-- **Incline** is derived exclusively from Pin 11 + homing model
+- **Incline** is maintained as a hardware-tracked estimate derived from Pin 11, a verified homing reference, calibrated movement-pulse integration, and direction-dependent conversion factors
 - **System state** is derived exclusively from CSAFE
 
-No subsystem (UI, FTMS, command queue) may override or infer these values independently.
+No subsystem (UI, FTMS, command queue) may independently overwrite these authoritative state variables. The IMU may provide an independent, filtered deck-angle measurement for verification and drift detection, but it does not replace the pulse-integrated incline tracker during movement.
 
 All output systems must consume the same internal state variables.
 
 ### 5.2 Cadence (LSM6DSOX)
 
-An LSM6DSOX IMU is mounted to the lower treadmill frame via I2C (SDA: GPIO 47, SCL: GPIO 48). It uses the built-in hardware step counter to derive cadence from footstrike shockwaves. The I2C bus is actively terminated via an LTC4311 extender to handle the 2-meter cable run from the frame to the motor compartment.
+An LSM6DSOX IMU is rigidly mounted to the moving treadmill deck or another structure that follows the deck angle, via I2C (SDA: GPIO 47, SCL: GPIO 48). It is used to derive cadence from footstrike shockwaves and to provide a filtered physical deck-angle measurement for incline verification. The built-in hardware step counter may be used only after it has been validated against raw accelerometer-based detection on the installed treadmill. The I2C bus is actively terminated via an LTC4311 extender to handle the 2-meter cable run from the frame to the motor compartment.
 
 * **Cabling:** Shielded repurposed USB cable to protect against 3.5 HP motor EMI.
 * **Connectors:** Wago 221 vibration-proof connectors at the frame splice; GX12 Aviation plug at the ESP32 enclosure for modularity.
@@ -292,37 +587,6 @@ This feature ensures that external systems:
 - do not log running activity when the user steps off the treadmill
 - maintain accurate training data integrity
   
-### 5.3 Runner Presence Detection (Cadence Validation)
-
-To prevent false activity logging (Zwift, watches), detect if runner is present.
-
-#### Rule
-
-If:
-
-- **Speed > 0 km/h**
-- AND **Cadence = 0 SPM**
-
-Then:
-
-- classify as **No Runner Present**
-
-#### Effects
-
-- FTMS speed → 0
-- Distance paused
-- Cadence stays 0
-- No motor control change
-
-#### Timeout
-
-- ~2–3 seconds
-
-#### Constraint
-
-- Must run on Core 0
-- Must not affect real-time Core 1 logic
-
 ---
 
 ## 6. Speed Sensor (Pin 7)
@@ -455,7 +719,7 @@ Then:
 
 Pin 11 emits a constant pulse train (~394 Hz) while the incline motor is physically moving, and returns to rest voltage when motion stops.
 
-Incline is not treated as a direct analog angle value. Actual incline is calculated in software by homing to 0% and then counting movement pulses.
+Incline is not treated as a direct analog angle value. The primary incline value is a hardware-tracked estimate calculated by homing to 0% and integrating physical movement pulses with separate calibrated factors for upward and downward travel. A filtered IMU deck-angle measurement may be used to verify the estimate after movement has stopped.
 
 ### 7.2 Hardware Interface Options (Compatibility Note)
 
@@ -550,29 +814,57 @@ This minimizes flash wear and prevents incorrect learning during transient state
   - Prevents latch-up during power sequencing
   - ESP32 must actively drive OE HIGH after boot
 
-### 9.3 Data Gate (Mute Circuit)
+## 9.3 Data Gate and Shared MUTE Circuit
 
-- Hardware: SN74HC4066N inline on O2 data bus
-- Default must preserve native console communication
+The O2 data-gate circuit uses `SN74HC4066N` bilateral switches.
 
-- **Fail-safe design:**
-  - 10 kΩ pull-up to 5V (R2)
-  - Default = CLOSED (pass-through)
+The default hardware state must preserve native console and side-panel communication.
 
-> ⚠️ **FUNCTIONAL REQUIREMENT: Active-Low MUTE Logic**
+### 9.3.1 Fail-Safe State
 
-- Board 1 implements permanent pull-up (R2)
-- MUTE is strictly **active-low**
+The shared MUTE node has a 10 kΩ pull-up to 5 V.
 
-- **Important change:**
-  - Signal passes through TXS0108E
-  - Therefore ESP32 pin must be `OUTPUT` (not open-drain)
+This creates the following fail-safe behavior:
 
-- Drive LOW → open gate (inject)
-- Release → pass-through
+| Condition | Result |
+|---|---|
+| ESP32 unpowered | MUTE pulled HIGH; physical panels connected |
+| ESP32 booting with TXS OE LOW | Physical panels remain connected through the hardware pull-up |
+| Normal passive operation | MUTE HIGH; physical panels connected |
+| Active command injection | MUTE LOW; physical O2 sources isolated |
 
-> **VALIDATION REQUIRED:**
-Approx. **100 µs settle delay** required after asserting MUTE
+### 9.3.2 Active-Low MUTE Logic
+
+MUTE is strictly active-low:
+
+- Drive MUTE LOW → open the SN74HC4066N channels and isolate the physical O2 sources
+- Drive MUTE HIGH → close the SN74HC4066N channels and restore physical pass-through
+
+MUTE is level-shifted through the TXS0108E from 3.3 V to 5 V. The ESP32 MUTE pin must therefore be configured as a push-pull `OUTPUT`, not open-drain.
+
+### 9.3.3 Shared Isolation Scope
+
+One shared MUTE output controls both:
+
+- the touch-console O2 source
+- the separate side-panel switch source
+
+The emergency-stop circuit is excluded from the switched and injected path.
+
+### 9.3.4 Ownership and Release Sequence
+
+MUTE remains LOW during the complete command or macro. The physical panels are not reconnected between individual macro steps.
+
+Before MUTE is released HIGH:
+
+1. The ESP32 must return to normal O2 baseline generation.
+2. O1 must enter the defined reconnect point in IDLE.
+3. All O2 GPIOs must be returned to `INPUT`.
+4. The ESP32 must wait 50 µs to ensure that the O2 bus has been released.
+5. MUTE may then be released HIGH.
+6. Passive monitoring resumes after a 10 ms settling period.
+
+The same release sequence applies during watchdog recovery and every abnormal exit path.
 
 ### 9.4 Power Supply
 
@@ -605,9 +897,14 @@ Approx. **100 µs settle delay** required after asserting MUTE
 
 Thread safety:
 
-- Shared state between cores must be protected by a global `portMUX_TYPE` spinlock.
+- Shared state between tasks and cores must use an explicit synchronization mechanism appropriate to the data.
+- FreeRTOS queues shall be used for command requests, status events, and hardware events.
+- Atomic types may be used for simple shared flags.
+- A `portMUX_TYPE` critical section may be used for short access to shared multi-field state that cannot be transferred through a queue.
+- Network and UI code must never access the O1/O2 hardware state directly.
+- The Core 1 hardware task owns active MUTE and O2 control.
 
-> ⚠️ **FUNCTIONAL REQUIREMENT: Watchdog Feeding Strategy & Standby Keepalive**
+> **FUNCTIONAL REQUIREMENT: Watchdog Feeding Strategy & Standby Keepalive**
 > **Consequences if ignored:** If the watchdog is only fed when O1 interrupts occur, the device can enter a restart loop during standby/IDLE/STOPPED when bus activity stops.
 > **Operational Rule:** Core 1 must implement a watchdog keepalive strategy that runs independently of O1 interrupt activity to guarantee stable standby operation.
 > **Core Responsibility:** Watchdog feeding must be owned by Core 1 only. Core 0 must never reset the watchdog, ensuring that failure in real-time tasks (Core 1) cannot be masked by network/UI activity.
@@ -752,14 +1049,14 @@ Application code must never read UART directly. CSAFE must be handled as a dedic
 
 - [x] Final incline span calibration *(Closed: 3086/2943 pulses per percent).*
 - [x] Verification of bus mapping *(Closed: Split-board MitM architecture verified).*
-- [ ] Validation of injection timing margins (stabilization and settle delays) on final ESP32 hardware.
-- [ ] Num 6 O1 row confirmation — pending simultaneous O1/O2 capture.
+- [x] Injection timing and settle sequence verified with the current operational values.
+- [x] Number 6 mapping verified: O1 `0x17`, O2 `0x81`.
 
 ---
 
 ## Appendix: Engineering Notes (Non-Critical)
 
-*This section preserves historical context, architectural rationale, and optimization strategies that explain **why** the V3.5 specifications are designed the way they are. These notes are for engineering reference and do not override the functional rules above.*
+*This section preserves historical context, architectural rationale, and optimization strategies that explain **why** the V4 specifications are designed the way they are. These notes are for engineering reference and do not override the functional rules above.*
 
 ### A.1 PC817 Optocoupler Switching Dynamics & Historical Blanking Thresholds
 
@@ -788,7 +1085,7 @@ void IRAM_ATTR isrSpeedDeprecated() {
 
 ### A.3 Injection Diagnostics Ring Buffer (Development Note)
 
-For bring-up and diagnostics (development only), implement a circular log buffer (ring buffer) with 64 entries on Core 1. Each entry should record timestamps for MUTE assertions, matched O1 row, injected KEY byte, and result status. Expose the buffer via a debug-only HTTP endpoint or UART output, ensuring it does not interfere with Core 1 real-time behavior.
+For bring-up and diagnostics (development only), implement a circular log buffer (ring buffer) with 64 entries on Core 1. Each entry should record the timestamp, observed O1 phase, generated O2 response byte, active command step, MUTE state, and result status. Expose the buffer via a debug-only HTTP endpoint or UART output, ensuring it does not interfere with Core 1 real-time behavior.
 
 ### A.4 Configuration Class Separation (4-Way Split)
 
@@ -811,7 +1108,7 @@ The current incline model is based on homing and pulse counting (open-loop estim
 
 The LSM6DSOX IMU may be used to measure absolute tilt (gravity vector) of the treadmill deck to:
 
-- verify actual incline against expected model
+- verify the pulse-integrated incline estimate against the filtered physical deck angle
 - detect drift or missed pulses
 - provide automatic recalibration without requiring a full homing cycle
 
@@ -829,7 +1126,7 @@ The LSM6DSOX IMU may be used to measure absolute tilt (gravity vector) of the tr
 
 #### Status
 
-This feature is **not part of V3.5 operational logic** and is reserved for future development (e.g. V3.6+)
+This feature is included in the approved V4 architecture but remains pending implementation, calibration, and regression testing.
 
 ### A.7 TXS0108E Power Sequencing Requirement (Bring-up Lesson)
 
@@ -857,4 +1154,3 @@ Result:
 - Hardware **10 kΩ pull-down (R1)** on OE
 - Forces HIGH-Z state during power-up
 - Prevents latch-up regardless of supply order
-``
