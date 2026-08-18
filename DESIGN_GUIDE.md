@@ -322,7 +322,7 @@ All phases not listed for a selected button retain their normal baseline values.
 | Number 0 | `0x17` | `0xA0` |
 | Number 2 | `0x17` | `0x90` |
 | Number 3 | `0x17` | `0x84` |
-| Number 6 | `0x17` | `0x81` |
+| Number 6 | `0x17` | `0x82` |
 | Number 9 preload | `0x17` | `0x81` |
 | Number 9 active phase | `0x1B` | `0x81` |
 | Fan On/Off | `0x1B` | `0xA0` |
