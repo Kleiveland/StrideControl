@@ -239,6 +239,7 @@ The complete baseline continues before, between, and after steps, during ACK obs
 | Incline- | `0x1D` | `0xE0` | Passive only |
 | Quick Start | `0x1D` | `0xD0` | Passive only |
 | Stop | `0x1D` | `0xC2` | Passive only |
+| CLR | 0x0F | 0x81 | Active O2 |
 
 #### 4.5.1 Number 9 Exception
 
@@ -302,21 +303,56 @@ An ACK requires both a newer sequence and `event.startUs >= pressStartUs`. The e
 
 Only an unambiguous `NO_RESPONSE` permits one direct retry. No direct retry follows `NORMAL_LONG`, multi, `EDGE_LOSS`, or `INVALID`.
 
-#### 4.6.6 CLR-Based Numeric Recovery
+##### 4.6.6 CLR-Based Numeric Recovery
 
-CLR is the selected authoritative numeric-buffer recovery mechanism, but the physical mapping is still pending. Recovery remains disabled until the target phase, O2 byte, timing, release, and buzzer behavior are measured.
+CLR is the authoritative mechanism for returning the console numeric-entry buffer to a known empty state.
 
-```text
+The physical CLR button has been verified with the following signature:
+
+- Target phase: Phase A
+- O1 value: 0x0F
+- Active O2 value: 0x81
+- Preload phase: None observed
+- Preload O2 value: Not required
+- Physical buzzer response: Approximately 100.7 ms
+- Qualified buzzer segments: One
+- Behavior after zero, one, and multiple entered digits: Verified
+- Behavior in Instant Speed mode: Verified
+- Behavior in Instant Incline mode: Verified
+- Buffer clear without committing the entered value: Verified
+
+The verified recovery sequence is:
+
 Ambiguous or duplicate result
--> stop numeric entry
--> send and verify CLR
--> resend the complete numeric value
--> send Enter only after all digits are confirmed
-```
+-> stop the current numeric-entry sequence
+-> send CLR once
+-> verify the CLR buzzer response
+-> restart the complete intended numeric sequence
+-> send Enter only after every digit in the restarted sequence is confirmed
 
-No placeholder CLR phase or byte is permitted.
+A direct retry remains permitted only after a qualified NO_RESPONSE. No direct retry is permitted after NORMAL_LONG, MERGED_MULTI, DISTINCT_MULTI, EDGE_LOSS, or INVALID.
 
-Mapping must be verified in Instant Speed and Instant Incline after zero, one, and two digits, including proof that CLR clears without committing a value.
+Each complete sequence restart uses exactly one CLR command. CLR is not retried independently within the same recovery attempt.
+
+The limits are:
+
+- Maximum direct retry per digit: One
+- Maximum complete sequence restarts per macro: Two
+
+If CLR does not receive a qualified NORMAL_SINGLE response:
+
+- Do not send additional digits.
+- Do not send Enter.
+- Do not execute subsequent Speed+ or Speed- relay corrections.
+- Abort the macro.
+- Return CLEAR_FAILED.
+
+The initial injected CLR timing configuration is:
+
+- CLR hold: 82 ms
+- Post-CLR pause: 300 ms
+
+The physical mapping and behavior are verified. The 82 ms injected hold time and complete automatic recovery sequence must still pass active injection and end-to-end regression testing before production qualification.
 
 #### 4.6.7 Enter Gating
 
@@ -586,12 +622,15 @@ Visual and auditory only, never automated control. Includes focus mode, Web Audi
 - [x] Passive Phase D button recognition
 - [x] Speed fractional adjustment through relays
 - [x] 82 ms general numeric baseline
+- [x] - CLR physical mapping: Phase A, O1 0x0F, O2 0x81
+- [x]CLR verified in Instant Speed and Instant Incline
+- [x]CLR verified after zero, one, and multiple entered digits
+- [x]CLR verified to clear the numeric buffer without committing the entered value
+- [x]CLR physical buzzer response: approximately 100.7 ms with one qualified segment
+- [x]No CLR preload requirement observed
 
 ### 15.2 Open Items
 
-- [ ] Map CLR phase and O2 byte
-- [ ] Characterize CLR timing, release, buzzer response, and pause
-- [ ] Implement and validate CLR recovery
 - [ ] Validate ambiguous Enter behavior
 - [ ] End-to-end speed and incline regression
 - [ ] Resolve integrated GPIO conflicts
