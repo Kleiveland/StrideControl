@@ -106,22 +106,24 @@ When O1 enters `0x1F`, output O2 `0x00` for the first 1200 microseconds and `0xF
 
 ### 4.3 GPIO Mapping, O2 Bus, and Isolation
 
-#### 4.3.1 ESP32-S3 GPIO Mapping
+### 4.3.1 ESP32-S3 Master GPIO Mapping (Unified Architecture)
 
-| Signal | GPIO | Function / status |
+The full product architecture resolves historical pin conflicts. The following mapping guarantees independent operation of all subsystems without GPIO contention:
+
+| Signal | ESP32 GPIO | Function / status |
 |---|---:|---|
-| O1 bits 0-4 | 4, 5, 6, 7, 15 | Read-only phase bus |
-| O2 bits 0-7 | 41, 42, 8, 9, 10, 11, 12, 13 | Bidirectional O2 bus |
-| Shared MUTE | 21 | Active-low physical-source isolation |
-| TXS0108E OE | 2 | Level-shifter output enable |
-| Buzzer ACK | 16 | Current console-interface build |
-| Speed+ relay | 14 | Current console-interface build |
-| Speed- relay | 47 | Current console-interface build |
-| Emergency-stop monitor | 18 | Reserved; disabled in current firmware |
-| Speed input | 3 | Full architecture |
-| Incline input | 14 | Historical assignment; conflicts with Speed+ relay |
-| CSAFE RX/TX | 16 / 17 | Historical assignment; RX conflicts with buzzer |
-| I2C SDA/SCL | 47 / 48 | Historical assignment; SDA conflicts with Speed- relay |
+| **O1 bit 0-4** | `4, 5, 6, 7, 15` | Read-only phase input |
+| **O2 bit 0-7** | `41, 42, 8, 9, 10, 11, 12, 13` | Bidirectional O2 data |
+| **Shared MUTE** | `21` | Active-low isolation of physical O2 sources |
+| **TXS0108E OE** | `2` | Output enable |
+| **Buzzer ACK** | `16` | Interrupt-driven closed-loop capture |
+| **Speed Sensor** | `3` | Isolated pulse input (falling edge) |
+| **Incline Sensor** | `14` | Isolated pulse input |
+| **Speed+ Relay** | `39` | Solid-state or relay output (Active Low) |
+| **Speed- Relay** | `38` | Solid-state or relay output (Active Low) |
+| **CSAFE TX / RX**| `17 / 40` | 9600 baud serial interface |
+| **I2C SDA / SCL**| `47 / 48` | LSM6DSOX IMU & Cadence |
+| **E-Stop (Res.)**| `18` | Hardware safety monitor |
 
 > **Integration requirement:** The final combined PCB must resolve GPIO16, GPIO14, and GPIO47 conflicts before all subsystems are enabled simultaneously.
 
