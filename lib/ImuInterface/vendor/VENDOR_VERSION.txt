@@ -1,0 +1,11 @@
+﻿Repository: https://github.com/STMicroelectronics/lsm6dsox-pid
+Commit: 6f539bd89263aac30d7653ed6b4a78360e185988
+Tag/Release: v3.3.1-34-g6f539bd
+Retrieval Date: 2026-08-27
+Files:
+- lsm6dsox_reg.c
+- lsm6dsox_reg.h
+- LICENSE_ST_BSD3.txt (copied from upstream LICENSE)
+
+Statement of Origin:
+The source and header files (lsm6dsox_reg.c, lsm6dsox_reg.h) are exact, unmodified copies from the official STMicroelectronics upstream repository.
