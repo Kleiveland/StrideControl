@@ -461,7 +461,6 @@ bool InclineSensor::confirmHomedAtZero() {
   bool committed = false;
   portENTER_CRITICAL(&impl_->modelMux);
   if (impl_->modelGeneration == modelSnap.modelGeneration && !impl_->moving) {
-    impl_->estimatedInclinePct = 0.0f;
     impl_->baselineInclinePct = 0.0f;
     impl_->baselineAcceptedPulseCount = isrSnap.acceptedPulseCount;
     impl_->baselineDirection = currentExpDir;
@@ -522,7 +521,6 @@ bool InclineSensor::restorePosition(float inclinePct, bool trusted) {
   bool committed = false;
   portENTER_CRITICAL(&impl_->modelMux);
   if (impl_->modelGeneration == modelSnap.modelGeneration && !impl_->moving) {
-    impl_->estimatedInclinePct = inclinePct;
     impl_->baselineInclinePct = inclinePct;
     impl_->baselineAcceptedPulseCount = isrSnap.acceptedPulseCount;
     impl_->baselineDirection = currentExpDir;
