@@ -120,8 +120,10 @@ Services, APIs, GUI, and external adapters
 1. **Hardware and interface:** `ConsoleInterface`, `SpeedSensor`, `InclineSensor`, `ImuInterface`, `CsafeInterface`, and later `HeartRateClient` under shared BLE ownership.
 2. **Analysis, calibration, and verification:** `RunnerDynamics`, `SpeedCalibration`, and later `InclineVerifier`.
 3. **Cross-cutting infrastructure:** executable tests, `DiagnosticsService` core, `SettingsService` core, `RecordedDataService` core, and `BleManager`.
-4. **Coordination and domain models:** `ApplicationOrchestrator`, `ApplicationSnapshot`, `SystemManager`, `WorkoutSession`, and `MaintenanceService`.
+4. **Coordination and domain models:** `ApplicationOrchestrator`, `ApplicationSnapshot`, `SystemManager`,`TreadmillController`, `WorkoutSession`, and `MaintenanceService`.
 5. **Communication and presentation:** `FtmsService`, `WebServerManager`, API models, the existing Precision UI, the PC commissioning page, and later external adapters.
+
+   
 
 Prefer explicit update calls and read-only snapshots over a web of callbacks when timing and ownership permit it.
 
@@ -158,6 +160,12 @@ SpeedCalibration
 
 Command layer
 = validates the request and executes the corrected command
+
+TreadmillController
+= validates speed and incline requests, applies SpeedCalibration when required, submits commands through ConsoleInterface, and tracks command completion.
+
+ConsoleInterface
+= owns numeric command execution, O2 ownership, ACK qualification, retry handling, CLR recovery, and command macro execution.
 
 SettingsService
 = persists approved calibration and last-known-good state
@@ -804,6 +812,22 @@ load candidate
 → verify success
 → persist
 → resume
+
+
+WorkoutResumeSettings
+
+Examples:
+
+- immediateResumeThresholdSec
+- reEntryRecommendationThresholdSec
+- warmupRecommendationThresholdSec
+- extendedWarmupThresholdSec
+- skipToRecoveryRemainingFraction
+
+These values are configurable through the PC Settings interface.
+
+WorkoutSession consumes the settings but does not own persistence.
+
 ```
 
 On failure, restore the previous configuration, restart the module, and report the error.
@@ -852,9 +876,91 @@ BleManager
 
 ### 10.11 Workout and Maintenance
 
-WorkoutSession owns workout lifecycle, elapsed time, pause/resume, summary, and workout-scoped use of steps, validated runner distance, runner speed, cadence, heart rate, and incline.
+WorkoutSession owns workout lifecycle, elapsed time, pause/resume, summary, and workout-scoped use of steps, validated runner distance, runner speed, cadence, heart rate, and incline. - workout lifecycle
+4
+- workout suspension and resume
+5
+- interval progression
+6
+- workout-scoped telemetry
+7
+- workout summary
+8
+ 
+9
+WorkoutSession shall never:
+10
+ 
+11
+- initiate treadmill movement from standstill
+12
+- automatically resume high intensity after interruption
+13
+- automatically restart a suspended workout
+14
+ 
+15
+WorkoutSession may only resume after explicit user approval.
 
 MaintenanceService owns mechanical belt distance, runtime, service intervals, maintenance warnings, and persistent machine counters. Mechanical distance continues during valid belt movement even when RunnerDynamics reports SideRails.
+
+### 10.11.1 Workout Suspension and Resume
+
+Stopping treadmill motion during an active workout does not terminate
+the workout automatically.
+
+The workout enters:
+
+Suspended
+
+State.
+
+WorkoutSession stores:
+
+- current step
+- elapsed step time
+- completed fraction
+- pause timestamp
+- workout progress context
+
+When treadmill motion is later detected again:
+
+WorkoutSession evaluates the pause duration and workout state.
+
+It may recommend:
+
+- Resume Workout
+- Resume With Re-Warmup
+- Restart Current Interval
+- Skip To Recovery
+- End Workout
+
+The final decision belongs to the user.
+
+WorkoutSession must never automatically resume directly into a work interval.
+
+### 10.11.2 Re-Warmup Recommendation
+
+WorkoutSession may generate resume recommendations using configurable
+SettingsService thresholds.
+
+Typical examples:
+
+pause < 60 s
+    immediate resume may be recommended
+
+pause > configured re-entry threshold
+    short re-entry may be recommended
+
+pause > configured warmup threshold
+    re-warmup may be recommended
+
+pause > configured extended threshold
+    restart of interval or extended warmup may be recommended
+
+These recommendations are advisory only.
+
+WorkoutSession must not automatically execute them.
 
 ### 10.12 AI-Assisted Development Protocol
 
@@ -982,6 +1088,20 @@ Visual and auditory only, never automated control. Includes focus mode, Web Audi
     "history": []
   }]
 }
+
+WorkoutSession publishes suspension and resume context through snapshots.
+
+The GUI is responsible for presenting:
+
+- suspension state
+- pause duration
+- workout progress
+- resume recommendations
+
+WorkoutSession provides facts.
+
+The GUI decides how they are presented.
+
 ```
 
 ---
