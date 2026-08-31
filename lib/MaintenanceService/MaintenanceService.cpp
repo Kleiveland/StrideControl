@@ -26,14 +26,14 @@ void MaintenanceService::begin(SettingsService* settingsService) {
     fractionalTimeMsAccumulator_ = 0;
     initialized_ = (settingsService_ != nullptr);
     portEXIT_CRITICAL(&lock_);
+
+    pendingSave_.store(false);
 }
 
 void MaintenanceService::update(float currentSpeedKmh, uint32_t deltaMs) {
     if (deltaMs == 0 || std::isnan(currentSpeedKmh) || std::isinf(currentSpeedKmh)) {
         return;
     }
-
-    bool shouldFlush = false;
 
     portENTER_CRITICAL(&lock_);
     if (!initialized_) {
@@ -59,20 +59,27 @@ void MaintenanceService::update(float currentSpeedKmh, uint32_t deltaMs) {
             fractionalTimeMsAccumulator_ %= 1000U;
         }
 
-        // Wear-leveling condition evaluation
+        // Wear-leveling condition: flag pending save without blocking the 50Hz loop
         if ((totalDistanceMeters_ - lastSavedDistanceMeters_ >= kSaveDistanceIntervalMeters) ||
             (totalTimeSeconds_ - lastSavedTimeSeconds_ >= kSaveTimeIntervalSeconds)) {
-            shouldFlush = true;
+            pendingSave_.store(true);
         }
     }
     portEXIT_CRITICAL(&lock_);
+}
 
-    if (shouldFlush) {
+bool MaintenanceService::isSavePending() const {
+    return pendingSave_.load();
+}
+
+void MaintenanceService::processSave() {
+    if (pendingSave_.exchange(false)) {
         flushToStorage();
     }
 }
 
 void MaintenanceService::forceSave() {
+    pendingSave_.store(false);
     flushToStorage();
 }
 
@@ -90,7 +97,6 @@ void MaintenanceService::flushToStorage() {
     }
     portEXIT_CRITICAL(&lock_);
 
-    // Save to NVS outside spinlock to allow mutex and flash write latency without blocking interrupts
     if (readyToSave && settingsService_ != nullptr) {
         settingsService_->saveMaintenanceConfig(cfg);
     }
@@ -111,8 +117,7 @@ uint64_t MaintenanceService::getTotalTimeSeconds() const {
 }
 
 const char* MaintenanceService::version() {
-    return "1.0.0";
+    return "1.1.0";
 }
 
 } // namespace stridecontrol
-

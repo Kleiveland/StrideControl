@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
 #include <freertos/FreeRTOS.h>
 #include "../SettingsService/SettingsService.h"
 
@@ -10,8 +11,8 @@ namespace stridecontrol {
  * @brief Flash-safe, wear-leveled hardware odometer and utilization tracker.
  *
  * Accumulates distance and active moving time in RAM at high loop rates (e.g. 50Hz)
- * and flushes to SettingsService (NVS) only when wear-leveling thresholds
- * are exceeded, or on explicit forceSave().
+ * without blocking on NVS flash writes. Flushes to SettingsService asynchronously
+ * via processSave() or immediately via forceSave().
  */
 class MaintenanceService {
 public:
@@ -25,6 +26,9 @@ public:
     void update(float currentSpeedKmh, uint32_t deltaMs);
     void forceSave();
 
+    bool isSavePending() const;
+    void processSave();
+
     uint64_t getTotalDistanceMeters() const;
     uint64_t getTotalTimeSeconds() const;
 
@@ -37,6 +41,7 @@ private:
 
     SettingsService* settingsService_ = nullptr;
     bool initialized_ = false;
+    std::atomic<bool> pendingSave_{false};
 
     uint64_t totalDistanceMeters_ = 0;
     uint64_t totalTimeSeconds_ = 0;
@@ -55,4 +60,3 @@ private:
 };
 
 } // namespace stridecontrol
-
