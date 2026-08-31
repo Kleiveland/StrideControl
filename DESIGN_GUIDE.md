@@ -885,18 +885,22 @@ WorkoutSession owns:
 - workout summary
 
 WorkoutSession consumes authoritative data from:
+
 - RunnerDynamics
 - ApplicationSnapshot
 - TreadmillController
 
 WorkoutSession does not become a new owner of:
+
 - cadence
 - step count
 - validated distance
 - runner speed
 - incline state
+- heart rate
 
 WorkoutSession shall never:
+
 - initiate treadmill movement from standstill
 - automatically resume high intensity after interruption
 - automatically restart a suspended workout
