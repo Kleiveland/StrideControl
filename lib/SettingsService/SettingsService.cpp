@@ -1,7 +1,53 @@
 #include "SettingsService.h"
 #include <Preferences.h>
+#include <cmath>
 
 namespace stridecontrol {
+
+namespace {
+
+bool isValidSpeedConfig(const SpeedConfig& config) {
+    if (config.pointCount > kMaxSpeedCalibrationPoints) {
+        return false;
+    }
+    if (!std::isfinite(config.maxAchievableSpeedKmh) ||
+        config.maxAchievableSpeedKmh <= 0.0f ||
+        config.maxAchievableSpeedKmh > 25.0f) {
+        return false;
+    }
+    if (config.commandMapValid && config.pointCount < 2) {
+        return false;
+    }
+    if (config.maxAchievableSpeedVerified && !config.commandMapValid) {
+        return false;
+    }
+
+    for (size_t i = 0; i < config.pointCount; ++i) {
+        const auto& pt = config.points[i];
+        if (!std::isfinite(pt.measuredPhysicalSpeedKmh) || !std::isfinite(pt.treadmillCommandKmh)) {
+            return false;
+        }
+        if (pt.measuredPhysicalSpeedKmh <= 0.0f) {
+            return false;
+        }
+        if (pt.treadmillCommandKmh < 0.8f || pt.treadmillCommandKmh > 25.0f) {
+            return false;
+        }
+        if (i > 0) {
+            const auto& prev = config.points[i - 1];
+            if (pt.measuredPhysicalSpeedKmh <= prev.measuredPhysicalSpeedKmh) {
+                return false;
+            }
+            if (pt.treadmillCommandKmh <= prev.treadmillCommandKmh) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+} // namespace
 
 SettingsService::SettingsService() {
     mutex_ = xSemaphoreCreateMutex();
@@ -40,8 +86,10 @@ SystemConfig SettingsService::loadAll() {
 
         SpeedConfig spd{};
         len = prefs.getBytes("speed", &spd, sizeof(SpeedConfig));
-        if (len == sizeof(SpeedConfig) && spd.pointCount <= kMaxSpeedCalibrationPoints) {
+        if (len == sizeof(SpeedConfig) && isValidSpeedConfig(spd)) {
             cfg.speed = spd;
+        } else {
+            cfg.speed = SpeedConfig{};
         }
 
         MaintenanceConfig maint{};
@@ -87,8 +135,10 @@ SpeedConfig SettingsService::getSpeedConfig() {
     if (prefs.begin(kNvsNamespace, true)) {
         SpeedConfig spd{};
         size_t len = prefs.getBytes("speed", &spd, sizeof(SpeedConfig));
-        if (len == sizeof(SpeedConfig) && spd.pointCount <= kMaxSpeedCalibrationPoints) {
+        if (len == sizeof(SpeedConfig) && isValidSpeedConfig(spd)) {
             cfg = spd;
+        } else {
+            cfg = SpeedConfig{};
         }
         prefs.end();
     }
@@ -135,7 +185,7 @@ bool SettingsService::saveInclineConfig(const InclineConfig& config) {
 }
 
 bool SettingsService::saveSpeedConfig(const SpeedConfig& config) {
-    if (config.pointCount > kMaxSpeedCalibrationPoints) {
+    if (!isValidSpeedConfig(config)) {
         return false;
     }
 
@@ -187,7 +237,7 @@ void SettingsService::factoryReset() {
 }
 
 const char* SettingsService::version() {
-    return "1.0.0";
+    return "1.1.0";
 }
 
 } // namespace stridecontrol

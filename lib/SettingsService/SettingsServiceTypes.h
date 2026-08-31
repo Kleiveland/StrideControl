@@ -17,11 +17,14 @@ struct InclineConfig {
 };
 
 /**
- * @brief Individual speed mapping calibration point.
+ * @brief Individual physical-to-command speed calibration point.
+ *
+ * Represents an empirical observation: When commanding 'treadmillCommandKmh'
+ * to the console, the physical belt tachometer measured 'measuredPhysicalSpeedKmh'.
  */
 struct SpeedCalibrationPoint {
-    float targetSpeedKmh = 0.0f;
-    float consoleSpeedKmh = 0.0f;
+    float measuredPhysicalSpeedKmh = 0.0f; // Physical belt speed measured by SpeedSensor (X-axis)
+    float treadmillCommandKmh = 0.0f;      // Treadmill console command injected to O2 (Y-axis)
 };
 
 /**
@@ -30,6 +33,9 @@ struct SpeedCalibrationPoint {
 struct SpeedConfig {
     std::array<SpeedCalibrationPoint, kMaxSpeedCalibrationPoints> points{};
     uint8_t pointCount = 0;
+    bool commandMapValid = false;
+    float maxAchievableSpeedKmh = 25.0f;
+    bool maxAchievableSpeedVerified = false;
 };
 
 /**
