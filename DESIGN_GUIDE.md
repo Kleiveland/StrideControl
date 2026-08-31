@@ -876,33 +876,32 @@ BleManager
 
 ### 10.11 Workout and Maintenance
 
-WorkoutSession owns workout lifecycle, elapsed time, pause/resume, summary, and workout-scoped use of steps, validated runner distance, runner speed, cadence, heart rate, and incline. - workout lifecycle
-4
-- workout suspension and resume
-5
-- interval progression
-6
-- workout-scoped telemetry
-7
-- workout summary
-8
- 
-9
-WorkoutSession shall never:
-10
- 
-11
-- initiate treadmill movement from standstill
-12
-- automatically resume high intensity after interruption
-13
-- automatically restart a suspended workout
-14
- 
-15
-WorkoutSession may only resume after explicit user approval.
+WorkoutSession owns:
 
-MaintenanceService owns mechanical belt distance, runtime, service intervals, maintenance warnings, and persistent machine counters. Mechanical distance continues during valid belt movement even when RunnerDynamics reports SideRails.
+- workout lifecycle
+- workout suspension and resume
+- interval progression
+- workout-scoped telemetry
+- workout summary
+
+WorkoutSession consumes authoritative data from:
+- RunnerDynamics
+- ApplicationSnapshot
+- TreadmillController
+
+WorkoutSession does not become a new owner of:
+- cadence
+- step count
+- validated distance
+- runner speed
+- incline state
+
+WorkoutSession shall never:
+- initiate treadmill movement from standstill
+- automatically resume high intensity after interruption
+- automatically restart a suspended workout
+
+WorkoutSession may only resume after explicit user approval.
 
 ### 10.11.1 Workout Suspension and Resume
 
@@ -1044,6 +1043,19 @@ The existing `StrideControl Precision UI` / `TabletGuiMockup` is the visual star
 - Use calibrated achievable speed limits in controls and quick keys.
 - Do not expose external calibration, calibration-table editing, learned-point approval, or commissioning in the tablet UI.
 - Test the tablet UI on the standard iPhone 14 Pro layout as well as the target tablet.
+
+  WorkoutSession publishes suspension and resume context through snapshots.
+
+The GUI is responsible for presenting:
+
+- suspension state
+- pause duration
+- workout progress
+- resume recommendations
+
+WorkoutSession provides facts.
+
+The GUI decides how they are presented.
 
 ### 14.2 PC Settings, Diagnostics, and Commissioning UI
 
