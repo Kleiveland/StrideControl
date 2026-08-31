@@ -49,11 +49,16 @@ enum class FaultCode : uint16_t {
     // Runner Dynamics Subsystem
     RunnerDynamicsDiscontinuity,
 
-    // Communication Interfaces
+    // Communication & Bluetooth Interfaces
     CsafeTimeout,
     CsafeFrameError,
     ConsoleTimeout,
     ConsoleCommandError,
+    BleStackError,             ///< NimBLE host stack initialization or fatal hardware fault
+    BleScanError,              ///< Scan start failure or buffer exhaustion
+    HeartRateConnectionLost,   ///< Unexpected HR sensor disconnect during active workout
+    FtmsProtocolError,         ///< Malformed FTMS control point command
+    RscNotifyError,            ///< RSC Footpod notification buffer or CCCD error
 
     // Motor, Power & Safety Subsystem
     MotorInterlockFault,
@@ -113,12 +118,17 @@ constexpr FaultSeverity getFaultSeverity(FaultCode code) {
             code == FaultCode::CsafeFrameError ||
             code == FaultCode::ConsoleTimeout ||
             code == FaultCode::ConsoleCommandError ||
+            code == FaultCode::BleScanError ||
+            code == FaultCode::HeartRateConnectionLost ||
+            code == FaultCode::FtmsProtocolError ||
+            code == FaultCode::RscNotifyError ||
             code == FaultCode::OverTemperatureWarning ||
             code == FaultCode::SystemWatchdogWarning) ? FaultSeverity::Warning :
            (code == FaultCode::SpeedSensorHardwareError ||
             code == FaultCode::ImuCommunicationError ||
             code == FaultCode::ImuSensorDisconnected ||
             code == FaultCode::InclineSensorHardwareError ||
+            code == FaultCode::BleStackError ||
             code == FaultCode::MotorInterlockFault ||
             code == FaultCode::PowerSupplyFault) ? FaultSeverity::Critical :
            (code == FaultCode::ImuHardwareError ||

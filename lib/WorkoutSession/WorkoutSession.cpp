@@ -202,10 +202,18 @@ void WorkoutSession::update(
 
         const WorkoutStep& curStep = snapshot_.currentStep;
 
-        // A. Speed Ramping phase
-        if (snapshot_.state == WorkoutSessionState::WorkRamping ||
-            snapshot_.state == WorkoutSessionState::RecoveryRamping) {
+        // Advance session-level totals
+        totalElapsedTimeMs_ += dt;
+        if (applicationSnapshot.runner.speedCreditEnabled) {
+            activeRunningTimeMs_ += dt;
+        }
+        if (distDelta > 0.0) {
+            totalValidatedDistanceKm_ += distDelta;
+            stepElapsedValidatedDistanceKm_ += distDelta;
+        }
 
+        // A. WorkRamping: Speed-gated ramp phase for Work steps
+        if (snapshot_.state == WorkoutSessionState::WorkRamping) {
             if (!commandSubmittedForStep_) {
                 controller_.submitSpeedTarget(curStep.targetPhysicalSpeedKmh, nowMs);
                 controller_.submitInclineTarget(curStep.targetInclinePct, nowMs);
@@ -217,36 +225,82 @@ void WorkoutSession::update(
                 snapshot_.speedGateTimedOut = false;
             }
 
+            const uint32_t rampElapsedMs = (nowMs >= stepStartTimestampMs_) ? (nowMs - stepStartTimestampMs_) : 0;
             const float speedDiff = std::abs(applicationSnapshot.speed.speedKmh - curStep.targetPhysicalSpeedKmh);
+
+            bool transitionToActive = false;
             if (speedDiff <= config_.targetSpeedToleranceKmh) {
                 snapshot_.speedGateReached = true;
                 stepSpeedGateTimestampMs_ = nowMs;
-                if (curStep.type == WorkoutStepType::Work) {
-                    snapshot_.state = WorkoutSessionState::WorkActive;
-                } else if (curStep.type == WorkoutStepType::Recovery) {
-                    snapshot_.state = WorkoutSessionState::RecoveryActive;
-                }
-            } else if (nowMs - stepStartTimestampMs_ > config_.speedGateTimeoutMs) {
+                transitionToActive = true;
+            } else if (rampElapsedMs >= config_.speedGateTimeoutMs) {
                 snapshot_.speedGateTimedOut = true;
-                if (curStep.type == WorkoutStepType::Work) {
-                    snapshot_.state = WorkoutSessionState::WorkActive;
-                } else if (curStep.type == WorkoutStepType::Recovery) {
-                    snapshot_.state = WorkoutSessionState::RecoveryActive;
+                transitionToActive = true;
+            }
+
+            if (transitionToActive) {
+                snapshot_.state = WorkoutSessionState::WorkActive;
+                // Transition tick: do not increment stepElapsedMs_ on this update; timing starts on next tick
+            }
+
+            // Snapshot updates during WorkRamping
+            snapshot_.totalElapsedTimeMs = totalElapsedTimeMs_;
+            snapshot_.activeRunningTimeMs = activeRunningTimeMs_;
+            snapshot_.totalValidatedDistanceKm = totalValidatedDistanceKm_;
+            snapshot_.stepElapsedMs = stepElapsedMs_;
+            snapshot_.stepElapsedValidatedDistanceKm = stepElapsedValidatedDistanceKm_;
+
+            if (curStep.goalType == WorkoutStepGoalType::Duration) {
+                // Hold at zero progress during WorkRamping
+                snapshot_.stepRemainingMs = curStep.targetDurationMs;
+                snapshot_.stepProgressFraction = 0.0f;
+                snapshot_.stepRemainingFraction = 1.0f;
+            } else if (curStep.goalType == WorkoutStepGoalType::ValidatedRunnerDistance) {
+                // Distance goal progresses during WorkRamping
+                if (curStep.targetDistanceKm > 0.0) {
+                    snapshot_.stepRemainingValidatedDistanceKm = (stepElapsedValidatedDistanceKm_ < curStep.targetDistanceKm)
+                                                                     ? (curStep.targetDistanceKm - stepElapsedValidatedDistanceKm_)
+                                                                     : 0.0;
+                    snapshot_.stepProgressFraction = static_cast<float>(stepElapsedValidatedDistanceKm_ / curStep.targetDistanceKm);
+                    snapshot_.stepRemainingFraction = 1.0f - snapshot_.stepProgressFraction;
+
+                    if (stepElapsedValidatedDistanceKm_ >= curStep.targetDistanceKm) {
+                        advanceStep(nowMs);
+                    }
                 }
             }
+            return;
         }
 
-        // B. Active progress tracking
-        totalElapsedTimeMs_ += dt;
-        if (applicationSnapshot.runner.speedCreditEnabled) {
-            activeRunningTimeMs_ += dt;
-        }
-        if (distDelta > 0.0) {
-            totalValidatedDistanceKm_ += distDelta;
-            stepElapsedValidatedDistanceKm_ += distDelta;
+        // B. RecoveryRamping: Recovery countdown begins immediately
+        if (snapshot_.state == WorkoutSessionState::RecoveryRamping) {
+            if (!commandSubmittedForStep_) {
+                controller_.submitSpeedTarget(curStep.targetPhysicalSpeedKmh, nowMs);
+                controller_.submitInclineTarget(curStep.targetInclinePct, nowMs);
+                commandSubmittedForStep_ = true;
+                stepStartTimestampMs_ = nowMs;
+                snapshot_.expectedRampTimeMs = calculateExpectedRampTimeMs(
+                    applicationSnapshot.speed.speedKmh, curStep.targetPhysicalSpeedKmh);
+                snapshot_.speedGateReached = false;
+                snapshot_.speedGateTimedOut = false;
+            }
+
+            const uint32_t rampElapsedMs = (nowMs >= stepStartTimestampMs_) ? (nowMs - stepStartTimestampMs_) : 0;
+            const float speedDiff = std::abs(applicationSnapshot.speed.speedKmh - curStep.targetPhysicalSpeedKmh);
+
+            if (speedDiff <= config_.targetSpeedToleranceKmh) {
+                snapshot_.speedGateReached = true;
+                stepSpeedGateTimestampMs_ = nowMs;
+                snapshot_.state = WorkoutSessionState::RecoveryActive;
+            } else if (rampElapsedMs >= config_.speedGateTimeoutMs) {
+                snapshot_.speedGateTimedOut = true;
+                snapshot_.state = WorkoutSessionState::RecoveryActive;
+            }
+
+            // Note: Recovery countdown begins immediately! Fall through to active step progress tracking below.
         }
 
-        // Step wall-clock duration advances continuously
+        // C. Active step progression (Warmup, WorkActive, RecoveryRamping, RecoveryActive, Cooldown)
         stepElapsedMs_ += dt;
 
         snapshot_.totalElapsedTimeMs = totalElapsedTimeMs_;
@@ -255,7 +309,7 @@ void WorkoutSession::update(
         snapshot_.stepElapsedMs = stepElapsedMs_;
         snapshot_.stepElapsedValidatedDistanceKm = stepElapsedValidatedDistanceKm_;
 
-        // C. Step completion evaluation
+        // D. Step completion evaluation
         if (curStep.goalType == WorkoutStepGoalType::Duration) {
             if (curStep.targetDurationMs > 0) {
                 snapshot_.stepRemainingMs = (stepElapsedMs_ < curStep.targetDurationMs)
@@ -325,14 +379,17 @@ bool WorkoutSession::applyResumeChoice(
             } else {
                 snapshot_.state = WorkoutSessionState::Cooldown;
             }
+            stepStartTimestampMs_ = nowMs;
             controller_.submitSpeedTarget(curStep.targetPhysicalSpeedKmh, nowMs);
             controller_.submitInclineTarget(curStep.targetInclinePct, nowMs);
+            commandSubmittedForStep_ = true;
             return true;
         }
 
         case WorkoutResumeChoice::ResumeWithReWarmup: {
             inReWarmupStep_ = true;
             snapshot_.state = WorkoutSessionState::Warmup;
+            stepStartTimestampMs_ = nowMs;
             controller_.submitSpeedTarget(config_.reWarmupSpeedKmh, nowMs);
             controller_.submitInclineTarget(config_.reWarmupInclinePct, nowMs);
             return true;
@@ -531,7 +588,7 @@ bool WorkoutSession::isSuspended() const {
 }
 
 const char* WorkoutSession::version() {
-    return "WorkoutSession/1.1.0";
+    return "WorkoutSession/1.2.0";
 }
 
 } // namespace stridecontrol

@@ -47,12 +47,26 @@ struct MaintenanceConfig {
 };
 
 /**
+ * @brief Persistent Bluetooth subsystem configuration.
+ */
+struct BleConfig {
+    char preferredHrMac[18] = "";                          // Target HR sensor MAC ("AA:BB:CC:DD:EE:FF" or empty)
+    bool autoConnectHr = true;                             // Auto-connect to preferred HR sensor
+    char advertisedDeviceName[32] = "Sportsmaster T610";   // Advertised peripheral name
+    bool enableFtms = true;                                // Enable FTMS Treadmill Service (0x1826)
+    bool enableRscFootpod = false;                         // Enable RSC Footpod Service (0x1814, default disabled)
+    uint8_t ftmsNotifyRateHz = 2;                          // FTMS notification frequency (1-4 Hz)
+    uint8_t rscNotifyRateHz = 2;                           // RSC notification frequency (1-4 Hz)
+};
+
+/**
  * @brief Aggregate system configuration holding all subsystem settings.
  */
 struct SystemConfig {
     InclineConfig incline{};
     SpeedConfig speed{};
     MaintenanceConfig maintenance{};
+    BleConfig ble{};
 };
 
 } // namespace stridecontrol
