@@ -1067,6 +1067,7 @@ RSC:
 FTMS:
 - speed                  -> SpeedSensor (authoritative speed owner)
 - incline                -> InclineSensor (authoritative incline owner)
+- ramp angle             -> InclineSensor-derived incline state (FTMS representation)
 - distance               -> RunnerDynamics (authoritative runner distance owner)
 - heart rate             -> HeartRateClient (authoritative heart rate owner)
 - elapsed time           -> WorkoutSession (future authoritative elapsed-time source)
@@ -1170,7 +1171,7 @@ Visual and auditory only, never automated control. Includes focus mode, Web Audi
 
 - [ ] Validate ambiguous Enter behavior
 - [ ] End-to-end speed and incline regression
-- [ ] Resolve integrated GPIO conflicts
+- [ ] Validate integrated GPIO allocation on final hardware
 - [ ] Future solid-state Speed+/- outputs
 - [ ] Future active Incline+/- outputs
 - [ ] Future deterministic TXS0108E replacement
