@@ -267,8 +267,6 @@ When O1 enters `0x1F`, output O2 `0x00` for the first 1200 microseconds and `0xF
 | I2C SDA / SCL | 47 / 48 | LSM6DSOX IMU and cadence |
 | E-Stop, reserved | 18 | Hardware safety monitor |
 
-**Integration requirement:** The final combined PCB must resolve GPIO16, GPIO14, and GPIO47 conflicts before all subsystems are enabled simultaneously.
-
 ### 4.4 O2 Bus and Isolation
 
 O2 is changed atomically across both GPIO register banks. Sequential `digitalWrite()` calls are not suitable for phase-critical updates.
@@ -521,23 +519,85 @@ FUNCTIONAL BEHAVIOR NOT RUNTIME-VERIFIED
 
 ## 6. Speed Sensor
 
-### 6.1 PC817 Interface
+### 6.1 Speed Control and Observation Principle
+
+StrideControl commands the desired treadmill speed but does not directly control motor power, motor torque, acceleration, deceleration, or internal motor-control algorithms.
+
+The treadmill mainboard remains solely responsible for:
+
+- Motor control and power delivery
+- Speed ramp-up and ramp-down behavior
+- Acceleration and deceleration dynamics
+- Closed-loop motor regulation
+- Final physical belt speed response
+
+StrideControl does not regulate motor torque and does not attempt to implement a motor-speed control loop.
+
+The responsibility of StrideControl is strictly limited to:
+
+- Validating requested speeds
+- Applying approved SpeedCalibration correction
+- Submitting speed commands through the console interface
+- Measuring physical belt speed
+- Detecting mismatch, drift, timeout, or sensor faults
+- Reporting authoritative physical speed
+
+```text
+Treadmill Mainboard
+= owns motor actuation and speed dynamics
+
+TreadmillController
+= submits validated target speed requests
+
+SpeedCalibration
+= predicts the command most likely to achieve a desired physical speed
+
+SpeedSensor
+= authoritative owner of measured physical belt speed
+
+RunnerDynamics
+= authoritative owner of runner-qualified speed
+
+MaintenanceService
+= authoritative owner of mechanical distance
+
+WorkoutSession
+= consumes speed information but does not own speed
+```
+
+FTMS, RSC, GUI, APIs, and commissioning interfaces report measured and validated speed state. They do not imply direct motor regulation by the ESP32.
+
+### 6.2 Speed Authority Rule
+
+Requested speed, commanded speed, and measured physical speed are distinct values.
+
+```text
+Requested Speed
+      ≠
+Commanded Treadmill Value
+      ≠
+Measured Physical Belt Speed
+```
+
+The authoritative source of actual treadmill speed is `SpeedSensor`. Higher-level modules must not substitute requested speed or command values for measured physical speed.
+
+### 6.3 PC817 Interface
 
 A PC817 collector uses a 10 kOhm pull-up to 3.3 V. Speed uses a 10 kOhm LED-side resistor at approximately 1.1 mA. Incline uses 1 kOhm at approximately 3.8 mA.
 
-### 6.2 Software Filter
+### 6.4 Software Filter
 
 Timestamp filtering uses approximately 300 microseconds micro-glitch rejection and 2000 microseconds lockout. No blocking ISR delay is used for speed.
 
-### 6.3 Expected Signal
+### 6.5 Expected Signal
 
 Approximately 2 Hz at 1 km/h, 9 Hz at 10 km/h, and 22 Hz at 25 km/h, with one accepted falling edge per rotation.
 
-### 6.4 Continuity and Faults
+### 6.6 Continuity and Faults
 
 A missing pulse timeout forces speed to zero. RUNNING with no valid pulses for more than 2 seconds logs a mismatch fault.
 
-### 6.5 Effective Zero Versus Belt Moving
+### 6.7 Effective Zero Versus Belt Moving
 
 Keep these concepts separate:
 
@@ -550,14 +610,63 @@ Only effective zero with an operational stopped/ready status may be exempted fro
 
 ## 7. Incline Sensor
 
+### 7.1 Incline Control and Observation Principle
+
+StrideControl commands only the desired whole-percent incline target.
+
+The treadmill mainboard remains solely responsible for:
+
+- Incline motor control and power
+- Incline acceleration and deceleration
+- Incline movement speed profile
+- Final physical positioning behavior
+
+StrideControl does not regulate incline movement rate and does not attempt to control how fast the treadmill reaches a requested incline.
+
+The responsibility of StrideControl is strictly limited to:
+
+- Requesting a target incline through the console interface
+- Tracking authoritative incline position from homing and pulse integration (`InclineSensor`)
+- Verifying actual incline position independently (`InclineVerifier` / IMU)
+- Detecting movement timeout, mismatch, drift, or sensor faults
+
+```text
+Treadmill Mainboard
+= owns incline motor actuation and movement dynamics
+
+TreadmillController
+= submits target whole-percent incline requests
+
+InclineSensor
+= authoritative owner of tracked actual incline position
+
+InclineVerifier
+= observational angle verification and drift detection (no control authority)
+```
+
+FTMS inclination and ramp angle exports report tracked and verified current state; they do not imply active trajectory or incline-rate control by the ESP32.
+
+### 7.2 Incline Authority Rule
+
+Requested incline and tracked physical incline are distinct values.
+
+```text
+Requested Incline
+      ≠
+Tracked Incline Position
+```
+
+The authoritative source of actual incline position is `InclineSensor`. Higher-level modules must not substitute requested incline targets for tracked physical incline position.
+
+### 7.3 Pulse Tracking and Hardware Interface
+
 Pin 11 emits approximately 394 Hz during movement. Incline is calculated from homing and direction-specific pulse integration, with optional IMU verification after movement.
 
-The isolated concept uses PC817, 1 kOhm LED resistance, and 10 kOhm pull-up. BSS138 remains a legacy troubleshooting option. GPIO14 conflicts with the current Speed+ relay and must be reassigned in integrated hardware.
+The isolated concept uses PC817, 1 kOhm LED resistance, and 10 kOhm pull-up. BSS138 remains a legacy troubleshooting option.
 
 Physical Quick Start homes to 0%. When movement pulses stop, the tracker is set to 0.0%.
 
 Store incline when movement stops or machine state becomes STOPPED. A `Re-home Incline` action is mandatory because NVS cannot detect untracked movement while powered off.
-
 ---
 
 ## 8. Calibration and Software Constants
@@ -731,7 +840,7 @@ HLK-PM01 with mains fusing and isolation. Target continuous use below 70 to 80% 
 
 ### 9.5 CSAFE
 
-RJ45 to MAX3232 at 9600 8-N-1. GPIO16 conflict with buzzer must be resolved.
+RJ45 to MAX3232 at 9600 8-N-1 on GPIO 17 (TX) and GPIO 40 (RX).
 
 ### 9.6 Future Improvements
 
