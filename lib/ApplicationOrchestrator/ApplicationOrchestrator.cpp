@@ -1,5 +1,7 @@
 #include "ApplicationOrchestrator.h"
 #include <Arduino.h>
+#include "../BleManager/BleManager.h"
+#include "../HeartRateClient/HeartRateClient.h"
 
 namespace stridecontrol {
 
@@ -11,11 +13,15 @@ ApplicationOrchestrator::~ApplicationOrchestrator() {
         vSemaphoreDelete(exitSem_);
         exitSem_ = nullptr;
     }
+    if (bleExitSem_ != nullptr) {
+        vSemaphoreDelete(bleExitSem_);
+        bleExitSem_ = nullptr;
+    }
 }
 
 bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& deps) {
     portENTER_CRITICAL(&metricsMux_);
-    if (running_ || taskHandle_ != nullptr) {
+    if (running_ || taskHandle_ != nullptr || bleTaskHandle_ != nullptr) {
         portEXIT_CRITICAL(&metricsMux_);
         return false;
     }
@@ -34,7 +40,30 @@ bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& d
         xSemaphoreTake(exitSem_, 0);
     }
 
-    BaseType_t result = xTaskCreatePinnedToCore(
+    if (exitSem_ == nullptr) {
+        portENTER_CRITICAL(&metricsMux_);
+        running_ = false;
+        portEXIT_CRITICAL(&metricsMux_);
+        return false;
+    }
+
+    // Allocate BLE exit semaphore if BLE manager is provided
+    if (deps_.bleManager != nullptr) {
+        if (bleExitSem_ == nullptr) {
+            bleExitSem_ = xSemaphoreCreateBinary();
+        } else {
+            xSemaphoreTake(bleExitSem_, 0);
+        }
+        if (bleExitSem_ == nullptr) {
+            portENTER_CRITICAL(&metricsMux_);
+            running_ = false;
+            portEXIT_CRITICAL(&metricsMux_);
+            return false;
+        }
+    }
+
+    // 1. Spawn Core 1 Real-Time Sensor / Dynamics Task
+    BaseType_t rtResult = xTaskCreatePinnedToCore(
         taskEntry,
         "AppOrchestrator",
         kTaskStackSize,
@@ -44,12 +73,39 @@ bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& d
         kTaskCore
     );
 
-    if (result != pdPASS) {
+    if (rtResult != pdPASS) {
         portENTER_CRITICAL(&metricsMux_);
         running_ = false;
         taskHandle_ = nullptr;
         portEXIT_CRITICAL(&metricsMux_);
+        if (bleExitSem_ != nullptr) {
+            vSemaphoreDelete(bleExitSem_);
+            bleExitSem_ = nullptr;
+        }
         return false;
+    }
+
+    // 2. Spawn Core 0 Dedicated BLE Lifecycle Task
+    if (deps_.bleManager != nullptr) {
+        BaseType_t bleResult = xTaskCreatePinnedToCore(
+            bleTaskEntry,
+            "BleLifecycle",
+            kBleTaskStackSize,
+            this,
+            kBleTaskPriority,
+            &bleTaskHandle_,
+            kBleTaskCore
+        );
+
+        if (bleResult != pdPASS) {
+            // Rollback Core 1 real-time task
+            end(1000);
+            if (bleExitSem_ != nullptr) {
+                vSemaphoreDelete(bleExitSem_);
+                bleExitSem_ = nullptr;
+            }
+            return false;
+        }
     }
 
     return true;
@@ -57,16 +113,17 @@ bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& d
 
 bool ApplicationOrchestrator::end(uint32_t timeoutMs) {
     portENTER_CRITICAL(&metricsMux_);
-    if (!running_ && taskHandle_ == nullptr) {
+    if (!running_ && taskHandle_ == nullptr && bleTaskHandle_ == nullptr) {
         portEXIT_CRITICAL(&metricsMux_);
         return true;
     }
     stopRequested_ = true;
     portEXIT_CRITICAL(&metricsMux_);
 
-    bool cleanExit = false;
+    // Step 1 & 2: Wait for confirmed Core 1 task exit
+    bool cleanRtExit = false;
     if (exitSem_ != nullptr) {
-        cleanExit = (xSemaphoreTake(exitSem_, pdMS_TO_TICKS(timeoutMs)) == pdTRUE);
+        cleanRtExit = (xSemaphoreTake(exitSem_, pdMS_TO_TICKS(timeoutMs)) == pdTRUE);
     } else {
         const uint32_t startMs = millis();
         while (millis() - startMs < timeoutMs) {
@@ -74,29 +131,62 @@ bool ApplicationOrchestrator::end(uint32_t timeoutMs) {
             const bool stillRunning = running_;
             portEXIT_CRITICAL(&metricsMux_);
             if (!stillRunning) {
-                cleanExit = true;
+                cleanRtExit = true;
                 break;
             }
             vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
 
-    portENTER_CRITICAL(&metricsMux_);
-    if (!cleanExit && taskHandle_ != nullptr) {
-        // Cooperative shutdown timed out. Forcefully delete task to guarantee zero use-after-free.
-        vTaskDelete(taskHandle_);
-        if (deps_.diagnosticsService != nullptr) {
-            deps_.diagnosticsService->reportFault(FaultCode::SystemWatchdogWarning, millis());
+    // Step 3: If Core 1 exit times out, do NOT signal BLE task, delete semaphores, or reset storage
+    if (!cleanRtExit) {
+        portENTER_CRITICAL(&metricsMux_);
+        if (taskHandle_ != nullptr) {
+            // Forcefully delete timed out Core 1 task to avoid dangling memory access
+            vTaskDelete(taskHandle_);
+            taskHandle_ = nullptr;
+            if (deps_.diagnosticsService != nullptr) {
+                deps_.diagnosticsService->reportFault(FaultCode::SystemWatchdogWarning, millis());
+            }
         }
+        running_ = false;
+        portEXIT_CRITICAL(&metricsMux_);
+        return false;
+    }
+
+    portENTER_CRITICAL(&metricsMux_);
+    if (taskHandle_ != nullptr) {
+        vTaskDelete(taskHandle_);
+        taskHandle_ = nullptr;
     }
     running_ = false;
-    taskHandle_ = nullptr;
     portEXIT_CRITICAL(&metricsMux_);
+
+    // Step 4: Signal Core 0 BLE Lifecycle Task to terminate cleanly
+    bool cleanBleExit = true;
+    if (bleTaskHandle_ != nullptr) {
+        xTaskNotifyGive(bleTaskHandle_);
+
+        // Step 5: Wait for bleExitSem_ with bounded timeout
+        cleanBleExit = (bleExitSem_ != nullptr &&
+                        xSemaphoreTake(bleExitSem_, pdMS_TO_TICKS(kBleTaskExitTimeoutMs)) == pdTRUE);
+
+        // Step 6 & 7: Handshake resolution
+        if (cleanBleExit) {
+            vTaskDelete(bleTaskHandle_);
+            bleTaskHandle_ = nullptr;
+            vSemaphoreDelete(bleExitSem_);
+            bleExitSem_ = nullptr;
+        } else {
+            // BLE exit timed out: Preserve bleTaskHandle_ and bleExitSem_ to prevent use-after-free
+            return false;
+        }
+    }
 
     // Allow scheduler brief tick to cleanup task control block
     vTaskDelay(pdMS_TO_TICKS(10));
 
-    return cleanExit;
+    return true;
 }
 
 bool ApplicationOrchestrator::isRunning() const {
@@ -135,11 +225,68 @@ uint32_t ApplicationOrchestrator::getOverrunCount() const {
     return val;
 }
 
+const char* ApplicationOrchestrator::version() {
+    return "1.3.0";
+}
+
 void ApplicationOrchestrator::taskEntry(void* param) {
     auto* self = static_cast<ApplicationOrchestrator*>(param);
     if (self != nullptr) {
         self->runLoop();
     }
+}
+
+void ApplicationOrchestrator::bleTaskEntry(void* param) {
+    auto* self = static_cast<ApplicationOrchestrator*>(param);
+    if (self != nullptr) {
+        self->runBleTask();
+    }
+}
+
+void ApplicationOrchestrator::runBleTask() {
+    BleManager* bleMgr = deps_.bleManager;
+    HeartRateClient* hrCli = deps_.hrClient;
+    const BleConfig& bleCfg = deps_.bleConfig;
+
+    bool bleOk = false;
+    bool hrOk = false;
+
+    // Initialization Phase (Core 0 context)
+    if (bleMgr != nullptr) {
+        bleOk = bleMgr->begin(bleCfg);
+        if (bleOk && hrCli != nullptr) {
+            hrOk = hrCli->begin(bleCfg, bleMgr);
+        }
+    }
+
+    // Periodic Execution Loop (Cadence ~20ms, non-deterministic)
+    while (ulTaskNotifyTake(pdTRUE, 0) == 0) {
+        const uint32_t nowMs = millis();
+        if (bleOk) {
+            bleMgr->update(nowMs);
+        }
+        if (hrOk) {
+            hrCli->update(nowMs);
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    // Teardown Phase (Strict ordering: HeartRateClient -> BleManager)
+    if (hrOk && hrCli != nullptr) {
+        hrCli->end();
+    }
+    if (bleOk && bleMgr != nullptr) {
+        bleMgr->end();
+    }
+
+    // Signal confirmation semaphore and self-suspend
+    SemaphoreHandle_t sem = bleExitSem_;
+    if (sem != nullptr) {
+        xSemaphoreGive(sem);
+    }
+
+    // STRICT RULE: After xSemaphoreGive(), perform NO further member access
+    vTaskSuspend(NULL);
 }
 
 void ApplicationOrchestrator::runLoop() {
@@ -204,7 +351,7 @@ void ApplicationOrchestrator::runLoop() {
             healthSnap = deps_.diagnosticsService->getSnapshot(nowMs);
         }
 
-        // 7. Assemble Complete ApplicationSnapshot DTO
+        // 7. Assemble Complete ApplicationSnapshot DTO (Fast Critical-Section Telemetry Sample)
         ApplicationSnapshot snap{};
         snap.timestampMs = nowMs;
         snap.sequenceNumber = sequenceNumber_++;
@@ -214,6 +361,12 @@ void ApplicationOrchestrator::runLoop() {
         snap.runner = runnerState;
         snap.inclineVerifier = verifierState;
         snap.health = healthSnap;
+        if (deps_.hrClient != nullptr) {
+            snap.heartRate = deps_.hrClient->getState();
+        }
+        if (deps_.bleManager != nullptr) {
+            snap.ble = deps_.bleManager->getState();
+        }
 
         // 8. Publish Snapshot via Spinlock-Protected By-Value Copy
         portENTER_CRITICAL(&snapshotMux_);
@@ -247,10 +400,6 @@ void ApplicationOrchestrator::runLoop() {
     }
 
     vTaskDelete(nullptr);
-}
-
-const char* ApplicationOrchestrator::version() {
-    return "1.1.0";
 }
 
 } // namespace stridecontrol

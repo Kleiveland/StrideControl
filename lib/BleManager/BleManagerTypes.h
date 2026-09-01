@@ -36,6 +36,7 @@ struct BleManagerMetrics {
  */
 struct BleScanResult {
     char address[18]{};
+    uint8_t addressType{0};                     ///< Exact NimBLE advertiser-reported address type.
     char name[32]{};
     int32_t rssiDbm{0};
     bool advertisesHeartRateService{false};

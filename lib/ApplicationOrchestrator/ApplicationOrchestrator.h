@@ -15,8 +15,12 @@
 #include "../InclineVerifier/InclineVerifier.h"
 #include "../DiagnosticsService/DiagnosticsService.h"
 #include "../MaintenanceService/MaintenanceService.h"
+#include "../SettingsService/SettingsServiceTypes.h"
 
 namespace stridecontrol {
+
+class BleManager;
+class HeartRateClient;
 
 /**
  * @brief Dependencies injected into ApplicationOrchestrator.
@@ -30,11 +34,14 @@ struct ApplicationOrchestratorDependencies {
     InclineVerifier* inclineVerifier = nullptr;
     DiagnosticsService* diagnosticsService = nullptr;
     MaintenanceService* maintenanceService = nullptr;
+    BleManager* bleManager = nullptr;
+    HeartRateClient* hrClient = nullptr;
+    BleConfig bleConfig{};
 };
 
 /**
- * @brief Active Object orchestrating real-time 50Hz sensor polling,
- *        signal processing, odometer updates, and ApplicationSnapshot publication.
+ * @brief Active Object orchestrating real-time 50Hz sensor polling on Core 1
+ *        and dedicated BLE lifecycle coordination on Core 0.
  */
 class ApplicationOrchestrator {
 public:
@@ -61,6 +68,9 @@ private:
     static void taskEntry(void* param);
     void runLoop();
 
+    static void bleTaskEntry(void* param);
+    void runBleTask();
+
     mutable portMUX_TYPE snapshotMux_ = portMUX_INITIALIZER_UNLOCKED;
     mutable portMUX_TYPE metricsMux_ = portMUX_INITIALIZER_UNLOCKED;
 
@@ -72,6 +82,9 @@ private:
     volatile bool running_ = false;
     volatile bool stopRequested_ = false;
 
+    TaskHandle_t bleTaskHandle_ = nullptr;
+    SemaphoreHandle_t bleExitSem_ = nullptr;
+
     uint32_t sequenceNumber_ = 0;
     uint32_t loopCount_ = 0;
     uint32_t deadlineMissCount_ = 0;
@@ -82,6 +95,11 @@ private:
     static constexpr uint32_t kTaskStackSize = 4096;
     static constexpr UBaseType_t kTaskPriority = 5;
     static constexpr BaseType_t kTaskCore = 1; // APP_CPU_NUM
+
+    static constexpr uint32_t kBleTaskExitTimeoutMs = 3000;
+    static constexpr uint32_t kBleTaskStackSize = 4096;
+    static constexpr UBaseType_t kBleTaskPriority = 3;
+    static constexpr BaseType_t kBleTaskCore = 0; // PRO_CPU_NUM
 };
 
 } // namespace stridecontrol

@@ -6,16 +6,43 @@
 #include "../SettingsService/SettingsServiceTypes.h"
 #include "BleManagerTypes.h"
 
-// Forward declaration in global namespace
+// Forward declarations in global namespace
 class NimBLEScan;
+class NimBLEAdvertisedDevice;
 
 namespace stridecontrol {
+
+class BleScanCallbackAdapter;
 
 /**
  * @brief Dual-role Bluetooth Low Energy subsystem coordinator.
  *
  * Runs non-blocking on Core 0. Owns adapter lifecycle, GAP roles (Central scan,
  * Peripheral advertise), and coordinates HeartRateClient, FtmsService, and RscService.
+ *
+ * ==============================================================================
+ * STRICT V1 LIFETIME & THREADING CONTRACT:
+ * ==============================================================================
+ * 1. Lifecycle Serialization:
+ *    begin() and end() must be externally serialized (e.g. from the main application
+ *    orchestrator lifecycle task on Core 0).
+ *
+ * 2. Listener Context Lifetime:
+ *    - Listener context storage (e.g. HeartRateClient) must remain valid until
+ *      BleManager::end() has returned.
+ *    - Runtime destruction of a registered listener context before BleManager::end()
+ *      returns is prohibited.
+ *    - After BleManager::end() returns, NimBLE callback quiescence is established
+ *      and listener contexts may be safely destroyed before or after BleManager itself.
+ *
+ * 3. Unregister Semantics:
+ *    unregisterScanListener() removes future dispatch eligibility only; in-flight
+ *    completion on another task/core is not guaranteed.
+ *
+ * 4. Teardown Calling Context:
+ *    BleManager::end() must NEVER be called from within a NimBLE host task callback
+ *    or listener callback (deadlock hazard in nimble_port_stop).
+ * ==============================================================================
  */
 class BleManager {
 public:
@@ -48,12 +75,18 @@ public:
     BleCoordinatorInternalState getInternalState() const;
 
 private:
+    friend class BleScanCallbackAdapter;
+    void handleAdvertisedDevice(::NimBLEAdvertisedDevice* advertisedDevice);
+
     struct ScanListenerEntry {
         BleScanCallback callback{nullptr};
         void* context{nullptr};
     };
 
     mutable portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;
+
+    bool isTransitioningLifecycle_{false};
+    bool isShuttingDown_{false};
 
     ScanListenerEntry scanListeners_[4]{};
     ::NimBLEScan* scan_{nullptr};
