@@ -48,7 +48,7 @@ The objective is to build a safe, reversible ESP32-S3 interface layer for the Sp
 - Measures physical belt speed.
 - Tracks incline from homing and calibrated pulse integration.
 - Parses machine state from CSAFE.
-- Broadcasts telemetry through Bluetooth FTMS.
+- Broadcasts telemetry through Bluetooth FTMS and RSC.
 - Preserves the original console and safety path if the ESP32 loses power.
 - Uses qualified buzzer feedback to verify injected commands.
 - Retries only responses confidently classified as `NO_RESPONSE`.
@@ -83,12 +83,25 @@ ISRs are minimal and non-blocking. They may timestamp and perform minimal valida
 
 Interface and analysis modules report observations. Control actions belong to explicit control modules.
 
-```text
-RunnerDynamics observes SideRails.
-RunnerDynamics does not stop the treadmill.
-```
+Observation modules never generate control actions.
+
+Examples:
+
+- RunnerDynamics does not stop the treadmill.
+- InclineVerifier does not command incline movement.
+- DiagnosticsService does not clear faults autonomously.
+- FtmsService does not issue treadmill commands.
 
 No automatic stop or pause shall be introduced without separate safety requirements, failure analysis, and physical testing.
+
+### 2.6 Future SafetySupervisor
+
+Any future supervisory safety layer shall be architecturally separate from:
+
+- RunnerDynamics
+- FtmsService
+- GUI
+- DiagnosticsService
 
 ---
 
@@ -120,14 +133,29 @@ Services, APIs, GUI, and external adapters
 1. **Hardware and interface:** `ConsoleInterface`, `SpeedSensor`, `InclineSensor`, `ImuInterface`, `CsafeInterface`, and later `HeartRateClient` under shared BLE ownership.
 2. **Analysis, calibration, and verification:** `RunnerDynamics`, `SpeedCalibration`, and later `InclineVerifier`.
 3. **Cross-cutting infrastructure:** executable tests, `DiagnosticsService` core, `SettingsService` core, `RecordedDataService` core, and `BleManager`.
-4. **Coordination and domain models:** `ApplicationOrchestrator`, `ApplicationSnapshot`, `SystemManager`,`TreadmillController`, `WorkoutSession`, and `MaintenanceService`.
-5. **Communication and presentation:** `FtmsService`, `WebServerManager`, API models, the existing Precision UI, the PC commissioning page, and later external adapters.
-
-   
+4. **Coordination and domain models:** `ApplicationOrchestrator`, `ApplicationSnapshot`, `SystemManager`, `TreadmillController`, `WorkoutSession`, and `MaintenanceService`.
+5. **Communication and presentation:** `RscService`, `FtmsService`, `WebServerManager`, API models, the existing Precision UI, the PC commissioning page, and later external adapters.
 
 Prefer explicit update calls and read-only snapshots over a web of callbacks when timing and ownership permit it.
 
-### 3.2 State and Responsibility Ownership
+### 3.2 Commissioning and Module Independence
+
+Every major module shall be independently observable and commissionable.
+
+The PC Commissioning interface is an architectural subsystem, not a late-stage testing utility.
+
+Each module should expose:
+
+- configuration
+- diagnostics
+- health
+- counters
+- authoritative state
+- commissioning actions
+
+without requiring the full system stack to be active.
+
+### 3.3 State and Responsibility Ownership
 
 ```text
 SpeedSensor.speedKmh
@@ -149,7 +177,7 @@ Each public state field has one authoritative owner. Higher layers may cache sna
 
 Reset operations retain precise meanings. A reset owned by one module must not silently erase data owned by another module.
 
-### 3.3 Speed Measurement and Command Calibration Ownership
+### 3.4 Speed Measurement and Command Calibration Ownership
 
 ```text
 SpeedSensor
@@ -477,7 +505,7 @@ The historical GPIO47 SDA allocation conflicts with the current Speed- relay and
 
 ### 5.3 Runner Presence
 
-The product goal is that measured belt movement without qualified runner footstrikes eventually results in no runner credit. FTMS speed is then forced to zero and validated runner distance pauses without changing treadmill control state.
+The product goal is that measured belt movement without qualified runner footstrikes eventually results in no runner credit. FTMS and RSC speed is then forced to zero and validated runner distance pauses without changing treadmill control state.
 
 The detailed grace periods, state transitions, regularity requirements, SideRails qualification, and resume behavior belong to `RunnerDynamics`. Higher layers must not replace this state machine with a direct speed/cadence condition.
 
@@ -570,7 +598,7 @@ It does not measure pulses, execute commands, own GPIO, write NVS, or own HTML/A
 Example:
 
 ```text
-User request:              15.0 km/h
+User request:               15.0 km/h
 Previous treadmill command: 15.0 km/h
 Stable measured result:     14.8 km/h
 Future corrected command:   approximately 15.2 km/h
@@ -658,7 +686,7 @@ This maximum is used consistently by:
 - tablet speed controls and quick-key availability
 - WorkoutSession limits
 - public control API
-- FTMS capability and target ranges
+- FTMS and RSC capability and target ranges
 - PC commissioning interface
 
 The system must not advertise an unachievable speed, relabel 24.8 as 25.0, or rescale the display to hide the physical limit.
@@ -768,6 +796,14 @@ It must define:
 
 `ApplicationSnapshot` is a small read-only transport model that aggregates authoritative subsystem snapshots without becoming a new owner.
 
+`ApplicationSnapshot` is the authoritative telemetry source for:
+
+- `RscService`
+- `FtmsService`
+- `WebServerManager`
+- Commissioning interfaces
+- External adapters
+
 Do not expose private algorithms, mutexes, raw pointers, or storage-specific structures through public APIs.
 
 ### 10.7 Diagnostics Core
@@ -800,7 +836,7 @@ SettingsService owns:
 
 Modules validate and use their own configuration. Modules do not write NVS directly.
 
-Safe application:
+Safe application workflow:
 
 ```text
 load candidate
@@ -812,22 +848,6 @@ load candidate
 → verify success
 → persist
 → resume
-
-
-WorkoutResumeSettings
-
-Examples:
-
-- immediateResumeThresholdSec
-- reEntryRecommendationThresholdSec
-- warmupRecommendationThresholdSec
-- extendedWarmupThresholdSec
-- skipToRecoveryRemainingFraction
-
-These values are configurable through the PC Settings interface.
-
-WorkoutSession consumes the settings but does not own persistence.
-
 ```
 
 On failure, restore the previous configuration, restart the module, and report the error.
@@ -865,14 +885,24 @@ Markers may include:
 ```text
 BleManager
 ├── HeartRateClient
+├── RscService
 └── FtmsService
 ```
 
-`BleManager` owns initialization, lifecycle, scanning/advertising coordination, connection events, central/peripheral concurrency, and BLE health.
+`BleManager` owns:
+
+- NimBLEDevice lifecycle
+- NimBLEScan lifecycle
+- NimBLEServer lifecycle
+- GAP advertising
+- Central / Peripheral concurrency
+- connection event routing
+- service attachment lifecycle
+- BLE health and diagnostics
 
 `HeartRateClient` provides heart rate, validity, data age, connection state, selected sensor, and available battery status.
 
-`FtmsService` is implemented only after stable WorkoutSession, SystemManager, incline, SpeedCalibration, and command contracts exist.
+V1 `FtmsService` telemetry may be implemented before `WorkoutSession`. Control-oriented FTMS functionality, elapsed time exposure, supported ranges, and future control-point functionality require stable `WorkoutSession`, `SystemManager`, `SpeedCalibration`, incline, and command contracts.
 
 ### 10.11 Workout and Maintenance
 
@@ -907,16 +937,11 @@ WorkoutSession shall never:
 
 WorkoutSession may only resume after explicit user approval.
 
-### 10.11.1 Workout Suspension and Resume
+#### 10.11.1 Workout Suspension and Resume
 
-Stopping treadmill motion during an active workout does not terminate
-the workout automatically.
+Stopping treadmill motion during an active workout does not terminate the workout automatically.
 
-The workout enters:
-
-Suspended
-
-State.
+The workout enters `Suspended` state.
 
 WorkoutSession stores:
 
@@ -926,9 +951,7 @@ WorkoutSession stores:
 - pause timestamp
 - workout progress context
 
-When treadmill motion is later detected again:
-
-WorkoutSession evaluates the pause duration and workout state.
+When treadmill motion is later detected again, WorkoutSession evaluates the pause duration and workout state.
 
 It may recommend:
 
@@ -938,32 +961,28 @@ It may recommend:
 - Skip To Recovery
 - End Workout
 
-The final decision belongs to the user.
+The final decision belongs to the user. WorkoutSession must never automatically resume directly into a work interval.
 
-WorkoutSession must never automatically resume directly into a work interval.
+#### 10.11.2 Re-Warmup Recommendation
 
-### 10.11.2 Re-Warmup Recommendation
+WorkoutSession may generate resume recommendations using configurable `SettingsService` thresholds.
 
-WorkoutSession may generate resume recommendations using configurable
-SettingsService thresholds.
+Configurable parameters in `WorkoutResumeSettings`:
 
-Typical examples:
+- `immediateResumeThresholdSec`
+- `reEntryRecommendationThresholdSec`
+- `warmupRecommendationThresholdSec`
+- `extendedWarmupThresholdSec`
+- `skipToRecoveryRemainingFraction`
 
-pause < 60 s
-    immediate resume may be recommended
+Typical operational examples:
 
-pause > configured re-entry threshold
-    short re-entry may be recommended
+- `pause < immediateResumeThresholdSec`: immediate resume may be recommended
+- `pause > reEntryRecommendationThresholdSec`: short re-entry may be recommended
+- `pause > warmupRecommendationThresholdSec`: re-warmup may be recommended
+- `pause > extendedWarmupThresholdSec`: restart of interval or extended warmup may be recommended
 
-pause > configured warmup threshold
-    re-warmup may be recommended
-
-pause > configured extended threshold
-    restart of interval or extended warmup may be recommended
-
-These recommendations are advisory only.
-
-WorkoutSession must not automatically execute them.
+These recommendations are advisory only. WorkoutSession must not automatically execute them.
 
 ### 10.12 AI-Assisted Development Protocol
 
@@ -1018,19 +1037,41 @@ Stop and review when:
 
 ---
 
-## 13. Bluetooth FTMS Rules
+## 13. Bluetooth FTMS and RSC Rules
 
 - NimBLE-Arduino
-- 1 Hz broadcast
-- Speed in 0.01 km/h units
+- Dual-role HR client with FTMS and RSC peripheral servers
+- FTMS and RSC telemetry cadences are configurable by product policy.
+- Initial V1 target cadences:
+  - FTMS: 4 Hz (250 ms)
+  - RSC: 4 Hz (250 ms)
+- Speed in 0.01 km/h units (FTMS) and 1/256 m/s units (RSC)
 - Incline in 0.1% units
-- Positive elevation gain from interval distance and incline
-- Cadence included when available
-- Dual-role HR client and FTMS server
+- Elevation Gain is omitted until an authoritative accumulator exists.
+- Elapsed Time is omitted until `WorkoutSession` provides an authoritative elapsed-time source.
+- Heart Rate is included only when `heartRateValid` is true.
+- Optional FTMS/RSC fields are advertised only when supported by an authoritative source.
 - HR MAC stored through SettingsService/NVS ownership
 - All BLE work on Core 0
 - Advertised maximum and target range use calibrated maximum achievable speed
 
+### 13.1 Authoritative Ownership for FTMS and RSC Exports
+
+```text
+RSC:
+- speed                  -> SpeedSensor (authoritative speed owner)
+- cadence                -> RunnerDynamics (authoritative cadence owner)
+- walking/running state  -> RunnerDynamics (authoritative motion classification owner)
+- validated distance     -> RunnerDynamics (authoritative runner distance owner)
+
+FTMS:
+- speed                  -> SpeedSensor (authoritative speed owner)
+- incline                -> InclineSensor (authoritative incline owner)
+- distance               -> RunnerDynamics (authoritative runner distance owner)
+- heart rate             -> HeartRateClient (authoritative heart rate owner)
+- elapsed time           -> WorkoutSession (future authoritative elapsed-time source)
+- elevation gain         -> authoritative accumulator (future)
+```
 ---
 
 ## 14. GUI Architecture and Interval Coach
@@ -1048,18 +1089,7 @@ The existing `StrideControl Precision UI` / `TabletGuiMockup` is the visual star
 - Do not expose external calibration, calibration-table editing, learned-point approval, or commissioning in the tablet UI.
 - Test the tablet UI on the standard iPhone 14 Pro layout as well as the target tablet.
 
-  WorkoutSession publishes suspension and resume context through snapshots.
-
-The GUI is responsible for presenting:
-
-- suspension state
-- pause duration
-- workout progress
-- resume recommendations
-
-WorkoutSession provides facts.
-
-The GUI decides how they are presented.
+WorkoutSession publishes suspension and resume context through snapshots. The GUI is responsible for presenting suspension state, pause duration, workout progress, and resume recommendations. WorkoutSession provides facts; the GUI decides how they are presented.
 
 ### 14.2 PC Settings, Diagnostics, and Commissioning UI
 
@@ -1085,39 +1115,30 @@ Visual and auditory only, never automated control. Includes focus mode, Web Audi
 
 ```json
 {
-  "users": [{
-    "name": "Kristian",
-    "presets": {"hvile": 6.0, "drag": 16.0},
-    "quick_keys": {
-      "speed": [4, 6, 8, 10, 12, 14, 16, 18],
-      "incline": [0, 1, 2, 4, 6, 8, 10, 12]
-    },
-    "last_interval": {
-      "work_m": 0,
-      "work_s": 45,
-      "rest_m": 0,
-      "rest_s": 15,
-      "reps": 10,
-      "series": 2,
-      "series_rest_m": 3
-    },
-    "history": []
-  }]
+  "users": [
+    {
+      "name": "Kristian",
+      "presets": {
+        "hvile": 6.0,
+        "drag": 16.0
+      },
+      "quick_keys": {
+        "speed": [4, 6, 8, 10, 12, 14, 16, 18],
+        "incline": [0, 1, 2, 4, 6, 8, 10, 12]
+      },
+      "last_interval": {
+        "work_m": 0,
+        "work_s": 45,
+        "rest_m": 0,
+        "rest_s": 15,
+        "reps": 10,
+        "series": 2,
+        "series_rest_m": 3
+      },
+      "history": []
+    }
+  ]
 }
-
-WorkoutSession publishes suspension and resume context through snapshots.
-
-The GUI is responsible for presenting:
-
-- suspension state
-- pause duration
-- workout progress
-- resume recommendations
-
-WorkoutSession provides facts.
-
-The GUI decides how they are presented.
-
 ```
 
 ---
@@ -1168,10 +1189,11 @@ The GUI decides how they are presented.
 - [ ] Define recorded-data format before physical capture
 - [ ] Implement Diagnostics core and SettingsService core
 - [ ] Implement InclineVerifier without control authority
-- [ ] Implement shared BleManager and HeartRateClient
+- [ ] Implement BleManager core and HeartRateClient
 - [ ] Implement ApplicationOrchestrator and ApplicationSnapshot
 - [ ] Implement SystemManager without duplicating subsystem state
 - [ ] Implement WorkoutSession before FTMS
+- [ ] Implement RscService and FtmsService
 - [ ] Implement recorded-data replay before aggressive tuning
 - [ ] Implement MaintenanceService with separate mechanical distance
 - [ ] Define stable WebServer/API contracts before GUI connection
@@ -1193,18 +1215,19 @@ The GUI decides how they are presented.
 11. ApplicationOrchestrator and ApplicationSnapshot
 12. SystemManager
 13. WorkoutSession
-14. Recorded-data replay
-15. MaintenanceService
-16. FtmsService
-17. WebServerManager and API model
-18. PC settings, diagnostics, calibration, and commissioning page
-19. Existing Precision UI integration
-20. External adapters
-21. SafetySupervisor only after separate safety analysis
-22. Combined software testing
-23. Recorded-data validation
-24. Hardware-in-the-loop
-25. Physical treadmill testing and tuning
+14. RscService
+15. FtmsService
+16. Recorded-data replay
+17. MaintenanceService
+18. WebServerManager and API model
+19. PC settings, diagnostics, calibration, and commissioning page
+20. Existing Precision UI integration
+21. External adapters
+22. SafetySupervisor only after separate safety analysis
+23. Combined software testing
+24. Recorded-data validation
+25. Hardware-in-the-loop
+26. Physical treadmill testing and tuning
 
 Governing rule:
 
