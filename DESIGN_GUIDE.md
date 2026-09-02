@@ -509,6 +509,8 @@ Speed comes from Pin 7, incline from the homed pulse-integrated tracker, and mac
 
 The LSM6DSOX is mounted to the moving deck, derives cadence from footstrike vibration, and provides filtered angle verification. The long I2C cable uses shielding and an LTC4311. A sensor fault returns cadence to 0 without affecting control.
 
+The historical GPIO47 SDA allocation conflicts with the current Speed- relay and must be resolved in final hardware.
+
 ### 5.3 Runner Presence
 
 The product goal is that measured belt movement without qualified runner footstrikes eventually results in no runner credit. FTMS and RSC speed is then forced to zero and validated runner distance pauses without changing treadmill control state.
@@ -922,6 +924,12 @@ It must define:
 - Commissioning interfaces
 - External adapters
 
+ApplicationSnapshot is a telemetry DTO.
+
+ApplicationSnapshot shall not become a GUI aggregation object.
+
+UI-specific view models may aggregate ApplicationSnapshot together with WorkoutSessionSnapshot, TreadmillControllerSnapshot, and configuration DTOs without transferring ownership.
+
 Do not expose private algorithms, mutexes, raw pointers, or storage-specific structures through public APIs.
 
 ### 10.7 Diagnostics Core
@@ -1153,7 +1161,33 @@ Managed by `SettingsService`:
 - `resumeDelaySec`: Default `10` s (Range: `0` – `30` s)
 - `autoResumePermitted`: Fixed `false` (Physical belt start and explicit GUI resume confirmation are always mandatory)
 
-### 10.12 AI-Assisted Development Protocol
+### 10.12 WebServerManager
+
+`WebServerManager` owns:
+
+- HTTP routing
+- WebSocket transport
+- JSON serialization
+- UI view-model generation
+
+`WebServerManager` consumes:
+
+- `ApplicationSnapshot`
+- `TreadmillControllerSnapshot`
+- `WorkoutSessionSnapshot`
+- `SettingsService` snapshots
+
+`WebServerManager` does not own:
+
+- speed
+- incline
+- distance
+- heart rate
+- runner state
+- workout state
+- treadmill control
+
+### 10.13 AI-Assisted Development Protocol
 
 1. Read-only repository inspection.
 2. Short change contract.
@@ -1228,13 +1262,13 @@ Stop and review when:
 
 ```text
 RSC:
-- speed                  -> SpeedSensor (authoritative speed owner)
+- speed                  -> RunnerDynamics (authoritative runner-qualified speed owner)
 - cadence                -> RunnerDynamics (authoritative cadence owner)
 - walking/running state  -> RunnerDynamics (authoritative motion classification owner)
 - validated distance     -> RunnerDynamics (authoritative runner distance owner)
 
 FTMS:
-- speed                  -> SpeedSensor (authoritative speed owner)
+- speed                  -> RunnerDynamics (authoritative runner-qualified speed owner)
 - incline                -> InclineSensor (authoritative incline owner)
 - ramp angle             -> InclineSensor-derived incline state (FTMS representation)
 - distance               -> RunnerDynamics (authoritative runner distance owner)
