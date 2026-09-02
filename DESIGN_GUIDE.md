@@ -1141,25 +1141,20 @@ Because StrideControl cannot initiate belt movement from standstill, resumption 
 
 1. The user manually starts the treadmill using the physical console (e.g., Quick Start).
 2. `SpeedSensor` detects confirmed physical belt movement above the moving threshold (> 0.5 km/h).
-3. `WorkoutSession` evaluates pause duration and presents a resume prompt on the GUI.
-4. If the user explicitly confirms resume on the GUI:
-   - `WorkoutSession` transitions: `WorkoutState = ResumePending`.
-   - A configurable resume countdown begins (default: 10 seconds).
-   - Speed remains at the current manual belt speed (e.g., 0.8–1.0 km/h baseline). No work-interval speed target is commanded during the countdown.
-5. When the countdown completes:
-   - `WorkoutSession` transitions: `ResumePending` → `Running`.
-   - Stored target incline is re-issued to `TreadmillController`.
-   - Stored target speed is re-issued to `TreadmillController` via standard `SpeedCalibration`.
+3. `WorkoutSession` transitions directly: `Suspended` → `Running`.
+4. Stored target incline is re-issued to `TreadmillController`.
+5. Stored target speed is re-issued to `TreadmillController` via standard `SpeedCalibration`.
+
+No GUI confirmation tap or resume countdown delay is required after a normal pause. Extended interruptions exceeding configured re-warmup thresholds (Section 10.11.2) fall under advisory coach recommendations.
 
 ##### Safety and Abort Rules
-- If belt movement stops during `ResumePending`, the countdown aborts immediately, and `WorkoutSession` returns to `Suspended`.
-- The user may cancel the resume countdown at any time via the GUI, leaving the treadmill at its current manual speed while terminating the pending workout resume.
+- If belt movement stops again, `WorkoutSession` immediately returns to `Suspended`.
 - Target speed is never dispatched to `TreadmillController` while the belt is at a standstill.
 
 ##### Configuration
 Managed by `SettingsService`:
-- `resumeDelaySec`: Default `10` s (Range: `0` – `30` s)
-- `autoResumePermitted`: Fixed `false` (Physical belt start and explicit GUI resume confirmation are always mandatory)
+- `autoResumeOnPhysicalStart`: Default `true` (Seamless resume when physical belt movement is re-detected after a standard pause)
+- `resumeDelaySec`: Default `0` s (Applies only if a staged re-entry delay is configured by policy)
 
 ### 10.12 WebServerManager
 
@@ -1283,7 +1278,9 @@ FTMS:
 
 ### 14.1 Precision UI
 
-Use Vanilla JavaScript, WebSocket telemetry, `pointerdown`, eight-button speed and incline grids, HVILE/DRAG presets, persistent manual controls, measured speed, tracked incline, and optional IMU verification.
+Use Vanilla JavaScript, WebSocket telemetry, `pointerdown`, measured speed, tracked incline, and optional IMU verification.
+
+The UI operates in two distinct modes: Manuell (manual 8+8 grid with HVILE/DRAG presets, locked at standstill) and Intervall (where manual speed/incline grids and HVILE/DRAG buttons are completely hidden in favor of timeline, hero time, phase banner, and contextual actions). Focus Mode automatically engages during work intervals, dimming non-essential chrome to ~8–10% opacity.
 
 The existing `StrideControl Precision UI` / `TabletGuiMockup` is the visual starting point and must evolve rather than be rebuilt.
 
@@ -1314,13 +1311,67 @@ The page distinguishes defaults, stored, temporary, active, externally verified,
 
 ### 14.3 Interval Coach
 
-Visual and auditory only, never automated control. Includes focus mode, Web Audio cues, ETA, phase banners, and RPE prompt.
+Autonomous target dispatch to `TreadmillController` at phase boundaries (speed and incline). Visual cues via phase banners, timeline, and ETA. In V1, audible cues rely exclusively on the console's native buzzer feedback (Web Audio is excluded). Focus mode, context actions (Gå til pause, Start drag, +30 sek pause), and post-workout summary with RPE prompt.
 
 ### 14.4 User Profile Schema
 
 ```json
 {
   "users": [
+    {
+      "name": "Christine",
+      "presets": {
+        "hvile": 5.0,
+        "drag": 12.0
+      },
+      "quick_keys": {
+        "speed": [5, 6, 7, 8, 9, 10, 11, 12],
+        "incline": [0, 1, 2, 3, 4, 6, 8, 10]
+      },
+      "active_workout_idx": 0,
+      "workouts": [
+        { "name": "Kortintervall (45/15)", "warmup_m": 8, "work_m": 0.75, "rest_m": 0.25, "reps": 10, "cooldown_m": 5 },
+        { "name": "Terskel 4x4", "warmup_m": 10, "work_m": 4.0, "rest_m": 3.0, "reps": 4, "cooldown_m": 5 },
+        { "name": "Rolig Langjogg", "warmup_m": 0, "work_m": 45.0, "rest_m": 0, "reps": 1, "cooldown_m": 0 }
+      ],
+      "history": []
+    },
+    {
+      "name": "Jonas",
+      "presets": {
+        "hvile": 6.0,
+        "drag": 15.0
+      },
+      "quick_keys": {
+        "speed": [5, 6, 8, 10, 12, 14, 15, 16],
+        "incline": [0, 1, 2, 3, 4, 5, 6, 8]
+      },
+      "active_workout_idx": 0,
+      "workouts": [
+        { "name": "Kortintervall (45/15)", "warmup_m": 8, "work_m": 0.75, "rest_m": 0.25, "reps": 10, "cooldown_m": 5 },
+        { "name": "Terskel 4x4", "warmup_m": 10, "work_m": 4.0, "rest_m": 3.0, "reps": 4, "cooldown_m": 5 },
+        { "name": "Rolig Langjogg", "warmup_m": 0, "work_m": 45.0, "rest_m": 0, "reps": 1, "cooldown_m": 0 }
+      ],
+      "history": []
+    },
+    {
+      "name": "Julie",
+      "presets": {
+        "hvile": 5.5,
+        "drag": 13.0
+      },
+      "quick_keys": {
+        "speed": [5, 6, 7, 8, 10, 11, 12, 13],
+        "incline": [0, 1, 2, 3, 4, 6, 8, 10]
+      },
+      "active_workout_idx": 0,
+      "workouts": [
+        { "name": "Kortintervall (45/15)", "warmup_m": 8, "work_m": 0.75, "rest_m": 0.25, "reps": 10, "cooldown_m": 5 },
+        { "name": "Terskel 4x4", "warmup_m": 10, "work_m": 4.0, "rest_m": 3.0, "reps": 4, "cooldown_m": 5 },
+        { "name": "Rolig Langjogg", "warmup_m": 0, "work_m": 45.0, "rest_m": 0, "reps": 1, "cooldown_m": 0 }
+      ],
+      "history": []
+    },
     {
       "name": "Kristian",
       "presets": {
@@ -1331,15 +1382,12 @@ Visual and auditory only, never automated control. Includes focus mode, Web Audi
         "speed": [4, 6, 8, 10, 12, 14, 16, 18],
         "incline": [0, 1, 2, 4, 6, 8, 10, 12]
       },
-      "last_interval": {
-        "work_m": 0,
-        "work_s": 45,
-        "rest_m": 0,
-        "rest_s": 15,
-        "reps": 10,
-        "series": 2,
-        "series_rest_m": 3
-      },
+      "active_workout_idx": 0,
+      "workouts": [
+        { "name": "Kortintervall (45/15)", "warmup_m": 8, "work_m": 0.75, "rest_m": 0.25, "reps": 10, "cooldown_m": 5 },
+        { "name": "Terskel 4x4", "warmup_m": 10, "work_m": 4.0, "rest_m": 3.0, "reps": 4, "cooldown_m": 5 },
+        { "name": "Rolig Langjogg", "warmup_m": 0, "work_m": 45.0, "rest_m": 0, "reps": 1, "cooldown_m": 0 }
+      ],
       "history": []
     }
   ]
