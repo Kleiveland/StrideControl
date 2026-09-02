@@ -267,6 +267,16 @@ When O1 enters `0x1F`, output O2 `0x00` for the first 1200 microseconds and `0xF
 | I2C SDA / SCL | 47 / 48 | LSM6DSOX IMU and cadence |
 | E-Stop, reserved | 18 | Hardware safety monitor |
 
+#### 4.3.1 Hardware Profile and Conflict Resolution
+
+The integrated GPIO allocation resolves historical prototype pin sharing:
+
+- `Speed+ Relay` is mapped to **GPIO 39** (freeing GPIO 14 for `Incline Sensor`).
+- `CSAFE TX` is mapped to **GPIO 17** (freeing GPIO 16 for `Buzzer ACK`).
+- `Speed- Relay` is mapped to **GPIO 38** (freeing GPIO 47 for `I2C SDA`).
+
+Any hardware profile using historical prototype assignments is incompatible with the integrated configuration and must not be enabled concurrently.
+
 ### 4.4 O2 Bus and Isolation
 
 O2 is changed atomically across both GPIO register banks. Sequential `digitalWrite()` calls are not suitable for phase-critical updates.
@@ -499,8 +509,6 @@ Speed comes from Pin 7, incline from the homed pulse-integrated tracker, and mac
 
 The LSM6DSOX is mounted to the moving deck, derives cadence from footstrike vibration, and provides filtered angle verification. The long I2C cable uses shielding and an LTC4311. A sensor fault returns cadence to 0 without affecting control.
 
-The historical GPIO47 SDA allocation conflicts with the current Speed- relay and must be resolved in final hardware.
-
 ### 5.3 Runner Presence
 
 The product goal is that measured belt movement without qualified runner footstrikes eventually results in no runner credit. FTMS and RSC speed is then forced to zero and validated runner distance pauses without changing treadmill control state.
@@ -667,6 +675,7 @@ The isolated concept uses PC817, 1 kOhm LED resistance, and 10 kOhm pull-up. BSS
 Physical Quick Start homes to 0%. When movement pulses stop, the tracker is set to 0.0%.
 
 Store incline when movement stops or machine state becomes STOPPED. A `Re-home Incline` action is mandatory because NVS cannot detect untracked movement while powered off.
+
 ---
 
 ## 8. Calibration and Software Constants
@@ -707,7 +716,7 @@ It does not measure pulses, execute commands, own GPIO, write NVS, or own HTML/A
 Example:
 
 ```text
-User request:               15.0 km/h
+User request:                15.0 km/h
 Previous treadmill command: 15.0 km/h
 Stable measured result:     14.8 km/h
 Future corrected command:   approximately 15.2 km/h
@@ -1093,6 +1102,57 @@ Typical operational examples:
 
 These recommendations are advisory only. WorkoutSession must not automatically execute them.
 
+#### 10.11.3 Workout Resume Policy
+
+##### Purpose
+The Resume Policy defines how StrideControl coordinates workout session context when belt movement stops and subsequently resumes. Because StrideControl has no active start or stop outputs, starting and stopping the physical belt is exclusively performed by the user on the treadmill console.
+
+##### Ownership
+`WorkoutSession` owns workout pause/resume lifecycle and recommendation state.
+
+`TreadmillController` owns target speed and incline command validation and transmission.
+
+`SpeedSensor` is the authoritative owner of measured physical belt speed.
+
+`InclineSensor` is the authoritative owner of tracked incline position.
+
+##### Passive Pause Behavior
+When the physical belt stops (via user pressing physical Stop, E-stop, or console timeout):
+
+1. `SpeedSensor` detects zero belt speed.
+2. `WorkoutSession` transitions: `WorkoutState = Suspended`.
+3. Stored workout context is frozen:
+   - Elapsed workout and interval time
+   - Validated runner distance
+   - Stored target speed and target incline
+   - Interval progression
+4. `TreadmillController` clears active injected targets.
+
+##### Resumption Sequence
+Because StrideControl cannot initiate belt movement from standstill, resumption is gated entirely on physical treadmill activity:
+
+1. The user manually starts the treadmill using the physical console (e.g., Quick Start).
+2. `SpeedSensor` detects confirmed physical belt movement above the moving threshold (> 0.5 km/h).
+3. `WorkoutSession` evaluates pause duration and presents a resume prompt on the GUI.
+4. If the user explicitly confirms resume on the GUI:
+   - `WorkoutSession` transitions: `WorkoutState = ResumePending`.
+   - A configurable resume countdown begins (default: 10 seconds).
+   - Speed remains at the current manual belt speed (e.g., 0.8–1.0 km/h baseline). No work-interval speed target is commanded during the countdown.
+5. When the countdown completes:
+   - `WorkoutSession` transitions: `ResumePending` → `Running`.
+   - Stored target incline is re-issued to `TreadmillController`.
+   - Stored target speed is re-issued to `TreadmillController` via standard `SpeedCalibration`.
+
+##### Safety and Abort Rules
+- If belt movement stops during `ResumePending`, the countdown aborts immediately, and `WorkoutSession` returns to `Suspended`.
+- The user may cancel the resume countdown at any time via the GUI, leaving the treadmill at its current manual speed while terminating the pending workout resume.
+- Target speed is never dispatched to `TreadmillController` while the belt is at a standstill.
+
+##### Configuration
+Managed by `SettingsService`:
+- `resumeDelaySec`: Default `10` s (Range: `0` – `30` s)
+- `autoResumePermitted`: Fixed `false` (Physical belt start and explicit GUI resume confirmation are always mandatory)
+
 ### 10.12 AI-Assisted Development Protocol
 
 1. Read-only repository inspection.
@@ -1182,6 +1242,7 @@ FTMS:
 - elapsed time           -> WorkoutSession (future authoritative elapsed-time source)
 - elevation gain         -> authoritative accumulator (future)
 ```
+
 ---
 
 ## 14. GUI Architecture and Interval Coach
