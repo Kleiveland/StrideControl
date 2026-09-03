@@ -1276,24 +1276,93 @@ FTMS:
 
 ## 14. GUI Architecture and Interval Coach
 
-### 14.1 Precision UI
+### 14.1 Precision UI Principles and Safety Interlocks
 
-Use Vanilla JavaScript, WebSocket telemetry, `pointerdown`, measured speed, tracked incline, and optional IMU verification.
+The tablet interface is a dedicated web frontend consuming authoritative state from `WebServerManager`. All user actions in the GUI represent dispatch of target orders (speed, incline, mode switch) rather than direct hardware manipulation.
 
-The UI operates in two distinct modes: Manuell (manual 8+8 grid with HVILE/DRAG presets, locked at standstill) and Intervall (where manual speed/incline grids and HVILE/DRAG buttons are completely hidden in favor of timeline, hero time, phase banner, and contextual actions). Focus Mode automatically engages during work intervals, dimming non-essential chrome to ~8–10% opacity.
+- **Global Activity Interlock:** As soon as physical belt speed is detected (> 0.0 km/h), the entire top navigation bar dims to 20% opacity and pointer events are disabled (`pointer-events: none`). Navigation, profile switching, and configuration modals are physically inaccessible while the belt is moving. The top bar is re-enabled only at complete standstill (0.0 km/h).
+- **Dynamic Telemetry Layout:**
+  - *Climbed Elevation (m):* Hidden while incline is 0.0%. Total Time, Distance, Heart Rate, and Speed share 25% width each. When incline reaches ≥ 1.0%, the layout compresses and the elevation column slides into the center.
+  - *Achromatic Critical Telemetry:* Heart rate and speed numeric readouts remain strictly white/monochrome. Color accents (blue/red) are reserved exclusively for action buttons and progress indicators to avoid visual alarms during exertion.
+- **Operational Modes:**
+  - *Manuell Modus:* 8+8 quick-key grid with HVILE and DRAG preset order buttons.
+  - *Intervall Modus:* Manual grids are hidden in favor of timeline, hero remaining time, phase banner, and contextual action buttons. Focus Mode engages automatically during work intervals, dimming non-essential chrome to ~8–10% opacity.
 
-The existing `StrideControl Precision UI` / `TabletGuiMockup` is the visual starting point and must evolve rather than be rebuilt.
+### 14.2 Top Bar Navigation
 
-- Remove the embedded simulator from the production data path.
-- Retain the disconnected-state presentation.
-- Drive disconnected state from transport connection, snapshot freshness, SystemManager, and relevant subsystem faults.
-- Use calibrated achievable speed limits in controls and quick keys.
-- Do not expose external calibration, calibration-table editing, learned-point approval, or commissioning in the tablet UI.
-- Test the tablet UI on the standard iPhone 14 Pro layout as well as the target tablet.
+Positioned at the very top in Intervall mode and below the incline keys in Manuell mode (accessible only at standstill):
 
-WorkoutSession publishes suspension and resume context through snapshots. The GUI is responsible for presenting suspension state, pause duration, workout progress, and resume recommendations. WorkoutSession provides facts; the GUI decides how they are presented.
+1. **System Clock:** Local RTC time (`HH:MM`). Non-interactive.
+2. **User Profile Selector (`KRISTIAN ▾`):** Displays active profile. Tapping returns to Screen 8 to switch user, ensuring correct sensor routing and workout history.
+3. **Mode Toggle (`MANUELL` / `INTERVALL`):** Toggles between free running and structured workout modes.
+4. **Settings Action (`[ OPPSETT ]`):** Opens Screen 10 (Main Configuration).
 
-### 14.2 PC Settings, Diagnostics, and Commissioning UI
+### 14.3 Screen State Machine and Operational Flows
+
+#### 14.3.1 Screen 8: Initial Launcher & Profile Selection
+Engaged when waking the tablet or when switching profiles at standstill:
+- **User Cards (`CHRISTINE`, `JONAS`, `JULIE`, `KRISTIAN`):** Large interactive buttons. Selecting a profile immediately loads the runner's presets, quick-key arrays, and Bluetooth device bindings.
+- **Mode Buttons (`MANUELL`, `INTERVALL`):** Tapping either mode switches directly to the corresponding operational view and dismisses the launcher.
+
+#### 14.3.2 Screens 1 & 2: Manual Control Mode
+- **Incline Quick Keys (0, 1, 2, 4, 6, 8, 10, 12 %):** Top-anchored buttons with blue bottom border. Tapping dispatches a target whole-percent incline order to `TreadmillController`.
+- **Speed Quick Keys (4, 6, 8, 10, 12, 14, 16, 18 km/h):** Bottom-anchored buttons with red bottom border. Tapping dispatches a target speed order to `TreadmillController`.
+- **`[ HVILE ]` Preset Button (Blue accent):** Centered above the speed row. Dispatches the profile's configured recovery speed target (e.g., 6.0 km/h).
+- **`[ DRAG ]` Preset Button (Red accent):** Centered above the speed row. Dispatches the profile's configured work speed target (e.g., 16.0 km/h).
+
+#### 14.3.3 Screens 3–7: Interval Mode Workflow
+- **Screen 3: Program Selection (Standstill):**
+  - Bottom program buttons show the 3 stored workouts from the active profile.
+  - Tapping previews the timeline and phase breakdown. The selected program displays a blue bottom border.
+  - Starts when the runner physically presses `QUICK START` on the treadmill console, transitioning to Screen 4.
+- **Screen 4: Work Interval (Drag):**
+  - Live countdown timer, phase banner, and active segment timeline.
+  - **`[ KUTT DRAG ]` (Blue accent):** Immediate early termination of a work rep. Logs the repetition as partially completed and dispatches a target speed order for the configured recovery pace. Transitions to Screen 5A.
+- **Screen 5A: Rest Interval - Step 1 (Speed+ Prompt & Toast):**
+  - **Toast Banner:** Slides down from top with previous rep metrics (e.g., "DRAG 4 FULLFØRT · SNITTPULS 168") and dismisses automatically after 4 seconds.
+  - **Circular Countdown Timer:** Depletes synchronously with remaining recovery time.
+  - **`[ JA ]` / `[ NEI ]` (Speed Adjustment):** Tapping `JA` adds +0.2 km/h (or configured step) to all remaining work intervals in the session. Tapping `NEI` keeps the original planned speed. If countdown expires without input, the original plan is retained. Both choices advance UI to Step 2.
+- **Screen 5B: Rest Interval - Step 2 (Manual Rest Override):**
+  - Displayed while rest time continues to count down.
+  - **`[ UTVID HVILE ]` (Blue accent):** Adds +30 seconds to the active rest countdown per tap.
+  - **`[ START DRAG ]` (Red accent):** Immediately truncates remaining rest time and dispatches work interval target speed and incline orders.
+- **Screen 6: Motion Interrupted (Physical Belt Stopped):**
+  - Triggered automatically if the physical belt stops during an active program.
+  - **`[ BYTT TIL MANUELL ]`:** Cancels the interval program, preserves accumulated workout distance and time, and switches to Screen 1.
+  - **`[ AVSLUTT ØKT ]`:** Finalizes session record and advances directly to Summary (Screen 9).
+  - *Physical Restart:* Starting the belt via physical console Quick Start resumes the interval session directly without GUI prompt per Section 10.11.3.
+- **Screen 7: Cooldown and Completion:**
+  - Engaged automatically when the final work interval ends. Hero text displays `INTERVALL FULLFØRT`. Target speed drops to cooldown pace. The workout terminates when the runner presses physical Stop on the console, triggering Screen 9.
+
+#### 14.3.4 Screen 9: Post-Workout Summary
+- Displays total time, distance, average speed, max speed, and heart-rate session metrics.
+- Displays `ØKT SYNKRONISERT OG LAGRET`.
+- **`[ FERDIG ]`:** Resets local workout accumulators, closes the summary modal, and returns to launcher state.
+
+### 14.4 Configuration Modals (Screens 10–12)
+
+Accessible only at complete standstill (`speed == 0.0 km/h`):
+
+- **Screen 10: Main Configuration:**
+  - Stepper controls (`– / +`) for active profile's `HVILE` and `DRAG` preset speeds.
+  - Bluetooth LE device scanning and pairing manager (`[ Koble til ]` / `[ Koble fra ]`) for heart-rate sensors.
+  - `[ LAGRE ]` persists settings to `SettingsService`; `[ AVBRYT ]` discards changes.
+- **Screen 11: Session Builder (Interval Planner):**
+  - 3 tabs (`Økt 1`, `Økt 2`, `Økt 3`).
+  - Warmup / Cooldown toggles (`FAST` locks exact target speed; `FRITT` allows free manual speed adjustment).
+  - Work duration mode toggle (`TID` vs `METER`).
+  - Progressive workout steppers: Adjusting base speed or progressive delta auto-calculates final rep speed `(Base + (Reps - 1) * Delta)`.
+  - `[ LAGRE ØKT ]` persists workout parameters to the active user profile.
+- **Screen 12: Tablet Quick-Key Customization:**
+  - Customization interface for the 8 speed and 8 incline buttons displayed on the tablet manual screen.
+  - Tapping any button opens a value picker to configure that tablet quick key (e.g., setting a button to 15.5 km/h). Purely configures tablet web frontend presentation.
+  - `[ LAGRE ENDRINGER ]` persists the custom quick-key array to the user profile.
+
+### 14.5 Interval Coach Execution Rules
+
+Autonomous target dispatch to `TreadmillController` occurs at phase boundaries (speed and incline). Visual feedback uses phase banners, timeline progress, and countdown timers. In V1, audible cues rely exclusively on the console's native buzzer feedback (Web Audio is excluded). Focus mode engages automatically during work intervals.
+
+### 14.6 PC Settings, Diagnostics, and Commissioning UI
 
 This is a separate PC-oriented HTML interface for:
 
@@ -1307,13 +1376,9 @@ This is a separate PC-oriented HTML interface for:
 - data recording and export
 - incline calibration and verification
 
-The page distinguishes defaults, stored, temporary, active, externally verified, automatically learned, and last-known-good values.
+The page distinguishes defaults, stored, temporary, active, externally verified, automatically learned, and last-known-good values. It remains architecturally isolated from the tablet training UI.
 
-### 14.3 Interval Coach
-
-Autonomous target dispatch to `TreadmillController` at phase boundaries (speed and incline). Visual cues via phase banners, timeline, and ETA. In V1, audible cues rely exclusively on the console's native buzzer feedback (Web Audio is excluded). Focus mode, context actions (Gå til pause, Start drag, +30 sek pause), and post-workout summary with RPE prompt.
-
-### 14.4 User Profile Schema
+### 14.7 User Profile Schema
 
 ```json
 {
