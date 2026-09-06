@@ -1038,15 +1038,15 @@ WorkoutSession owns:
 
 - workout lifecycle
 - workout suspension and resume
+- active workout execution
 - interval progression
-- workout-scoped telemetry
-- workout summary
-- execution sequence generation
 - phase transitions
 - cut-drag handling
 - rest extension requests
 - remaining-workout speed adjustment
 - workout completion state
+- workout-scoped telemetry
+- workout summary
 
 WorkoutSession consumes authoritative data from:
 
