@@ -930,6 +930,8 @@ ApplicationSnapshot shall not become a GUI aggregation object.
 
 UI-specific view models may aggregate ApplicationSnapshot together with WorkoutSessionSnapshot, TreadmillControllerSnapshot, and configuration DTOs without transferring ownership.
 
+ApplicationSnapshot shall not contain workout-definition, interval-library, timeline, editor, UI navigation, modal state, or screen-specific presentation state. These belong to dedicated workout and UI view-model DTOs.
+
 Do not expose private algorithms, mutexes, raw pointers, or storage-specific structures through public APIs.
 
 ### 10.7 Diagnostics Core
@@ -1039,6 +1041,12 @@ WorkoutSession owns:
 - interval progression
 - workout-scoped telemetry
 - workout summary
+- execution sequence generation
+- phase transitions
+- cut-drag handling
+- rest extension requests
+- remaining-workout speed adjustment
+- workout completion state
 
 WorkoutSession consumes authoritative data from:
 
@@ -1156,23 +1164,58 @@ Managed by `SettingsService`:
 - `autoResumeOnPhysicalStart`: Default `true` (Seamless resume when physical belt movement is re-detected after a standard pause)
 - `resumeDelaySec`: Default `0` s (Applies only if a staged re-entry delay is configured by policy)
 
+#### 10.11.4 WorkoutDefinition
+
+WorkoutDefinition owns:
+
+- workout name
+- workout structure
+- warmup
+- cooldown
+- interval groups
+- repetitions
+- drag steps
+- rest steps
+- progression configuration
+
+WorkoutDefinition is persisted through SettingsService.
+
+Warmup is always the first item. Cooldown is always the last item.
+
+Warmup and cooldown may be edited but shall not be deleted, duplicated or moved.
+
+#### 10.11.5 WorkoutExpander
+
+WorkoutExpander is a pure-logic component.
+
+Responsibilities:
+
+- expand interval groups into executable sequence
+- apply repetition counts
+- perform final-sequence rest stripping
+- resolve inherited rest speed
+- generate timeline representation
+
+WorkoutExpander owns no GUI state, storage, networking or treadmill control.
+
 ### 10.12 WebServerManager
 
-`WebServerManager` owns:
+WebServerManager owns:
 
 - HTTP routing
 - WebSocket transport
 - JSON serialization
-- UI view-model generation
 
-`WebServerManager` consumes:
+WebServerManager does not own UI logic, timeline generation, interval expansion, navigation state or workout execution logic.
+
+WebServerManager consumes:
 
 - `ApplicationSnapshot`
 - `TreadmillControllerSnapshot`
 - `WorkoutSessionSnapshot`
 - `SettingsService` snapshots
 
-`WebServerManager` does not own:
+WebServerManager does not own:
 
 - speed
 - incline
@@ -1275,6 +1318,22 @@ FTMS:
 ---
 
 ## 14. GUI Architecture and Interval Coach
+
+### 14.0 GUI Source of Truth
+
+The approved Precision UI HTML implementation is the UX reference.
+
+Visual layout, interaction patterns, workflow, terminology and look-and-feel shall be preserved.
+
+Production implementation may replace internal JavaScript logic, but must preserve:
+
+- screen layout
+- user flow
+- terminology
+- interaction model
+- visual appearance
+
+The ESP32 firmware is the authoritative owner of application logic. The GUI is a presentation layer consuming authoritative state from firmware APIs.
 
 ### 14.1 Precision UI Principles and Safety Interlocks
 
@@ -1514,8 +1573,12 @@ The page distinguishes defaults, stored, temporary, active, externally verified,
 - [ ] Implement RscService and FtmsService
 - [ ] Implement recorded-data replay before aggressive tuning
 - [ ] Implement MaintenanceService with separate mechanical distance
-- [ ] Define stable WebServer/API contracts before GUI connection
-- [ ] Connect the Precision UI and remove simulator from production
+- [ ] Implement WorkoutDefinition persistence
+- [ ] Implement WorkoutExpander
+- [ ] Define stable WebServer/API contracts
+- [ ] Serve existing Precision UI from LittleFS
+- [ ] Replace simulator with authoritative firmware state
+- [ ] Remove simulator from production build
 - [ ] Perform recorded-data, HIL, and physical treadmill validation
 
 ### 15.4 Required Development Sequence
