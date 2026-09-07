@@ -3,125 +3,46 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+#include "../WorkoutEngine/WorkoutExecutionTypes.h"
 #include "../RunnerDynamics/RunnerDynamicsTypes.h"
 
 namespace stridecontrol {
-
-constexpr size_t kMaxWorkoutSteps = 96;
 
 /**
  * @brief State machine operational states for WorkoutSession.
  */
 enum class WorkoutSessionState : uint8_t {
-    Uninitialized,          ///< begin() not yet called or end() completed
-    Idle,                   ///< Initialized, no plan loaded or armed
-    Armed,                  ///< Plan loaded, waiting for belt movement to activate
-    Warmup,                 ///< Executing warmup step
-    WorkRamping,            ///< Transitioning speed/incline to work step target
-    WorkActive,             ///< Actively executing work step
-    RecoveryRamping,        ///< Transitioning speed/incline to recovery target
-    RecoveryActive,         ///< Actively executing recovery step
-    Cooldown,               ///< Executing cooldown step
-    Suspended,              ///< Interrupted / belt stopped, progression frozen
-    AwaitingResumeDecision, ///< Belt restarted, awaiting user UI resume choice
-    Completed,              ///< All plan steps completed successfully
-    Failed                  ///< Controller or configuration failure
+    Uninitialized = 0,      ///< begin() not yet called or end() completed
+    Idle = 1,               ///< Initialized, no plan loaded or armed
+    Armed = 2,              ///< Plan loaded, waiting for belt movement to activate
+    Running = 3,            ///< Actively executing workout steps with belt movement
+    Suspended = 4,          ///< Interrupted / belt stopped, progression frozen
+    CompletionPending = 5,  ///< Nedjogg/cooldown finished, awaiting physical stop or finalize
+    Completed = 6,          ///< Workout finished and finalized
+    Aborted = 7             ///< Explicitly cancelled by user
 };
 
 /**
- * @brief Structural step classification within a structured workout plan.
+ * @brief Command intent emitted by WorkoutSession on step entries or state transitions.
+ * Forwarded to TreadmillController by the owning application layer.
+ *
+ * @note WorkoutSession NEVER requests physical treadmill stop (stop is console-only).
  */
-enum class WorkoutStepType : uint8_t {
-    Warmup,
-    Work,
-    Recovery,
-    Cooldown
-};
-
-/**
- * @brief Goal criteria defining when a step reaches completion.
- */
-enum class WorkoutStepGoalType : uint8_t {
-    Duration,
-    ValidatedRunnerDistance
-};
-
-/**
- * @brief Rest tactic intended during recovery steps.
- */
-enum class WorkoutRestType : uint8_t {
-    None,
-    ActiveRecovery,
-    SideRailStand
-};
-
-/**
- * @brief Available user action choices upon resuming a suspended session.
- */
-enum class WorkoutResumeChoice : uint8_t {
-    None,
-    ResumeRemaining,
-    ResumeWithReWarmup,
-    RestartCurrentStep,
-    SkipToRecovery,
-    EndWorkout
-};
-
-/**
- * @brief Advisory system recommendation generated upon resume motion.
- */
-enum class WorkoutResumeRecommendation : uint8_t {
-    None,
-    ResumeRemaining,
-    ShortReEntry,
-    ReWarmup,
-    RestartCurrentStep,
-    SkipToRecovery,
-    EndWorkout
-};
-
-/**
- * @brief Single discrete step in a structured workout profile.
- */
-struct WorkoutStep {
-    WorkoutStepType type = WorkoutStepType::Work;
-    WorkoutStepGoalType goalType = WorkoutStepGoalType::Duration;
-    WorkoutRestType restType = WorkoutRestType::None;
-
-    float targetPhysicalSpeedKmh = 0.0f;
-    float targetInclinePct = 0.0f;
-
-    uint32_t targetDurationMs = 0;
-    double targetDistanceKm = 0.0;
-};
-
-/**
- * @brief Complete structured workout plan.
- */
-struct WorkoutPlan {
-    uint32_t planId = 0;
-    uint8_t stepCount = 0;
-    std::array<WorkoutStep, kMaxWorkoutSteps> steps{};
+struct WorkoutCommandIntent {
+    bool hasSpeedTarget = false;
+    float targetSpeedKmh = 0.0f;
+    bool hasInclineTarget = false;
+    uint8_t targetInclinePct = 0;
 };
 
 /**
  * @brief Tunable session policy configuration.
  */
 struct WorkoutSessionConfig {
-    uint32_t immediateResumeThresholdMs = 60000;         // 0–60s pause -> ResumeRemaining
-    uint32_t shortReEntryThresholdMs = 300000;           // 1–5 min pause -> ShortReEntry
-    uint32_t reWarmupThresholdMs = 900000;               // 5–15 min pause -> ReWarmup
-    uint32_t extendedReWarmupThresholdMs = 1800000;      // >15 min pause -> Restart or Cold End
-    float skipToRecoveryRemainingFraction = 0.30f;       // <30% remaining in Work -> Recommend SkipToRecovery
     float beltMovingThresholdKmh = 0.5f;                 // Minimum speed to qualify belt motion
-    float targetSpeedToleranceKmh = 0.3f;                // Speed gate tolerance window
-    uint32_t speedGateTimeoutMs = 15000;                 // Timeout waiting for motor to reach speed gate
-    float assumedAccelerationKmhPerSec = 1.5f;           // Estimated acceleration rate for ramp calculation
-    float assumedDecelerationKmhPerSec = 2.0f;           // Estimated deceleration rate
-    uint32_t commandLatencyMs = 200;                     // Console queue and communication delay
-    uint32_t reWarmupDurationMs = 120000;                // Default duration for re-warmup step (2 min)
-    float reWarmupSpeedKmh = 6.0f;                       // Default easy speed for re-warmup
-    float reWarmupInclinePct = 0.0f;                     // Default incline for re-warmup
+    uint32_t defaultRestExtensionSeconds = 30;          // Standard Hvile extension in seconds
+    uint32_t continuationWindowDurationMs = 10000;      // 10-second continuation window after 2x stop
+    uint32_t speedAdjustmentPromptDurationMs = 15000;   // 15-second prompt duration during REST step
 };
 
 /**
@@ -132,14 +53,17 @@ struct WorkoutSessionSnapshot {
     bool initialized = false;
     bool active = false;
     bool suspended = false;
-    bool decisionRequired = false;
+    bool completionPending = false;
 
     // Plan & Step progress
-    uint32_t planId = 0;
+    uint16_t workoutId = 0;
     uint8_t currentStepIndex = 0;
     uint8_t totalStepCount = 0;
 
-    WorkoutStep currentStep{};
+    ExpandedStep currentStep{};
+    StepRole currentRole = StepRole::WORK;
+    uint16_t currentRep = 0;
+    uint16_t totalRepsInGroup = 0;
 
     // Metrics for active step
     uint32_t stepElapsedMs = 0;
@@ -150,39 +74,33 @@ struct WorkoutSessionSnapshot {
     float stepRemainingFraction = 1.0f;
 
     // Total workout metrics
-    uint32_t totalElapsedTimeMs = 0;         // Wall-clock session time
-    uint32_t activeRunningTimeMs = 0;        // Accumulated strictly when speedCreditEnabled == true
+    uint32_t totalElapsedTimeMs = 0;         // Wall-clock active workout time
+    uint32_t activeRunningTimeMs = 0;        // Accumulated strictly when runner dynamics speed credit enabled
     double totalValidatedDistanceKm = 0.0;   // Accumulated strictly via RunnerDynamics
 
-    // Physical & Runner context
-    float measuredBeltSpeedKmh = 0.0f;
-    float runnerQualifiedSpeedKmh = 0.0f;
-    float instantaneousCadenceSpm = 0.0f;
-    bool cadenceValid = false;
-    bool runnerOnSideRails = false;
-    bool runnerSpeedCreditEnabled = false;
-    RunnerPresence runnerPresence = RunnerPresence::Unknown;
+    // Target command intent
+    bool hasSpeedTarget = false;
+    float targetSpeedKmh = 0.0f;
+    bool hasInclineTarget = false;
+    uint8_t targetInclinePct = 0;
 
-    // Heart rate context (only when available)
-    uint8_t heartRateBpm = 0;
-    bool heartRateValid = false;
+    // Special runtime modifiers
+    bool isPartialDrag = false;
+    uint8_t partialDragCount = 0;
+    bool isRestExtended = false;
+    uint32_t restExtensionSeconds = 0;
 
-    // Speed gate & ramp tracking
-    bool speedGateReached = false;
-    bool speedGateTimedOut = false;
-    uint32_t expectedRampTimeMs = 0;
+    // Stop hierarchy & continuation
+    uint8_t physicalStopCount = 0;
+    bool continuationWindowActive = false;
+    uint32_t continuationWindowRemainingMs = 0;
+    bool isEmergencyStopped = false;
 
-    // Suspension & Resume Context
-    uint32_t lastSuspensionTimestampMs = 0;
-    uint32_t currentPauseDurationMs = 0;
-    WorkoutResumeRecommendation recommendation = WorkoutResumeRecommendation::None;
-
-    // Bitmask of available resume choices
-    bool choiceResumeRemainingAvailable = false;
-    bool choiceResumeWithReWarmupAvailable = false;
-    bool choiceRestartStepAvailable = false;
-    bool choiceSkipToRecoveryAvailable = false;
-    bool choiceEndWorkoutAvailable = false;
+    // Remaining-drag speed adjustment
+    bool speedAdjustmentPromptActive = false;
+    float suggestedSpeedDeltaKmh = 0.0f;
+    float appliedWorkSpeedShiftKmh = 0.0f;
+    uint32_t speedAdjustmentPromptExpiresMs = 0;
 
     // Diagnostics & Sequence
     uint32_t snapshotTimestampMs = 0;
@@ -190,9 +108,7 @@ struct WorkoutSessionSnapshot {
 };
 
 const char* workoutSessionStateName(WorkoutSessionState state);
-const char* workoutStepTypeName(WorkoutStepType type);
-const char* workoutStepGoalTypeName(WorkoutStepGoalType goalType);
-const char* workoutResumeChoiceName(WorkoutResumeChoice choice);
-const char* workoutResumeRecommendationName(WorkoutResumeRecommendation rec);
 
 } // namespace stridecontrol
+
+
