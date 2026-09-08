@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <freertos/FreeRTOS.h>
 #include "../BluetoothTypes/BluetoothTypes.h"
 #include "../SettingsService/SettingsServiceTypes.h"
@@ -9,10 +10,16 @@
 // Forward declarations in global namespace
 class NimBLEScan;
 class NimBLEAdvertisedDevice;
+class NimBLEServer;
+class NimBLEAdvertising;
+struct ble_gap_conn_desc;
 
 namespace stridecontrol {
 
 class BleScanCallbackAdapter;
+class BleServerCallbackAdapter;
+class RscService;
+class FtmsService;
 
 /**
  * @brief Dual-role Bluetooth Low Energy subsystem coordinator.
@@ -28,8 +35,8 @@ class BleScanCallbackAdapter;
  *    orchestrator lifecycle task on Core 0).
  *
  * 2. Listener Context Lifetime:
- *    - Listener context storage (e.g. HeartRateClient) must remain valid until
- *      BleManager::end() has returned.
+ *    - Listener context storage (e.g. HeartRateClient, RscService, FtmsService)
+ *      must remain valid until BleManager::end() has returned.
  *    - Runtime destruction of a registered listener context before BleManager::end()
  *      returns is prohibited.
  *    - After BleManager::end() returns, NimBLE callback quiescence is established
@@ -55,6 +62,14 @@ public:
     BleManager(BleManager&&) = delete;
     BleManager& operator=(BleManager&&) = delete;
 
+    /**
+     * @brief Pre-begin attachment for Peripheral GATT services (RscService, FtmsService).
+     * @param [in] rsc Pointer to RscService instance (or nullptr).
+     * @param [in] ftms Pointer to FtmsService instance (or nullptr).
+     * @return true if services attached successfully or idempotently re-supplied; false if called while initialized.
+     */
+    bool attachServices(RscService* rsc, FtmsService* ftms);
+
     bool begin(const BleConfig& config);
     void end();
 
@@ -76,7 +91,12 @@ public:
 
 private:
     friend class BleScanCallbackAdapter;
+    friend class BleServerCallbackAdapter;
+
     void handleAdvertisedDevice(::NimBLEAdvertisedDevice* advertisedDevice);
+    void handleServerConnect(const ::ble_gap_conn_desc* desc);
+    void handleServerDisconnect(const ::ble_gap_conn_desc* desc);
+    bool buildAndStartAdvertising();
 
     struct ScanListenerEntry {
         BleScanCallback callback{nullptr};
@@ -88,8 +108,13 @@ private:
     bool isTransitioningLifecycle_{false};
     bool isShuttingDown_{false};
 
+    RscService* rscService_{nullptr};
+    FtmsService* ftmsService_{nullptr};
+
     ScanListenerEntry scanListeners_[4]{};
     ::NimBLEScan* scan_{nullptr};
+    ::NimBLEServer* server_{nullptr};
+    ::NimBLEAdvertising* advertising_{nullptr};
 
     BleConfig config_{};
     BleState state_{};
@@ -98,6 +123,16 @@ private:
     BleCoordinatorInternalState internalState_{
         BleCoordinatorInternalState::Uninitialized
     };
+
+    uint16_t activePeripheralHandles_[kMaxPeripheralConnections]{
+        kInvalidConnectionHandle,
+        kInvalidConnectionHandle
+    };
+
+    uint16_t pendingDisconnects_[kMaxPendingServerDisconnects]{};
+    size_t pendingDisconnectCount_{0};
+    bool disconnectResyncPending_{false};
+    bool advertisingRestartPending_{false};
 
     uint32_t lastUpdateMs_{0};
     uint32_t stateEntryMs_{0};

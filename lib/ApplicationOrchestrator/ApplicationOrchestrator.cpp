@@ -225,6 +225,13 @@ uint32_t ApplicationOrchestrator::getOverrunCount() const {
     return val;
 }
 
+uint32_t ApplicationOrchestrator::getMinFreeStackBytes() const {
+    portENTER_CRITICAL(&metricsMux_);
+    const uint32_t val = minFreeStackBytes_;
+    portEXIT_CRITICAL(&metricsMux_);
+    return val;
+}
+
 const char* ApplicationOrchestrator::version() {
     return "1.3.0";
 }
@@ -293,11 +300,15 @@ void ApplicationOrchestrator::runLoop() {
     TickType_t lastWakeTime = xTaskGetTickCount();
     const TickType_t periodTicks = pdMS_TO_TICKS(kPeriodMs);
     uint32_t lastLoopTimestampMs = millis();
+    uint32_t lastHeadroomCheckMs = millis();
 
     while (!stopRequested_) {
         const uint32_t nowMs = millis();
         const uint32_t loopDeltaMs = nowMs - lastLoopTimestampMs;
         lastLoopTimestampMs = nowMs;
+
+        // Reset private staging snapshot at the start of every tick
+        stagingSnapshot_ = ApplicationSnapshot{};
 
         // 1. Update Hardware & Bus Interfaces
         if (deps_.speedSensor != nullptr) {
@@ -313,67 +324,62 @@ void ApplicationOrchestrator::runLoop() {
             deps_.imuInterface->update();
         }
 
-        // 2. Obtain Immutable Interface States
-        SpeedSensorState speedState = deps_.speedSensor ? deps_.speedSensor->getState() : SpeedSensorState{};
-        InclineState inclineState = deps_.inclineSensor ? deps_.inclineSensor->getState() : InclineState{};
-        CsafeState csafeState = deps_.csafeInterface ? deps_.csafeInterface->getState() : CsafeState{};
-        ImuState imuState = deps_.imuInterface ? deps_.imuInterface->getState() : ImuState{};
+        // 2. Obtain Immutable Interface States directly into stagingSnapshot_
+        stagingSnapshot_.timestampMs = nowMs;
+        stagingSnapshot_.sequenceNumber = sequenceNumber_++;
 
-        // 3. Drain and Buffer IMU Samples
-        ImuSample imuSamples[kMaxImuBatchSize];
+        stagingSnapshot_.speed = deps_.speedSensor ? deps_.speedSensor->getState() : SpeedSensorState{};
+        stagingSnapshot_.incline = deps_.inclineSensor ? deps_.inclineSensor->getState() : InclineState{};
+        CsafeState csafeState = deps_.csafeInterface ? deps_.csafeInterface->getState() : CsafeState{};
+        stagingSnapshot_.imu = deps_.imuInterface ? deps_.imuInterface->getState() : ImuState{};
+
+        // 3. Drain and Buffer IMU Samples using private member buffer
         size_t sampleCount = 0;
         if (deps_.imuInterface != nullptr) {
-            sampleCount = deps_.imuInterface->readSamples(imuSamples, kMaxImuBatchSize);
+            sampleCount = deps_.imuInterface->readSamples(imuSamples_, kMaxImuBatchSize);
         }
 
         // 4. Update Signal Processing & Analysis Engines
-        RunnerDynamicsState runnerState{};
         if (deps_.runnerDynamics != nullptr) {
-            deps_.runnerDynamics->update(imuSamples, sampleCount, speedState, csafeState, nowMs);
-            runnerState = deps_.runnerDynamics->getState();
+            deps_.runnerDynamics->update(imuSamples_, sampleCount, stagingSnapshot_.speed, csafeState, nowMs);
+            stagingSnapshot_.runner = deps_.runnerDynamics->getState();
+        } else {
+            stagingSnapshot_.runner = RunnerDynamicsState{};
         }
 
-        InclineVerifierState verifierState{};
         if (deps_.inclineVerifier != nullptr) {
             InclineVerificationCommandInput cmdInput{};
-            deps_.inclineVerifier->update(cmdInput, inclineState, imuState, nowMs);
-            verifierState = deps_.inclineVerifier->getState();
+            deps_.inclineVerifier->update(cmdInput, stagingSnapshot_.incline, stagingSnapshot_.imu, nowMs);
+            stagingSnapshot_.inclineVerifier = deps_.inclineVerifier->getState();
+        } else {
+            stagingSnapshot_.inclineVerifier = InclineVerifierState{};
         }
 
         // 5. Update Maintenance Odometer (Wear-Leveled RAM Accumulation)
         if (deps_.maintenanceService != nullptr) {
-            deps_.maintenanceService->update(speedState.speedKmh, loopDeltaMs > 0 ? loopDeltaMs : kPeriodMs);
+            deps_.maintenanceService->update(stagingSnapshot_.speed.speedKmh, loopDeltaMs > 0 ? loopDeltaMs : kPeriodMs);
         }
 
         // 6. Obtain Current Health Snapshot
-        SystemHealthSnapshot healthSnap{};
         if (deps_.diagnosticsService != nullptr) {
-            healthSnap = deps_.diagnosticsService->getSnapshot(nowMs);
+            stagingSnapshot_.health = deps_.diagnosticsService->getSnapshot(nowMs);
+        } else {
+            stagingSnapshot_.health = SystemHealthSnapshot{};
         }
 
-        // 7. Assemble Complete ApplicationSnapshot DTO (Fast Critical-Section Telemetry Sample)
-        ApplicationSnapshot snap{};
-        snap.timestampMs = nowMs;
-        snap.sequenceNumber = sequenceNumber_++;
-        snap.speed = speedState;
-        snap.incline = inclineState;
-        snap.imu = imuState;
-        snap.runner = runnerState;
-        snap.inclineVerifier = verifierState;
-        snap.health = healthSnap;
         if (deps_.hrClient != nullptr) {
-            snap.heartRate = deps_.hrClient->getState();
+            stagingSnapshot_.heartRate = deps_.hrClient->getState();
         }
         if (deps_.bleManager != nullptr) {
-            snap.ble = deps_.bleManager->getState();
+            stagingSnapshot_.ble = deps_.bleManager->getState();
         }
 
-        // 8. Publish Snapshot via Spinlock-Protected By-Value Copy
+        // 7. Publish Snapshot via Spinlock-Protected By-Value Copy
         portENTER_CRITICAL(&snapshotMux_);
-        publishedSnapshot_ = snap;
+        publishedSnapshot_ = stagingSnapshot_;
         portEXIT_CRITICAL(&snapshotMux_);
 
-        // 9. Update Execution Metrics
+        // 8. Update Execution Metrics
         const uint32_t executionDurationMs = millis() - nowMs;
         portENTER_CRITICAL(&metricsMux_);
         loopCount_++;
@@ -381,6 +387,15 @@ void ApplicationOrchestrator::runLoop() {
             overrunCount_++;
         }
         portEXIT_CRITICAL(&metricsMux_);
+
+        // 9. Periodically sample stack high water mark (every 1000 ms)
+        if (nowMs - lastHeadroomCheckMs >= 1000) {
+            lastHeadroomCheckMs = nowMs;
+            UBaseType_t highWater = uxTaskGetStackHighWaterMark(NULL);
+            portENTER_CRITICAL(&metricsMux_);
+            minFreeStackBytes_ = static_cast<uint32_t>(highWater);
+            portEXIT_CRITICAL(&metricsMux_);
+        }
 
         // 10. Drift-Resistant Periodic Delay
         const BaseType_t delaySuccess = xTaskDelayUntil(&lastWakeTime, periodTicks);

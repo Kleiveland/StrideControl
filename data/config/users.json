@@ -1,0 +1,232 @@
+{
+  "users": [
+    {
+      "name": "Christine",
+      "presets": {
+        "hvile": 5.0,
+        "drag": 12.0
+      },
+      "quick_keys": {
+        "speed": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12
+        ],
+        "incline": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          6,
+          8,
+          10
+        ]
+      },
+      "active_workout_idx": 0,
+      "workouts": [
+        {
+          "name": "Kortintervall (45/15)",
+          "warmup_m": 8,
+          "work_m": 0.75,
+          "rest_m": 0.25,
+          "reps": 10,
+          "cooldown_m": 5
+        },
+        {
+          "name": "Terskel 4x4",
+          "warmup_m": 10,
+          "work_m": 4.0,
+          "rest_m": 3.0,
+          "reps": 4,
+          "cooldown_m": 5
+        },
+        {
+          "name": "Rolig Langjogg",
+          "warmup_m": 0,
+          "work_m": 45.0,
+          "rest_m": 0,
+          "reps": 1,
+          "cooldown_m": 0
+        }
+      ],
+      "history": []
+    },
+    {
+      "name": "Jonas",
+      "presets": {
+        "hvile": 6.0,
+        "drag": 15.0
+      },
+      "quick_keys": {
+        "speed": [
+          5,
+          6,
+          8,
+          10,
+          12,
+          14,
+          15,
+          16
+        ],
+        "incline": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          8
+        ]
+      },
+      "active_workout_idx": 0,
+      "workouts": [
+        {
+          "name": "Kortintervall (45/15)",
+          "warmup_m": 8,
+          "work_m": 0.75,
+          "rest_m": 0.25,
+          "reps": 10,
+          "cooldown_m": 5
+        },
+        {
+          "name": "Terskel 4x4",
+          "warmup_m": 10,
+          "work_m": 4.0,
+          "rest_m": 3.0,
+          "reps": 4,
+          "cooldown_m": 5
+        },
+        {
+          "name": "Rolig Langjogg",
+          "warmup_m": 0,
+          "work_m": 45.0,
+          "rest_m": 0,
+          "reps": 1,
+          "cooldown_m": 0
+        }
+      ],
+      "history": []
+    },
+    {
+      "name": "Julie",
+      "presets": {
+        "hvile": 5.5,
+        "drag": 13.0
+      },
+      "quick_keys": {
+        "speed": [
+          5,
+          6,
+          7,
+          8,
+          10,
+          11,
+          12,
+          13
+        ],
+        "incline": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          6,
+          8,
+          10
+        ]
+      },
+      "active_workout_idx": 0,
+      "workouts": [
+        {
+          "name": "Kortintervall (45/15)",
+          "warmup_m": 8,
+          "work_m": 0.75,
+          "rest_m": 0.25,
+          "reps": 10,
+          "cooldown_m": 5
+        },
+        {
+          "name": "Terskel 4x4",
+          "warmup_m": 10,
+          "work_m": 4.0,
+          "rest_m": 3.0,
+          "reps": 4,
+          "cooldown_m": 5
+        },
+        {
+          "name": "Rolig Langjogg",
+          "warmup_m": 0,
+          "work_m": 45.0,
+          "rest_m": 0,
+          "reps": 1,
+          "cooldown_m": 0
+        }
+      ],
+      "history": []
+    },
+    {
+      "name": "Kristian",
+      "presets": {
+        "hvile": 6.0,
+        "drag": 16.0
+      },
+      "quick_keys": {
+        "speed": [
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18
+        ],
+        "incline": [
+          0,
+          1,
+          2,
+          4,
+          6,
+          8,
+          10,
+          12
+        ]
+      },
+      "active_workout_idx": 0,
+      "workouts": [
+        {
+          "name": "Kortintervall (45/15)",
+          "warmup_m": 8,
+          "work_m": 0.75,
+          "rest_m": 0.25,
+          "reps": 10,
+          "cooldown_m": 5
+        },
+        {
+          "name": "Terskel 4x4",
+          "warmup_m": 10,
+          "work_m": 4.0,
+          "rest_m": 3.0,
+          "reps": 4,
+          "cooldown_m": 5
+        },
+        {
+          "name": "Rolig Langjogg",
+          "warmup_m": 0,
+          "work_m": 45.0,
+          "rest_m": 0,
+          "reps": 1,
+          "cooldown_m": 0
+        }
+      ],
+      "history": []
+    }
+  ]
+}

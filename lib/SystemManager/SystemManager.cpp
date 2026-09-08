@@ -2,13 +2,39 @@
 
 namespace stridecontrol {
 
-SystemManager::SystemManager() = default;
+SystemManager::SystemManager(
+    ConsoleInterface& console,
+    SpeedCalibration& calibration,
+    DiagnosticsService& diagnostics
+)
+    : controlRuntime_(console, calibration, diagnostics) {}
 
-void SystemManager::begin(ApplicationOrchestrator* orchestrator) {
-    orchestrator_ = orchestrator;
+bool SystemManager::begin(uint32_t nowMs) {
     state_ = SystemState::Initializing;
-    initialized_ = (orchestrator_ != nullptr);
     previousSpeedKmh_ = 0.0f;
+    return controlRuntime_.begin();
+}
+
+bool SystemManager::begin(ApplicationOrchestrator* orchestrator, uint32_t nowMs) {
+    orchestrator_ = orchestrator;
+    initialized_ = (orchestrator_ != nullptr);
+    return begin(nowMs);
+}
+
+void SystemManager::end() {
+    controlRuntime_.end();
+    initialized_ = false;
+    orchestrator_ = nullptr;
+}
+
+bool SystemManager::startControlTask(ApplicationOrchestrator* orchestrator) {
+    orchestrator_ = orchestrator;
+    initialized_ = (orchestrator_ != nullptr);
+    return controlRuntime_.startControlTask(orchestrator);
+}
+
+bool SystemManager::stopControlTask(uint32_t timeoutMs) {
+    return controlRuntime_.stopControlTask(timeoutMs);
 }
 
 void SystemManager::update() {

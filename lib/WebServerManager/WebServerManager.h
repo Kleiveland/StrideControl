@@ -1,0 +1,31 @@
+#pragma once
+
+#include <Arduino.h>
+#include <ESPAsyncWebServer.h>
+#include <ArduinoJson.h>
+#include "NetworkManager.h"
+#include "ITelemetryProvider.h"
+
+namespace stridecontrol {
+
+class WebServerManager {
+public:
+    explicit WebServerManager(uint16_t port = 80);
+    ~WebServerManager();
+
+    // Non-copyable
+    WebServerManager(const WebServerManager&) = delete;
+    WebServerManager& operator=(const WebServerManager&) = delete;
+
+    bool begin(const ITelemetryProvider* telemetryProvider = nullptr);
+    void end();
+
+private:
+    void registerRoutes();
+
+    AsyncWebServer server_;
+    const ITelemetryProvider* telemetryProvider_{nullptr};
+    bool running_{false};
+};
+
+} // namespace stridecontrol

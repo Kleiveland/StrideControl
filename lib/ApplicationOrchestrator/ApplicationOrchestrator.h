@@ -46,7 +46,7 @@ struct ApplicationOrchestratorDependencies {
 class ApplicationOrchestrator {
 public:
     ApplicationOrchestrator();
-    ~ApplicationOrchestrator();
+    virtual ~ApplicationOrchestrator();
 
     ApplicationOrchestrator(const ApplicationOrchestrator&) = delete;
     ApplicationOrchestrator& operator=(const ApplicationOrchestrator&) = delete;
@@ -56,11 +56,12 @@ public:
 
     bool isRunning() const;
 
-    ApplicationSnapshot getSnapshot() const;
+    virtual ApplicationSnapshot getSnapshot() const;
 
     uint32_t getLoopCount() const;
     uint32_t getDeadlineMissCount() const;
     uint32_t getOverrunCount() const;
+    uint32_t getMinFreeStackBytes() const;
 
     static const char* version();
 
@@ -76,6 +77,7 @@ private:
 
     ApplicationOrchestratorDependencies deps_{};
     ApplicationSnapshot publishedSnapshot_{};
+    ApplicationSnapshot stagingSnapshot_{};
 
     TaskHandle_t taskHandle_ = nullptr;
     SemaphoreHandle_t exitSem_ = nullptr;
@@ -89,10 +91,12 @@ private:
     uint32_t loopCount_ = 0;
     uint32_t deadlineMissCount_ = 0;
     uint32_t overrunCount_ = 0;
+    uint32_t minFreeStackBytes_ = 8192;
 
     static constexpr uint32_t kPeriodMs = 20; // 50 Hz
     static constexpr size_t kMaxImuBatchSize = 32;
-    static constexpr uint32_t kTaskStackSize = 4096;
+    ImuSample imuSamples_[kMaxImuBatchSize]{};
+    static constexpr uint32_t kTaskStackSize = 8192;
     static constexpr UBaseType_t kTaskPriority = 5;
     static constexpr BaseType_t kTaskCore = 1; // APP_CPU_NUM
 

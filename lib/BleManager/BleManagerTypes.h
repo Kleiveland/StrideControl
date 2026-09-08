@@ -1,9 +1,25 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include "../BluetoothTypes/BluetoothTypes.h"
 
 namespace stridecontrol {
+
+class RscService;
+class FtmsService;
+
+// Shared connection pool budget (CONFIG_BT_NIMBLE_MAX_CONNECTIONS = 3)
+static constexpr uint16_t kMaxCentralConnections    = 1;     // HeartRateClient
+static constexpr uint16_t kMaxPeripheralConnections = 2;     // e.g. Zwift + Companion/Watch
+static constexpr uint16_t kTotalMaxConnections       = kMaxCentralConnections + kMaxPeripheralConnections; // 3
+static constexpr uint16_t kInvalidConnectionHandle  = 0xFFFF;
+
+// Maximum pending server disconnect handles queued in the Core 0 mailbox
+static constexpr size_t kMaxPendingServerDisconnects = 4;
+
+// Bluetooth SIG Generic Running Walking Sensor Appearance (Category 17, Sub-category 0)
+static constexpr uint16_t kBleAppearanceGenericRunningWalkingSensor = 0x0440;
 
 /**
  * @brief Internal detailed lifecycle state for the BLE coordinator.
