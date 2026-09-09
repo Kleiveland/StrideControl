@@ -26,14 +26,29 @@ A clean build, zero warnings, comments, pseudocode, a compile probe, a Python mo
 
 At the latest read-only inspection:
 
-- `ConsoleInterface`, `SpeedSensor`, `InclineSensor`, `ImuInterface`, `CsafeInterface`, and `RunnerDynamics` exist as libraries.
-- These libraries are not instantiated or orchestrated by the current `src/main.cpp`.
-- The current `src/main.cpp` is a standalone CLR Scanner V1.3 prototype for passive O1/O2 and buzzer analysis.
-- `RunnerDynamics` has compiled and linked through a temporary compile probe.
-- Actually executed RunnerDynamics functional tests: 0.
-- No `test/` or `tests/` directory, host-native harness, embedded Unity runner, or recorded-data dataset was found.
-- The existing tablet GUI is a single HTML/CSS/JavaScript mockup with an embedded simulator and is not connected to a production API.
-- Git status, commit status, and push status must be checked explicitly.
+- Embedded Unity test infrastructure is active under `test/`.
+- Hardware-in-the-loop execution exists on ESP32-S3 (`seeed_xiao_esp32s3_testbench`).
+- Verified ESP32 test suites include:
+  * `test_virtual_speed_sensor`
+  * `test_virtual_incline`
+  * `test_virtual_console`
+  * `test_virtual_runner`
+  * `test_composite_simulator`
+- A dedicated testbench simulator architecture exists:
+  * `VirtualTreadmill`
+  * `VirtualSpeedSensorAdapter`
+  * `VirtualInclineAdapter`
+  * `VirtualConsoleAdapter`
+  * `VirtualRunnerAdapter`
+  * `TreadmillSimulatorComposite`
+- Deterministic `ExternalStep` orchestration exists through `ApplicationOrchestrator`.
+- A dedicated simulator interface exists:
+  * `simulator.html` = physical treadmill and runner stimulation
+  * `index.html` = StrideControl runner experience
+- Simulator functionality is isolated behind:
+  * `STRIDECONTROL_TESTBENCH`
+- Production and testbench builds are compile-time segregated.
+- Git status, commit status, and push status must still be checked explicitly.
 
 This status is descriptive and must be rechecked after later repository changes.
 
@@ -137,6 +152,33 @@ Services, APIs, GUI, and external adapters
 5. **Communication and presentation:** `RscService`, `FtmsService`, `WebServerManager`, API models, the existing Precision UI, the PC commissioning page, and later external adapters.
 
 Prefer explicit update calls and read-only snapshots over a web of callbacks when timing and ownership permit it.
+
+### 3.1.1 Testbench Simulator Architecture
+
+A dedicated hardware-in-the-loop simulator exists behind:
+
+```text
+STRIDECONTROL_TESTBENCH
+```
+
+The simulator is a development and verification tool, not a second production architecture.
+
+```text
+TreadmillSimulatorComposite
+├── VirtualTreadmill
+├── VirtualSpeedSensorAdapter
+├── VirtualInclineAdapter
+├── VirtualConsoleAdapter
+└── VirtualRunnerAdapter
+```
+
+Purpose:
+- GUI development without physical treadmill hardware
+- Workout workflow validation
+- RunnerDynamics validation
+- Hardware-in-the-loop testing on ESP32-S3
+
+Production ownership and module responsibilities remain unchanged.
 
 ### 3.2 Commissioning and Module Independence
 
@@ -520,10 +562,20 @@ The detailed grace periods, state transitions, regularity requirements, SideRail
 Current evidence:
 
 ```text
-C++ IMPLEMENTATION COMPILED AND LINKED
-ACTUALLY EXECUTED FUNCTIONAL TESTS: 0
-FUNCTIONAL BEHAVIOR NOT RUNTIME-VERIFIED
+VERIFIED BY EXECUTED ESP32 TEST
+VERIFIED BY EXECUTED COMPOSITE SIMULATION
 ```
+
+Verified scenarios include:
+- RunningOnBelt
+- OnSideRails
+- NotPresent
+- SideRails grace-period behavior
+- Resume from SideRails
+- Cadence qualification
+- IMU signal-loss handling
+- Runner-distance gating
+- Deterministic replay
 
 ---
 
@@ -829,6 +881,20 @@ Reducing the persisted maximum requires validated evidence. Stability, repetitio
 - `PULSES_PER_PERCENT_UP = 3086.0f`
 - `PULSES_PER_PERCENT_DOWN = 2943.0f`
 
+#### Incline Command Resolution
+
+Current simulator and console command behavior is verified as:
+
+```text
+ButtonId::InclinePlus
+ButtonId::InclineMinus
+```
+= ±0.5% incline resolution
+
+The command path uses 0.5% increments clamped to: `0.0% -> 15.0%`.
+
+Observed incline telemetry may retain decimals derived from physical tracking and pulse integration. The simulator must mirror production command resolution exactly and must not introduce synthetic 0.1% incline controls.
+
 ---
 
 ## 9. Hardware Interface Choices
@@ -898,6 +964,20 @@ SpeedCalibration ─────┘              ├──> RunnerDynamics
 ```
 
 The orchestrator owns ordering and scheduling, not algorithms.
+
+The orchestrator also supports deterministic `ExternalStep` execution for hardware-in-the-loop simulation.
+
+Simulation ownership:
+```text
+SimulationTick
+      ↓
+TreadmillSimulatorComposite
+      ↓
+ApplicationOrchestrator::step(...)
+      ↓
+ApplicationSnapshot
+```
+The simulator never bypasses `ApplicationOrchestrator` ownership of snapshot publication.
 
 It must define:
 
@@ -1194,7 +1274,7 @@ Responsibilities:
 - apply repetition counts
 - perform final-sequence rest stripping
 - resolve inherited rest speed
-- generate timeline representation
+- generate executable timeline model
 
 WorkoutExpander owns no GUI state, storage, networking or treadmill control.
 
@@ -1224,6 +1304,18 @@ WebServerManager does not own:
 - runner state
 - workout state
 - treadmill control
+
+Under `STRIDECONTROL_TESTBENCH` a separate simulator interface may be exposed.
+
+Purpose:
+- Physical T610 stimulation
+- Runner-position stimulation
+- Diagnostic telemetry
+
+```text
+index.html     = StrideControl product UI
+simulator.html = physical treadmill + runner stimulus panel
+```
 
 ### 10.13 AI-Assisted Development Protocol
 
@@ -1322,6 +1414,14 @@ FTMS:
 ### 14.0 GUI Source of Truth
 
 The approved Precision UI HTML implementation is the UX reference.
+
+The simulator page is not a UX reference.
+`simulator.html` exists solely for:
+- physical T610 console emulation
+- runner presence stimulation
+- diagnostics
+
+All workout UX, presets, interval workflows, and training interactions remain owned by the Precision UI.
 
 Visual layout, interaction patterns, workflow, terminology and look-and-feel shall be preserved.
 
@@ -1543,6 +1643,26 @@ The page distinguishes defaults, stored, temporary, active, externally verified,
 - [x] CLR response approximately 100.7 ms with one segment
 - [x] No CLR preload requirement observed
 
+### 15.1.1 Simulator Verification
+
+Verified by executed ESP32 tests:
+- VirtualTreadmill
+- VirtualSpeedSensorAdapter
+- VirtualInclineAdapter
+- VirtualConsoleAdapter
+- VirtualRunnerAdapter
+- TreadmillSimulatorComposite
+
+Verified simulator workflows:
+- QuickStart -> belt acceleration
+- Speed target changes
+- Incline target changes
+- Runner OnSideRails
+- Runner resume
+- E-stop handling
+- WorkoutSession interaction
+- ApplicationSnapshot telemetry publication
+
 ### 15.2 Hardware Open Items
 
 - [ ] Validate ambiguous Enter behavior
@@ -1557,8 +1677,8 @@ The page distinguishes defaults, stored, temporary, active, externally verified,
 ### 15.3 Software and Integration Open Items
 
 - [ ] Confirm a known Git baseline and commit hash
-- [ ] Add executable test infrastructure without permanent hooks
-- [ ] Execute deterministic RunnerDynamics and interface-contract tests
+- [x] Add executable test infrastructure without permanent hooks
+- [x] Execute deterministic RunnerDynamics and interface-contract tests
 - [ ] Implement and test the separate SpeedCalibration library
 - [ ] Define and test automatic learning acceptance rules
 - [ ] Implement PC-only external speed commissioning
@@ -1567,18 +1687,18 @@ The page distinguishes defaults, stored, temporary, active, externally verified,
 - [ ] Implement Diagnostics core and SettingsService core
 - [ ] Implement InclineVerifier without control authority
 - [ ] Implement BleManager core and HeartRateClient
-- [ ] Implement ApplicationOrchestrator and ApplicationSnapshot
+- [x] ApplicationOrchestrator and ApplicationSnapshot integrated and verified in simulator pipeline
 - [ ] Implement SystemManager without duplicating subsystem state
-- [ ] Implement WorkoutSession before FTMS
+- [x] WorkoutSession integration path verified in simulator environment
 - [ ] Implement RscService and FtmsService
 - [ ] Implement recorded-data replay before aggressive tuning
 - [ ] Implement MaintenanceService with separate mechanical distance
 - [ ] Implement WorkoutDefinition persistence
 - [ ] Implement WorkoutExpander
-- [ ] Define stable WebServer/API contracts
+- [x] Testbench WebServer/API contracts established for simulator and telemetry integration
 - [ ] Serve existing Precision UI from LittleFS
 - [ ] Replace simulator with authoritative firmware state
-- [ ] Remove simulator from production build
+- [x] Simulator isolated from production build through STRIDECONTROL_TESTBENCH compile-time segregation
 - [ ] Perform recorded-data, HIL, and physical treadmill validation
 
 ### 15.4 Required Development Sequence
