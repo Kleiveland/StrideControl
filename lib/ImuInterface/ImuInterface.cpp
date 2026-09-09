@@ -299,7 +299,8 @@ struct ImuInterface::Impl {
   ImuBusContext busCtx{};
   stmdev_ctx_t stCtx{};
 
-  // Lifecycle flags (owned by opMutex)
+  // Lifecycle flags & execution mode (owned by opMutex)
+  ImuObservationMode observationMode = ImuObservationMode::HardwareI2c;
   bool initialized = false;
   bool connected = false;
 
@@ -408,7 +409,7 @@ struct ImuInterface::Impl {
   }
 
   void endLocked() {
-    if (initialized) {
+    if (initialized && observationMode == ImuObservationMode::HardwareI2c) {
       lsm6dsox_fifo_mode_set(&stCtx, LSM6DSOX_BYPASS_MODE);
       lsm6dsox_xl_data_rate_set(&stCtx, LSM6DSOX_XL_ODR_OFF);
       lsm6dsox_gy_data_rate_set(&stCtx, LSM6DSOX_GY_ODR_OFF);
@@ -442,7 +443,7 @@ ImuInterface::~ImuInterface() {
   }
 }
 
-bool ImuInterface::begin(const ImuConfig& config) {
+bool ImuInterface::begin(const ImuConfig& config, ImuObservationMode mode) {
   if (impl_ == nullptr || impl_->opMutex == nullptr) {
     return false;
   }
@@ -453,7 +454,29 @@ bool ImuInterface::begin(const ImuConfig& config) {
   }
 
   // Idempotent guard
-  if (impl_->initialized && impl_->connected) {
+  if (impl_->initialized && impl_->connected && impl_->observationMode == mode) {
+    return true;
+  }
+
+  // Reset runtime state before starting initialization attempt
+  impl_->resetRuntimeStateLocked();
+  impl_->config = config;
+  impl_->observationMode = mode;
+
+  if (mode == ImuObservationMode::SoftwareObservation) {
+    // Zero I2C/Hardware I/O: bypass Wire, WHO_AM_I, and LSM6DSOX registers
+    impl_->initialized = true;
+    impl_->connected = true;
+    impl_->lastSampleTimeUs_ = micros();
+
+    portENTER_CRITICAL(&impl_->stateMux);
+    impl_->state = ImuState{};
+    impl_->state.initialized = true;
+    impl_->state.connected = true;
+    impl_->state.status = ImuStatus::Ready;
+    impl_->state.dataValid = true;
+    impl_->state.dataStale = false;
+    portEXIT_CRITICAL(&impl_->stateMux);
     return true;
   }
 
@@ -466,9 +489,6 @@ bool ImuInterface::begin(const ImuConfig& config) {
     return false;
   }
 
-  // Reset runtime state before starting initialization attempt
-  impl_->resetRuntimeStateLocked();
-  impl_->config = config;
   impl_->busCtx.wire = config.wire;
   impl_->busCtx.address = config.i2cAddress;
 
@@ -658,6 +678,11 @@ void ImuInterface::update() {
   }
 
   if (!impl_->initialized || !impl_->connected) {
+    return;
+  }
+
+  if (impl_->observationMode == ImuObservationMode::SoftwareObservation) {
+    // In SoftwareObservation mode, sample injection occurs via observeSamples()
     return;
   }
 
@@ -1143,6 +1168,34 @@ bool ImuInterface::isReady() const {
   const bool ready = impl_->initialized && impl_->connected && (impl_->state.status == ImuStatus::Ready);
   portEXIT_CRITICAL(&impl_->stateMux);
   return ready;
+}
+
+bool ImuInterface::begin(ImuObservationMode mode) {
+  return begin(ImuConfig{}, mode);
+}
+
+ImuObservationMode ImuInterface::getObservationMode() const {
+  return impl_ ? impl_->observationMode : ImuObservationMode::HardwareI2c;
+}
+
+bool ImuInterface::observeSamples(const ImuSample* samples, size_t count, const ImuState* simulatedState) {
+  if (impl_ == nullptr || !impl_->initialized || impl_->observationMode != ImuObservationMode::SoftwareObservation) {
+    return false;
+  }
+
+  if (simulatedState != nullptr) {
+    portENTER_CRITICAL(&impl_->stateMux);
+    impl_->state = *simulatedState;
+    portEXIT_CRITICAL(&impl_->stateMux);
+  }
+
+  if (samples != nullptr && count > 0) {
+    for (size_t i = 0; i < count; ++i) {
+      impl_->pushSample(samples[i]);
+    }
+  }
+
+  return true;
 }
 
 const char* ImuInterface::version() {

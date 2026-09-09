@@ -13,7 +13,8 @@ class ConsoleInterface {
   ConsoleInterface(const ConsoleInterface&) = delete;
   ConsoleInterface& operator=(const ConsoleInterface&) = delete;
 
-  bool begin(const ConsoleConfig& config = ConsoleConfig{});
+  bool begin(const ConsoleConfig& config = ConsoleConfig{}, ConsoleExecutionMode mode = ConsoleExecutionMode::HardwareMatrix);
+  bool begin(ConsoleExecutionMode mode);
   void end();
 
   bool submit(const TreadmillCommand& command, TickType_t waitTicks = 0);
@@ -23,6 +24,10 @@ class ConsoleInterface {
   bool isActive() const;
   bool isReady() const;
   void abortActiveCommand();
+
+  ConsoleExecutionMode getExecutionMode() const;
+  void registerCommandSink(ICommandIntentSink* sink);
+  void triggerEmergencyStop(bool active);
 
   ConsoleConfig configSnapshot() const;
   bool setClearMapping(const ButtonMapping& verifiedMapping);

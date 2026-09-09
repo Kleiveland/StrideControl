@@ -5,6 +5,12 @@
 #include "SettingsService.h"
 #include <vector>
 
+#if defined(STRIDECONTROL_TESTBENCH)
+#include "TestbenchControlRuntime.h"
+#include "VirtualRunnerAdapter.h"
+#include "SimulatorHtml.h"
+#endif
+
 namespace stridecontrol {
 
 WebServerManager::WebServerManager(uint16_t port)
@@ -13,6 +19,12 @@ WebServerManager::WebServerManager(uint16_t port)
 WebServerManager::~WebServerManager() {
     end();
 }
+
+#if defined(STRIDECONTROL_TESTBENCH)
+void WebServerManager::attachSimulatorRuntime(TestbenchControlRuntime* simRuntime) {
+    simRuntime_ = simRuntime;
+}
+#endif
 
 bool WebServerManager::begin(const ITelemetryProvider* telemetryProvider) {
     if (running_) {
@@ -55,12 +67,16 @@ void WebServerManager::registerRoutes() {
 
         JsonObject speed = doc["speed"].to<JsonObject>();
         speed["kmh"] = report.actualSpeedKmh;
+        speed["runnerKmh"] = report.runnerSpeedKmh;
+        speed["beltDistanceKm"] = report.beltDistanceKm;
 
         JsonObject incline = doc["incline"].to<JsonObject>();
         incline["pct"] = report.actualInclinePct;
 
         JsonObject runner = doc["runner"].to<JsonObject>();
         runner["distanceKm"] = report.runnerDistanceKm;
+        runner["speedKmh"] = report.runnerSpeedKmh;
+        runner["presence"] = report.runnerPresence;
 
         JsonObject session = doc["session"].to<JsonObject>();
         session["state"] = report.sessionState;
@@ -69,6 +85,7 @@ void WebServerManager::registerRoutes() {
 
         doc["targetSpeedKmh"] = report.targetSpeedKmh;
         doc["targetInclinePct"] = report.targetInclinePct;
+        doc["droppedEvents"] = report.droppedEventsCount;
 
         AsyncResponseStream* stream = request->beginResponseStream("application/json");
         stream->addHeader("Access-Control-Allow-Origin", "*");
@@ -214,6 +231,136 @@ void WebServerManager::registerRoutes() {
 
     // Static asset handler from LittleFS root
     server_.serveStatic("/", LittleFS, "/").setCacheControl("public, max-age=3600");
+
+#if defined(STRIDECONTROL_TESTBENCH)
+    // GET /simulator.html (Testbench active universe UI)
+    server_.on("/simulator.html", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send_P(200, "text/html", kSimulatorHtml);
+    });
+
+    // POST /api/v1/simulator/console
+    server_.on(
+        "/api/v1/simulator/console",
+        HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (simRuntime_ == nullptr) {
+                request->send(503, "application/json", "{\"error\":\"Simulator runtime not attached\"}");
+                return;
+            }
+            if (!request->_tempObject) {
+                request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+                return;
+            }
+            auto* buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->size());
+            delete buffer;
+            request->_tempObject = nullptr;
+
+            if (err) {
+                request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+                return;
+            }
+
+            const char* btn = doc["button"] | "";
+            float val = doc["value"] | 0.0f;
+            bool ok = false;
+            if (strcmp(btn, "QuickStart") == 0) {
+                ok = simRuntime_->triggerQuickStart();
+            } else if (strcmp(btn, "Stop") == 0) {
+                ok = simRuntime_->triggerStop();
+            } else if (strcmp(btn, "EmergencyStop") == 0) {
+                ok = simRuntime_->triggerEmergencyStop();
+            } else if (strcmp(btn, "SpeedPlus") == 0) {
+                ok = simRuntime_->stepSimSpeed(true);
+            } else if (strcmp(btn, "SpeedMinus") == 0) {
+                ok = simRuntime_->stepSimSpeed(false);
+            } else if (strcmp(btn, "InclinePlus") == 0) {
+                ok = simRuntime_->stepSimIncline(true);
+            } else if (strcmp(btn, "InclineMinus") == 0) {
+                ok = simRuntime_->stepSimIncline(false);
+            } else if (strcmp(btn, "SetSpeed") == 0) {
+                ok = simRuntime_->setSimSpeedTarget(val);
+            } else if (strcmp(btn, "SetIncline") == 0) {
+                ok = simRuntime_->setSimInclineTarget(val);
+            } else {
+                request->send(400, "application/json", "{\"error\":\"Unknown button or command\"}");
+                return;
+            }
+
+            request->send(ok ? 200 : 500, "application/json", ok ? "{\"status\":\"staged\"}" : "{\"error\":\"Staging failed\"}");
+        },
+        nullptr,
+        [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+            std::vector<uint8_t>* buffer = nullptr;
+            if (index == 0) {
+                buffer = new std::vector<uint8_t>();
+                buffer->reserve(total);
+                request->_tempObject = buffer;
+            } else {
+                buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
+            }
+            if (buffer && data && len > 0) {
+                buffer->insert(buffer->end(), data, data + len);
+            }
+        }
+    );
+
+    // POST /api/v1/simulator/runner
+    server_.on(
+        "/api/v1/simulator/runner",
+        HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (simRuntime_ == nullptr) {
+                request->send(503, "application/json", "{\"error\":\"Simulator runtime not attached\"}");
+                return;
+            }
+            if (!request->_tempObject) {
+                request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+                return;
+            }
+            auto* buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->size());
+            delete buffer;
+            request->_tempObject = nullptr;
+
+            if (err) {
+                request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+                return;
+            }
+
+            const char* modeStr = doc["mode"] | "RunningOnBelt";
+            uint16_t cadence = doc["cadence"] | 180;
+            float mag = doc["impactMagnitudeG"] | 0.35f;
+            bool valid = doc["signalValid"] | true;
+
+            VirtualRunnerMode mode = VirtualRunnerMode::RunningOnBelt;
+            if (strcmp(modeStr, "OnSideRails") == 0) {
+                mode = VirtualRunnerMode::OnSideRails;
+            } else if (strcmp(modeStr, "NotPresent") == 0) {
+                mode = VirtualRunnerMode::NotPresent;
+            }
+
+            simRuntime_->setSimRunner(mode, cadence, mag, valid);
+            request->send(200, "application/json", "{\"status\":\"staged\"}");
+        },
+        nullptr,
+        [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+            std::vector<uint8_t>* buffer = nullptr;
+            if (index == 0) {
+                buffer = new std::vector<uint8_t>();
+                buffer->reserve(total);
+                request->_tempObject = buffer;
+            } else {
+                buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
+            }
+            if (buffer && data && len > 0) {
+                buffer->insert(buffer->end(), data, data + len);
+            }
+        }
+    );
+#endif
 }
 
 } // namespace stridecontrol

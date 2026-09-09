@@ -40,6 +40,33 @@ struct ApplicationOrchestratorDependencies {
 };
 
 /**
+ * @brief Context passed to ApplicationOrchestrator when stepped externally.
+ */
+struct ApplicationTickContext {
+    uint64_t tickIndex = 0;
+    uint64_t scenarioTimeUs = 0;
+    uint32_t nowUs32 = 0;
+    uint32_t nowMs = 0;
+    uint32_t loopDeltaMs = 0;
+
+    ApplicationTickContext() = default;
+    ApplicationTickContext(uint64_t idx, uint64_t scUs, uint32_t dtMs)
+        : tickIndex(idx),
+          scenarioTimeUs(scUs),
+          nowUs32(static_cast<uint32_t>(scUs)),
+          nowMs(static_cast<uint32_t>(scUs / 1000ULL)),
+          loopDeltaMs(dtMs) {}
+};
+
+/**
+ * @brief Execution mode governing ApplicationOrchestrator thread lifecycle.
+ */
+enum class OrchestratorExecutionMode : uint8_t {
+    AutonomousTask,  ///< Production: Spawns Core 1 RT FreeRTOS task and Core 0 BLE task
+    ExternalStep     ///< Firmware-HIL: Stepped synchronously by ScenarioRunner/test runner
+};
+
+/**
  * @brief Active Object orchestrating real-time 50Hz sensor polling on Core 1
  *        and dedicated BLE lifecycle coordination on Core 0.
  */
@@ -51,10 +78,17 @@ public:
     ApplicationOrchestrator(const ApplicationOrchestrator&) = delete;
     ApplicationOrchestrator& operator=(const ApplicationOrchestrator&) = delete;
 
-    bool begin(const ApplicationOrchestratorDependencies& deps);
+    bool begin(const ApplicationOrchestratorDependencies& deps,
+               OrchestratorExecutionMode mode = OrchestratorExecutionMode::AutonomousTask);
     bool end(uint32_t timeoutMs = 1000);
 
     bool isRunning() const;
+    bool isInitialized() const;
+    bool isWorkerTaskRunning() const;
+    bool acceptsExternalSteps() const;
+    OrchestratorExecutionMode executionMode() const;
+
+    bool step(const ApplicationTickContext& context);
 
     virtual ApplicationSnapshot getSnapshot() const;
 
@@ -72,12 +106,28 @@ private:
     static void bleTaskEntry(void* param);
     void runBleTask();
 
+    bool executePipelineStep(const ApplicationTickContext& context);
+
+    using SpeedUpdateStrategy = void (*)(SpeedSensor& sensor, const ApplicationTickContext& context);
+    static void hardwareSpeedStrategy(SpeedSensor& sensor, const ApplicationTickContext& context);
+    static void softwareSpeedStrategy(SpeedSensor& sensor, const ApplicationTickContext& context);
+
+    using InclineUpdateStrategy = bool (*)(InclineSensor& sensor, const ApplicationTickContext& context);
+    static bool hardwareInclineStrategy(InclineSensor& sensor, const ApplicationTickContext& context);
+    static bool softwareInclineStrategy(InclineSensor& sensor, const ApplicationTickContext& context);
+
+    SpeedUpdateStrategy speedUpdateStrategy_ = nullptr;
+    InclineUpdateStrategy inclineUpdateStrategy_ = nullptr;
+
     mutable portMUX_TYPE snapshotMux_ = portMUX_INITIALIZER_UNLOCKED;
     mutable portMUX_TYPE metricsMux_ = portMUX_INITIALIZER_UNLOCKED;
 
     ApplicationOrchestratorDependencies deps_{};
     ApplicationSnapshot publishedSnapshot_{};
     ApplicationSnapshot stagingSnapshot_{};
+
+    OrchestratorExecutionMode executionMode_ = OrchestratorExecutionMode::AutonomousTask;
+    bool initialized_ = false;
 
     TaskHandle_t taskHandle_ = nullptr;
     SemaphoreHandle_t exitSem_ = nullptr;
@@ -86,6 +136,10 @@ private:
 
     TaskHandle_t bleTaskHandle_ = nullptr;
     SemaphoreHandle_t bleExitSem_ = nullptr;
+
+    bool hasAcceptedFirstTick_ = false;
+    uint64_t lastAcceptedTickIndex_ = 0;
+    uint64_t lastAcceptedScenarioTimeUs_ = 0;
 
     uint32_t sequenceNumber_ = 0;
     uint32_t loopCount_ = 0;

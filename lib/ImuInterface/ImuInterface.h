@@ -21,9 +21,13 @@ class ImuInterface {
   ImuInterface(const ImuInterface&) = delete;
   ImuInterface& operator=(const ImuInterface&) = delete;
 
-  bool begin(const ImuConfig& config = ImuConfig{});
+  bool begin(const ImuConfig& config = ImuConfig{}, ImuObservationMode mode = ImuObservationMode::HardwareI2c);
+  bool begin(ImuObservationMode mode);
   void end();
   void update();
+
+  ImuObservationMode getObservationMode() const;
+  bool observeSamples(const ImuSample* samples, size_t count, const ImuState* simulatedState = nullptr);
 
   ImuState getState() const;
 

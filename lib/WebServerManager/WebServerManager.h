@@ -8,6 +8,10 @@
 
 namespace stridecontrol {
 
+#if defined(STRIDECONTROL_TESTBENCH)
+class TestbenchControlRuntime;
+#endif
+
 class WebServerManager {
 public:
     explicit WebServerManager(uint16_t port = 80);
@@ -18,6 +22,9 @@ public:
     WebServerManager& operator=(const WebServerManager&) = delete;
 
     bool begin(const ITelemetryProvider* telemetryProvider = nullptr);
+#if defined(STRIDECONTROL_TESTBENCH)
+    void attachSimulatorRuntime(TestbenchControlRuntime* simRuntime);
+#endif
     void end();
 
 private:
@@ -25,6 +32,9 @@ private:
 
     AsyncWebServer server_;
     const ITelemetryProvider* telemetryProvider_{nullptr};
+#if defined(STRIDECONTROL_TESTBENCH)
+    TestbenchControlRuntime* simRuntime_{nullptr};
+#endif
     bool running_{false};
 };
 

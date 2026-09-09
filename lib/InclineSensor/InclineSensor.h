@@ -14,9 +14,13 @@ class InclineSensor {
   InclineSensor& operator=(const InclineSensor&) = delete;
 
   bool begin(const InclineSensorConfig& config = InclineSensorConfig{},
-             const InclineCalibration& calibration = InclineCalibration{});
+             const InclineCalibration& calibration = InclineCalibration{},
+             InclineObservationMode mode = InclineObservationMode::HardwareInterrupt);
   void end();
   void update();
+  bool evaluate(uint32_t nowMs);
+  bool observePulses(const InclinePulseObservation& obs, uint32_t nowMs);
+  InclineObservationMode getObservationMode() const;
 
   bool setExpectedDirection(InclineDirection direction);
   bool confirmHomedAtZero();

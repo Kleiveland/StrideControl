@@ -63,6 +63,11 @@ enum class ImuStatus : uint8_t {
   HardwareError = 8
 };
 
+enum class ImuObservationMode : uint8_t {
+  HardwareI2c = 0,         ///< Production: LSM6DSOX I2C hardware FIFO communication
+  SoftwareObservation = 1  ///< Simulation: Synthetic sample ingestion via observeSamples(), zero I2C
+};
+
 struct ImuSample {
   uint32_t timestampUs = 0;
   uint32_t sequence = 0;

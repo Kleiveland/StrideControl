@@ -14,6 +14,17 @@ enum class InclineDirection : uint8_t {
   Down
 };
 
+enum class InclineObservationMode : uint8_t {
+  HardwareInterrupt,
+  SoftwareObservation
+};
+
+struct InclinePulseObservation {
+  uint32_t pulseCount = 0;
+  InclineDirection direction = InclineDirection::Unknown;
+  bool signalValid = true;
+};
+
 enum class InclineStatus : uint8_t {
   Uninitialized,
   Ready,

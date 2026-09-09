@@ -30,11 +30,23 @@ enum class PhysicalButtonAction : uint8_t {
   Pressed, Released
 };
 
+enum class ConsoleExecutionMode : uint8_t {
+  HardwareMatrix,  ///< Production: Full GPIO matrix scanning, buzzer ISR, FreeRTOS tasks
+  SoftwareSink     ///< Simulation: Pure command intent forwarding, zero GPIO, zero tasks
+};
+
 struct TreadmillCommand {
   uint32_t requestId = 0;
   CommandType type = CommandType::PressButton;
   float value = 0.0f;
   ButtonId button = ButtonId::Unknown;
+};
+
+class ICommandIntentSink {
+ public:
+  virtual ~ICommandIntentSink() = default;
+  virtual bool onCommandIntent(const TreadmillCommand& command) = 0;
+  virtual void onEmergencyStop(bool active) = 0;
 };
 
 struct AckMetrics {

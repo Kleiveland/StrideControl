@@ -71,6 +71,9 @@ bool requiresNumericRecovery(ConsoleOutcome outcome) {
 
 struct ConsoleInterface::Impl {
   ConsoleConfig config{};
+  ConsoleExecutionMode executionMode{ConsoleExecutionMode::HardwareMatrix};
+  ICommandIntentSink* commandSink{nullptr};
+  portMUX_TYPE sinkMux = portMUX_INITIALIZER_UNLOCKED;
   QueueHandle_t requestQueue = nullptr;
   QueueHandle_t commandEventQueue = nullptr;
   QueueHandle_t physicalEventQueue = nullptr;
@@ -709,14 +712,24 @@ ConsoleInterface::Impl* ConsoleInterface::Impl::isrOwner = nullptr;
 ConsoleInterface::ConsoleInterface() : impl_(new Impl{}) {}
 ConsoleInterface::~ConsoleInterface() { end(); delete impl_; }
 
-bool ConsoleInterface::begin(const ConsoleConfig& c) {
+bool ConsoleInterface::begin(const ConsoleConfig& c, ConsoleExecutionMode mode) {
   if (impl_->ready.load()) return true;
   impl_->config = c;
+  impl_->executionMode = mode;
   impl_->requestQueue = xQueueCreate(c.requestQueueDepth, sizeof(TreadmillCommand));
   impl_->commandEventQueue = xQueueCreate(c.commandEventQueueDepth, sizeof(CommandEvent));
   impl_->physicalEventQueue = xQueueCreate(c.physicalEventQueueDepth, sizeof(PhysicalButtonEvent));
-  if (!impl_->requestQueue || !impl_->commandEventQueue || !impl_->physicalEventQueue) return false;
+  if (!impl_->requestQueue || !impl_->commandEventQueue || !impl_->physicalEventQueue) {
+    end();
+    return false;
+  }
   
+  if (mode == ConsoleExecutionMode::SoftwareSink) {
+    // Simulation: Pure software command intent forwarding, zero GPIO, zero tasks
+    impl_->ready.store(true);
+    return true;
+  }
+
   pinMode(c.pins.txsOe, OUTPUT); digitalWrite(c.pins.txsOe, LOW);
   pinMode(c.pins.muteAll, OUTPUT); digitalWrite(c.pins.muteAll, HIGH);
   pinMode(c.pins.speedPlusRelay, OUTPUT_OPEN_DRAIN); digitalWrite(c.pins.speedPlusRelay, HIGH);
@@ -737,26 +750,59 @@ bool ConsoleInterface::begin(const ConsoleConfig& c) {
   impl_->ready.store(true); return true;
 }
 
+bool ConsoleInterface::begin(ConsoleExecutionMode mode) {
+  return begin(ConsoleConfig{}, mode);
+}
+
 void ConsoleInterface::end() {
   if (!impl_) return;
   impl_->abortRequested.store(true);
-  detachInterrupt(digitalPinToInterrupt(impl_->config.pins.buzzerIn));
-  if (impl_->commandTaskHandle) { vTaskDelete(impl_->commandTaskHandle); impl_->commandTaskHandle = nullptr; }
-  if (impl_->panelTaskHandle) { vTaskDelete(impl_->panelTaskHandle); impl_->panelTaskHandle = nullptr; }
-  if (impl_->buzzerTaskHandle) { vTaskDelete(impl_->buzzerTaskHandle); impl_->buzzerTaskHandle = nullptr; }
-  impl_->releaseOwnership();
-  digitalWrite(impl_->config.pins.speedPlusRelay, HIGH);
-  digitalWrite(impl_->config.pins.speedMinusRelay, HIGH);
-  
+
+  if (impl_->executionMode == ConsoleExecutionMode::HardwareMatrix) {
+    detachInterrupt(digitalPinToInterrupt(impl_->config.pins.buzzerIn));
+    if (impl_->commandTaskHandle) { vTaskDelete(impl_->commandTaskHandle); impl_->commandTaskHandle = nullptr; }
+    if (impl_->panelTaskHandle) { vTaskDelete(impl_->panelTaskHandle); impl_->panelTaskHandle = nullptr; }
+    if (impl_->buzzerTaskHandle) { vTaskDelete(impl_->buzzerTaskHandle); impl_->buzzerTaskHandle = nullptr; }
+    impl_->releaseOwnership();
+    digitalWrite(impl_->config.pins.speedPlusRelay, HIGH);
+    digitalWrite(impl_->config.pins.speedMinusRelay, HIGH);
+    if (Impl::isrOwner == impl_) Impl::isrOwner = nullptr;
+  }
+
   if (impl_->requestQueue) { vQueueDelete(impl_->requestQueue); impl_->requestQueue = nullptr; }
   if (impl_->commandEventQueue) { vQueueDelete(impl_->commandEventQueue); impl_->commandEventQueue = nullptr; }
   if (impl_->physicalEventQueue) { vQueueDelete(impl_->physicalEventQueue); impl_->physicalEventQueue = nullptr; }
-  if (Impl::isrOwner == impl_) Impl::isrOwner = nullptr;
   impl_->active.store(false); impl_->ready.store(false);
 }
 
 bool ConsoleInterface::submit(const TreadmillCommand& c, TickType_t w) {
-  if (!isReady() || xQueueSend(impl_->requestQueue, &c, w) != pdTRUE) return false;
+  if (!isReady()) return false;
+
+  if (impl_->executionMode == ConsoleExecutionMode::SoftwareSink) {
+    if (impl_->requestQueue) {
+      xQueueSend(impl_->requestQueue, &c, w);
+    }
+    impl_->emitEvent(c, CommandStatus::Queued, ConsoleOutcome::NormalSingle, c.button, 0, 1, 0, 0, AckMetrics{}, "Queued", c.value);
+
+    bool accepted = true;
+    ICommandIntentSink* sink = nullptr;
+    portENTER_CRITICAL(&impl_->sinkMux);
+    sink = impl_->commandSink;
+    portEXIT_CRITICAL(&impl_->sinkMux);
+
+    if (sink) {
+      accepted = sink->onCommandIntent(c);
+    }
+
+    if (accepted) {
+      impl_->emitEvent(c, CommandStatus::Completed, ConsoleOutcome::NormalSingle, c.button, 1, 1, 1, 0, AckMetrics{}, "SoftwareSink Completed", c.value);
+    } else {
+      impl_->emitEvent(c, CommandStatus::Rejected, ConsoleOutcome::Invalid, c.button, 0, 1, 0, 0, AckMetrics{}, "Rejected by sink", c.value);
+    }
+    return accepted;
+  }
+
+  if (xQueueSend(impl_->requestQueue, &c, w) != pdTRUE) return false;
   impl_->emitEvent(c, CommandStatus::Queued, ConsoleOutcome::NormalSingle, c.button, 0, 0, 0, 0, AckMetrics{}, "Queued", c.value);
   return true;
 }
@@ -766,6 +812,29 @@ bool ConsoleInterface::receivePhysicalButtonEvent(PhysicalButtonEvent& e, TickTy
 bool ConsoleInterface::isActive() const { return impl_ && impl_->active.load(); }
 bool ConsoleInterface::isReady() const { return impl_ && impl_->ready.load(); }
 void ConsoleInterface::abortActiveCommand() { if (impl_) impl_->abortRequested.store(true); }
+
+ConsoleExecutionMode ConsoleInterface::getExecutionMode() const {
+  return impl_ ? impl_->executionMode : ConsoleExecutionMode::HardwareMatrix;
+}
+
+void ConsoleInterface::registerCommandSink(ICommandIntentSink* sink) {
+  if (!impl_) return;
+  portENTER_CRITICAL(&impl_->sinkMux);
+  impl_->commandSink = sink;
+  portEXIT_CRITICAL(&impl_->sinkMux);
+}
+
+void ConsoleInterface::triggerEmergencyStop(bool active) {
+  if (!impl_) return;
+  ICommandIntentSink* sink = nullptr;
+  portENTER_CRITICAL(&impl_->sinkMux);
+  sink = impl_->commandSink;
+  portEXIT_CRITICAL(&impl_->sinkMux);
+  if (sink) {
+    sink->onEmergencyStop(active);
+  }
+}
+
 ConsoleConfig ConsoleInterface::configSnapshot() const { return impl_->config; }
 
 bool ConsoleInterface::setClearMapping(const ButtonMapping& m) {
@@ -777,7 +846,16 @@ bool ConsoleInterface::setClearMapping(const ButtonMapping& m) {
 bool ConsoleInterface::clearMappingVerified() const { return impl_ && impl_->config.clearMapping.verified; }
 
 ConsoleOutcome ConsoleInterface::pressButton(ButtonId button, uint16_t holdMs, AckMetrics& metrics) {
-  if (!isReady() || impl_->active.exchange(true)) return ConsoleOutcome::HardwareError;
+  if (!isReady()) return ConsoleOutcome::HardwareError;
+  if (impl_->executionMode == ConsoleExecutionMode::SoftwareSink) {
+    TreadmillCommand cmd{};
+    cmd.type = CommandType::PressButton;
+    cmd.button = button;
+    cmd.value = 0.0f;
+    bool ok = submit(cmd, 0);
+    return ok ? ConsoleOutcome::NormalSingle : ConsoleOutcome::Invalid;
+  }
+  if (impl_->active.exchange(true)) return ConsoleOutcome::HardwareError;
   impl_->abortRequested.store(false); PhaseTracker t{}; uint8_t last = 0xFF;
   if (!impl_->establishOwnership(t, last)) {
     impl_->releaseOwnership();

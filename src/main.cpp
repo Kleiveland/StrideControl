@@ -52,6 +52,10 @@ public:
         report.stepRemainingMs = telem.sessionSnapshot.stepRemainingMs;
         report.targetSpeedKmh = telem.simTargetSpeedKmh;
         report.targetInclinePct = telem.simTargetInclinePct;
+        report.runnerSpeedKmh = telem.snapshot.runner.runnerSpeedKmh;
+        report.beltDistanceKm = runtime_.getComposite().getVirtualTreadmill().getOdometerKm();
+        report.runnerPresence = stridecontrol::runnerPresenceName(telem.snapshot.runner.presence);
+        report.droppedEventsCount = runtime_.getComposite().getDroppedEventsCount();
         return true;
     }
 
@@ -95,6 +99,10 @@ public:
         report.stepRemainingMs = sessSnap.stepRemainingMs;
         report.targetSpeedKmh = sessSnap.hasSpeedTarget ? sessSnap.targetSpeedKmh : staged.speedKmh;
         report.targetInclinePct = sessSnap.hasInclineTarget ? static_cast<float>(sessSnap.targetInclinePct) : staged.inclinePct;
+        report.runnerSpeedKmh = snap.runner.runnerSpeedKmh;
+        report.beltDistanceKm = snap.runner.validatedDistanceKm;
+        report.runnerPresence = stridecontrol::runnerPresenceName(snap.runner.presence);
+        report.droppedEventsCount = 0;
         return true;
     }
 
@@ -131,6 +139,7 @@ void setup() {
 #if defined(STRIDECONTROL_TESTBENCH)
     // 4. Initialize Testbench Control Runtime
     s_testbenchRuntime.begin();
+    s_webServerManager.attachSimulatorRuntime(&s_testbenchRuntime);
 
     // 5. Build Sample Workout Definition (Step 0: Warmup 10s @ 5 km/h 1%, Step 1: Work 15s @ 10 km/h 2%)
     stridecontrol::WorkoutDefinition workoutDef{};
@@ -212,7 +221,7 @@ void loop() {
     if (!quickStartFired && (nowMs - startupMs >= 2000)) {
         quickStartFired = true;
         Serial.println("[Testbench] Simulating external physical Quick Start (1.0 km/h belt start)...");
-        s_testbenchRuntime.triggerQuickStart(1.0f, nowMs);
+        s_testbenchRuntime.triggerQuickStart(nowMs);
     }
 
     static uint32_t s_lastDiagMs = 0;

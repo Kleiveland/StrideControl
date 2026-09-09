@@ -19,20 +19,72 @@ ApplicationOrchestrator::~ApplicationOrchestrator() {
     }
 }
 
-bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& deps) {
+void ApplicationOrchestrator::hardwareSpeedStrategy(SpeedSensor& sensor, const ApplicationTickContext& context) {
+    (void)context;
+    sensor.update();
+}
+
+void ApplicationOrchestrator::softwareSpeedStrategy(SpeedSensor& sensor, const ApplicationTickContext& context) {
+    sensor.evaluate(context.nowUs32);
+}
+
+bool ApplicationOrchestrator::hardwareInclineStrategy(InclineSensor& sensor, const ApplicationTickContext& context) {
+    (void)context;
+    sensor.update();
+    return true;
+}
+
+bool ApplicationOrchestrator::softwareInclineStrategy(InclineSensor& sensor, const ApplicationTickContext& context) {
+    return sensor.evaluate(context.nowMs);
+}
+
+bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& deps,
+                                   OrchestratorExecutionMode mode) {
     portENTER_CRITICAL(&metricsMux_);
-    if (running_ || taskHandle_ != nullptr || bleTaskHandle_ != nullptr) {
+    if (running_ || initialized_ || taskHandle_ != nullptr || bleTaskHandle_ != nullptr) {
         portEXIT_CRITICAL(&metricsMux_);
         return false;
     }
     deps_ = deps;
+    executionMode_ = mode;
     stopRequested_ = false;
     running_ = true;
+    initialized_ = true;
+    hasAcceptedFirstTick_ = false;
+    lastAcceptedTickIndex_ = 0;
+    lastAcceptedScenarioTimeUs_ = 0;
     loopCount_ = 0;
     deadlineMissCount_ = 0;
     overrunCount_ = 0;
     sequenceNumber_ = 0;
     portEXIT_CRITICAL(&metricsMux_);
+
+    // Bind speed sensor update strategy once at composition time
+    if (deps_.speedSensor != nullptr) {
+        if (deps_.speedSensor->getObservationMode() == SpeedObservationMode::HardwareInterrupt) {
+            speedUpdateStrategy_ = &hardwareSpeedStrategy;
+        } else {
+            speedUpdateStrategy_ = &softwareSpeedStrategy;
+        }
+    } else {
+        speedUpdateStrategy_ = nullptr;
+    }
+
+    // Bind incline sensor update strategy once at composition time
+    if (deps_.inclineSensor != nullptr) {
+        if (deps_.inclineSensor->getObservationMode() == InclineObservationMode::HardwareInterrupt) {
+            inclineUpdateStrategy_ = &hardwareInclineStrategy;
+        } else {
+            inclineUpdateStrategy_ = &softwareInclineStrategy;
+        }
+    } else {
+        inclineUpdateStrategy_ = nullptr;
+    }
+
+    // In ExternalStep mode, no background tasks or semaphores are needed
+    if (mode == OrchestratorExecutionMode::ExternalStep) {
+        return true;
+    }
 
     if (exitSem_ == nullptr) {
         exitSem_ = xSemaphoreCreateBinary();
@@ -43,6 +95,7 @@ bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& d
     if (exitSem_ == nullptr) {
         portENTER_CRITICAL(&metricsMux_);
         running_ = false;
+        initialized_ = false;
         portEXIT_CRITICAL(&metricsMux_);
         return false;
     }
@@ -57,6 +110,7 @@ bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& d
         if (bleExitSem_ == nullptr) {
             portENTER_CRITICAL(&metricsMux_);
             running_ = false;
+            initialized_ = false;
             portEXIT_CRITICAL(&metricsMux_);
             return false;
         }
@@ -76,6 +130,7 @@ bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& d
     if (rtResult != pdPASS) {
         portENTER_CRITICAL(&metricsMux_);
         running_ = false;
+        initialized_ = false;
         taskHandle_ = nullptr;
         portEXIT_CRITICAL(&metricsMux_);
         if (bleExitSem_ != nullptr) {
@@ -113,12 +168,21 @@ bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& d
 
 bool ApplicationOrchestrator::end(uint32_t timeoutMs) {
     portENTER_CRITICAL(&metricsMux_);
-    if (!running_ && taskHandle_ == nullptr && bleTaskHandle_ == nullptr) {
+    if (!running_ && !initialized_ && taskHandle_ == nullptr && bleTaskHandle_ == nullptr) {
         portEXIT_CRITICAL(&metricsMux_);
         return true;
     }
     stopRequested_ = true;
+    const bool isExternal = (executionMode_ == OrchestratorExecutionMode::ExternalStep);
     portEXIT_CRITICAL(&metricsMux_);
+
+    if (isExternal) {
+        portENTER_CRITICAL(&metricsMux_);
+        running_ = false;
+        initialized_ = false;
+        portEXIT_CRITICAL(&metricsMux_);
+        return true;
+    }
 
     // Step 1 & 2: Wait for confirmed Core 1 task exit
     bool cleanRtExit = false;
@@ -150,6 +214,7 @@ bool ApplicationOrchestrator::end(uint32_t timeoutMs) {
             }
         }
         running_ = false;
+        initialized_ = false;
         portEXIT_CRITICAL(&metricsMux_);
         return false;
     }
@@ -160,6 +225,7 @@ bool ApplicationOrchestrator::end(uint32_t timeoutMs) {
         taskHandle_ = nullptr;
     }
     running_ = false;
+    initialized_ = false;
     portEXIT_CRITICAL(&metricsMux_);
 
     // Step 4: Signal Core 0 BLE Lifecycle Task to terminate cleanly
@@ -194,6 +260,34 @@ bool ApplicationOrchestrator::isRunning() const {
     const bool r = running_;
     portEXIT_CRITICAL(&metricsMux_);
     return r;
+}
+
+bool ApplicationOrchestrator::isInitialized() const {
+    portENTER_CRITICAL(&metricsMux_);
+    const bool init = initialized_;
+    portEXIT_CRITICAL(&metricsMux_);
+    return init;
+}
+
+bool ApplicationOrchestrator::isWorkerTaskRunning() const {
+    portENTER_CRITICAL(&metricsMux_);
+    const bool wt = (taskHandle_ != nullptr && running_);
+    portEXIT_CRITICAL(&metricsMux_);
+    return wt;
+}
+
+bool ApplicationOrchestrator::acceptsExternalSteps() const {
+    portENTER_CRITICAL(&metricsMux_);
+    const bool acc = (initialized_ && running_ && executionMode_ == OrchestratorExecutionMode::ExternalStep);
+    portEXIT_CRITICAL(&metricsMux_);
+    return acc;
+}
+
+OrchestratorExecutionMode ApplicationOrchestrator::executionMode() const {
+    portENTER_CRITICAL(&metricsMux_);
+    const auto mode = executionMode_;
+    portEXIT_CRITICAL(&metricsMux_);
+    return mode;
 }
 
 ApplicationSnapshot ApplicationOrchestrator::getSnapshot() const {
@@ -296,6 +390,118 @@ void ApplicationOrchestrator::runBleTask() {
     vTaskSuspend(NULL);
 }
 
+bool ApplicationOrchestrator::executePipelineStep(const ApplicationTickContext& context) {
+    // Reset private staging snapshot at the start of step
+    stagingSnapshot_ = ApplicationSnapshot{};
+
+    // 1. Update Speed Sensor via configured strategy
+    if (deps_.speedSensor != nullptr && speedUpdateStrategy_ != nullptr) {
+        speedUpdateStrategy_(*deps_.speedSensor, context);
+    }
+
+    // 2. Update Incline Sensor via configured strategy
+    if (deps_.inclineSensor != nullptr && inclineUpdateStrategy_ != nullptr) {
+        if (!inclineUpdateStrategy_(*deps_.inclineSensor, context)) {
+            return false;
+        }
+    }
+    if (deps_.csafeInterface != nullptr) {
+        deps_.csafeInterface->update();
+    }
+    if (deps_.imuInterface != nullptr) {
+        deps_.imuInterface->update();
+    }
+
+    // 3. Obtain Immutable Interface States directly into stagingSnapshot_
+    stagingSnapshot_.timestampMs = context.nowMs;
+
+    stagingSnapshot_.speed = deps_.speedSensor ? deps_.speedSensor->getState() : SpeedSensorState{};
+    stagingSnapshot_.incline = deps_.inclineSensor ? deps_.inclineSensor->getState() : InclineState{};
+    CsafeState csafeState = deps_.csafeInterface ? deps_.csafeInterface->getState() : CsafeState{};
+    stagingSnapshot_.imu = deps_.imuInterface ? deps_.imuInterface->getState() : ImuState{};
+
+    // 4. Drain and Buffer IMU Samples using member buffer
+    size_t sampleCount = 0;
+    if (deps_.imuInterface != nullptr) {
+        sampleCount = deps_.imuInterface->readSamples(imuSamples_, kMaxImuBatchSize);
+    }
+
+    // 5. Update Signal Processing & Analysis Engines
+    if (deps_.runnerDynamics != nullptr) {
+        deps_.runnerDynamics->update(imuSamples_, sampleCount, stagingSnapshot_.speed, csafeState, context.nowMs);
+        stagingSnapshot_.runner = deps_.runnerDynamics->getState();
+    } else {
+        stagingSnapshot_.runner = RunnerDynamicsState{};
+    }
+
+    if (deps_.inclineVerifier != nullptr) {
+        InclineVerificationCommandInput cmdInput{};
+        deps_.inclineVerifier->update(cmdInput, stagingSnapshot_.incline, stagingSnapshot_.imu, context.nowMs);
+        stagingSnapshot_.inclineVerifier = deps_.inclineVerifier->getState();
+    } else {
+        stagingSnapshot_.inclineVerifier = InclineVerifierState{};
+    }
+
+    // 6. Update Maintenance Odometer (Wear-Leveled RAM Accumulation)
+    if (deps_.maintenanceService != nullptr) {
+        deps_.maintenanceService->update(stagingSnapshot_.speed.speedKmh,
+                                        context.loopDeltaMs > 0 ? context.loopDeltaMs : kPeriodMs);
+    }
+
+    // 7. Obtain Current Health Snapshot
+    if (deps_.diagnosticsService != nullptr) {
+        stagingSnapshot_.health = deps_.diagnosticsService->getSnapshot(context.nowMs);
+    } else {
+        stagingSnapshot_.health = SystemHealthSnapshot{};
+    }
+
+    if (deps_.hrClient != nullptr) {
+        stagingSnapshot_.heartRate = deps_.hrClient->getState();
+    }
+    if (deps_.bleManager != nullptr) {
+        stagingSnapshot_.ble = deps_.bleManager->getState();
+    }
+
+    return true;
+}
+
+bool ApplicationOrchestrator::step(const ApplicationTickContext& context) {
+    portENTER_CRITICAL(&metricsMux_);
+    if (!initialized_ || !running_ || executionMode_ != OrchestratorExecutionMode::ExternalStep) {
+        portEXIT_CRITICAL(&metricsMux_);
+        return false;
+    }
+    if (hasAcceptedFirstTick_) {
+        if (context.tickIndex <= lastAcceptedTickIndex_ || context.scenarioTimeUs <= lastAcceptedScenarioTimeUs_) {
+            portEXIT_CRITICAL(&metricsMux_);
+            return false;
+        }
+    }
+    portEXIT_CRITICAL(&metricsMux_);
+
+    // Execute pipeline into stagingSnapshot_
+    if (!executePipelineStep(context)) {
+        // Atomic rollback: no state committed
+        return false;
+    }
+
+    // Atomic commit
+    portENTER_CRITICAL(&snapshotMux_);
+    sequenceNumber_++;
+    stagingSnapshot_.sequenceNumber = sequenceNumber_;
+    publishedSnapshot_ = stagingSnapshot_;
+    portEXIT_CRITICAL(&snapshotMux_);
+
+    portENTER_CRITICAL(&metricsMux_);
+    hasAcceptedFirstTick_ = true;
+    lastAcceptedTickIndex_ = context.tickIndex;
+    lastAcceptedScenarioTimeUs_ = context.scenarioTimeUs;
+    loopCount_++;
+    portEXIT_CRITICAL(&metricsMux_);
+
+    return true;
+}
+
 void ApplicationOrchestrator::runLoop() {
     TickType_t lastWakeTime = xTaskGetTickCount();
     const TickType_t periodTicks = pdMS_TO_TICKS(kPeriodMs);
@@ -307,79 +513,21 @@ void ApplicationOrchestrator::runLoop() {
         const uint32_t loopDeltaMs = nowMs - lastLoopTimestampMs;
         lastLoopTimestampMs = nowMs;
 
-        // Reset private staging snapshot at the start of every tick
-        stagingSnapshot_ = ApplicationSnapshot{};
+        ApplicationTickContext context;
+        context.tickIndex = loopCount_ + 1;
+        context.scenarioTimeUs = static_cast<uint64_t>(nowMs) * 1000ULL;
+        context.nowUs32 = micros();
+        context.nowMs = nowMs;
+        context.loopDeltaMs = loopDeltaMs;
 
-        // 1. Update Hardware & Bus Interfaces
-        if (deps_.speedSensor != nullptr) {
-            deps_.speedSensor->update();
-        }
-        if (deps_.inclineSensor != nullptr) {
-            deps_.inclineSensor->update();
-        }
-        if (deps_.csafeInterface != nullptr) {
-            deps_.csafeInterface->update();
-        }
-        if (deps_.imuInterface != nullptr) {
-            deps_.imuInterface->update();
-        }
+        executePipelineStep(context);
 
-        // 2. Obtain Immutable Interface States directly into stagingSnapshot_
-        stagingSnapshot_.timestampMs = nowMs;
-        stagingSnapshot_.sequenceNumber = sequenceNumber_++;
-
-        stagingSnapshot_.speed = deps_.speedSensor ? deps_.speedSensor->getState() : SpeedSensorState{};
-        stagingSnapshot_.incline = deps_.inclineSensor ? deps_.inclineSensor->getState() : InclineState{};
-        CsafeState csafeState = deps_.csafeInterface ? deps_.csafeInterface->getState() : CsafeState{};
-        stagingSnapshot_.imu = deps_.imuInterface ? deps_.imuInterface->getState() : ImuState{};
-
-        // 3. Drain and Buffer IMU Samples using private member buffer
-        size_t sampleCount = 0;
-        if (deps_.imuInterface != nullptr) {
-            sampleCount = deps_.imuInterface->readSamples(imuSamples_, kMaxImuBatchSize);
-        }
-
-        // 4. Update Signal Processing & Analysis Engines
-        if (deps_.runnerDynamics != nullptr) {
-            deps_.runnerDynamics->update(imuSamples_, sampleCount, stagingSnapshot_.speed, csafeState, nowMs);
-            stagingSnapshot_.runner = deps_.runnerDynamics->getState();
-        } else {
-            stagingSnapshot_.runner = RunnerDynamicsState{};
-        }
-
-        if (deps_.inclineVerifier != nullptr) {
-            InclineVerificationCommandInput cmdInput{};
-            deps_.inclineVerifier->update(cmdInput, stagingSnapshot_.incline, stagingSnapshot_.imu, nowMs);
-            stagingSnapshot_.inclineVerifier = deps_.inclineVerifier->getState();
-        } else {
-            stagingSnapshot_.inclineVerifier = InclineVerifierState{};
-        }
-
-        // 5. Update Maintenance Odometer (Wear-Leveled RAM Accumulation)
-        if (deps_.maintenanceService != nullptr) {
-            deps_.maintenanceService->update(stagingSnapshot_.speed.speedKmh, loopDeltaMs > 0 ? loopDeltaMs : kPeriodMs);
-        }
-
-        // 6. Obtain Current Health Snapshot
-        if (deps_.diagnosticsService != nullptr) {
-            stagingSnapshot_.health = deps_.diagnosticsService->getSnapshot(nowMs);
-        } else {
-            stagingSnapshot_.health = SystemHealthSnapshot{};
-        }
-
-        if (deps_.hrClient != nullptr) {
-            stagingSnapshot_.heartRate = deps_.hrClient->getState();
-        }
-        if (deps_.bleManager != nullptr) {
-            stagingSnapshot_.ble = deps_.bleManager->getState();
-        }
-
-        // 7. Publish Snapshot via Spinlock-Protected By-Value Copy
         portENTER_CRITICAL(&snapshotMux_);
+        sequenceNumber_++;
+        stagingSnapshot_.sequenceNumber = sequenceNumber_;
         publishedSnapshot_ = stagingSnapshot_;
         portEXIT_CRITICAL(&snapshotMux_);
 
-        // 8. Update Execution Metrics
         const uint32_t executionDurationMs = millis() - nowMs;
         portENTER_CRITICAL(&metricsMux_);
         loopCount_++;
@@ -388,7 +536,6 @@ void ApplicationOrchestrator::runLoop() {
         }
         portEXIT_CRITICAL(&metricsMux_);
 
-        // 9. Periodically sample stack high water mark (every 1000 ms)
         if (nowMs - lastHeadroomCheckMs >= 1000) {
             lastHeadroomCheckMs = nowMs;
             UBaseType_t highWater = uxTaskGetStackHighWaterMark(NULL);
@@ -397,7 +544,6 @@ void ApplicationOrchestrator::runLoop() {
             portEXIT_CRITICAL(&metricsMux_);
         }
 
-        // 10. Drift-Resistant Periodic Delay
         const BaseType_t delaySuccess = xTaskDelayUntil(&lastWakeTime, periodTicks);
         if (delaySuccess != pdTRUE) {
             portENTER_CRITICAL(&metricsMux_);

@@ -6,7 +6,8 @@
 
 namespace stridecontrol {
 
-TestbenchControlRuntime::TestbenchControlRuntime() = default;
+TestbenchControlRuntime::TestbenchControlRuntime()
+    : composite_(speedSensor_, inclineSensor_, imu_) {}
 
 TestbenchControlRuntime::~TestbenchControlRuntime() {
     end();
@@ -17,7 +18,23 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
         return true;
     }
 
-    simulator_.begin(millis());
+    // 1. Initialize sensor drivers in SoftwareObservation mode
+    speedSensor_.begin(SpeedSensorConfig{}, SpeedObservationMode::SoftwareObservation);
+    inclineSensor_.begin(InclineSensorConfig{}, InclineCalibration{}, InclineObservationMode::SoftwareObservation);
+    console_.begin(ConsoleExecutionMode::SoftwareSink);
+    imu_.begin(ImuObservationMode::SoftwareObservation);
+    runnerDynamics_.begin();
+
+    // 2. Initialize ApplicationOrchestrator in ExternalStep mode
+    ApplicationOrchestratorDependencies deps{};
+    deps.speedSensor = &speedSensor_;
+    deps.inclineSensor = &inclineSensor_;
+    deps.imuInterface = &imu_;
+    deps.runnerDynamics = &runnerDynamics_;
+    deps.diagnosticsService = &diagService_;
+    orchestrator_.begin(deps, OrchestratorExecutionMode::ExternalStep);
+
+    // 3. Initialize Domain engines
     session_.begin(sessionConfig);
     dispatcher_.begin();
     workoutEngine_.reset();
@@ -25,14 +42,12 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     initialized_ = true;
     lostAuthorityCount_ = 0;
     minFreeStackBytes_ = 8192;
-    pendingQuickStartSpeed_ = -1.0f;
-    pendingQuickStartMs_ = 0;
 
     portENTER_CRITICAL(&snapshotMux_);
-    publishedSnapshot_ = simulator_.getSnapshot();
+    publishedSnapshot_ = orchestrator_.getSnapshot();
     publishedSessionSnapshot_ = session_.getSnapshot();
-    publishedSimTargetSpeedKmh_ = simulator_.getTargetSpeedKmh();
-    publishedSimTargetInclinePct_ = simulator_.getTargetInclinePct();
+    publishedSimTargetSpeedKmh_ = composite_.getVirtualTreadmill().getTargetSpeedKmh();
+    publishedSimTargetInclinePct_ = composite_.getVirtualTreadmill().getTargetInclinePct();
     portEXIT_CRITICAL(&snapshotMux_);
 
     return true;
@@ -42,8 +57,13 @@ void TestbenchControlRuntime::end() {
     stopControlTask(1000);
 
     if (initialized_) {
+        orchestrator_.end();
         session_.end();
         workoutEngine_.reset();
+        runnerDynamics_.end();
+        imu_.end();
+        inclineSensor_.end();
+        speedSensor_.end();
         initialized_ = false;
     }
 }
@@ -58,24 +78,66 @@ bool TestbenchControlRuntime::armWorkout(const WorkoutDefinition& def, uint32_t 
     const bool armed = session_.armWorkout(&workoutEngine_.getExpandedWorkout(), nowMs);
     if (armed) {
         portENTER_CRITICAL(&snapshotMux_);
-        publishedSnapshot_ = simulator_.getSnapshot();
+        publishedSnapshot_ = orchestrator_.getSnapshot();
         publishedSessionSnapshot_ = session_.getSnapshot();
-        publishedSimTargetSpeedKmh_ = simulator_.getTargetSpeedKmh();
-        publishedSimTargetInclinePct_ = simulator_.getTargetInclinePct();
+        publishedSimTargetSpeedKmh_ = composite_.getVirtualTreadmill().getTargetSpeedKmh();
+        publishedSimTargetInclinePct_ = composite_.getVirtualTreadmill().getTargetInclinePct();
         portEXIT_CRITICAL(&snapshotMux_);
     }
     return armed;
 }
 
-bool TestbenchControlRuntime::triggerQuickStart(float speedKmh, uint32_t nowMs) {
+bool TestbenchControlRuntime::triggerQuickStart(uint32_t nowMs) {
     if (!initialized_) {
         return false;
     }
-    portENTER_CRITICAL(&snapshotMux_);
-    pendingQuickStartSpeed_ = speedKmh;
-    pendingQuickStartMs_ = nowMs;
-    portEXIT_CRITICAL(&snapshotMux_);
-    return true;
+    return composite_.stageQuickStart(nowMs != 0 ? nowMs : millis());
+}
+
+bool TestbenchControlRuntime::triggerStop(uint32_t nowMs) {
+    if (!initialized_) {
+        return false;
+    }
+    return composite_.stageStop(nowMs != 0 ? nowMs : millis());
+}
+
+bool TestbenchControlRuntime::triggerEmergencyStop(uint32_t nowMs) {
+    if (!initialized_) {
+        return false;
+    }
+    return composite_.stageEmergencyStop(nowMs != 0 ? nowMs : millis());
+}
+
+bool TestbenchControlRuntime::setSimSpeedTarget(float speedKmh, uint32_t nowMs) {
+    if (!initialized_) {
+        return false;
+    }
+    return composite_.stageSpeedTarget(speedKmh, nowMs != 0 ? nowMs : millis());
+}
+
+bool TestbenchControlRuntime::setSimInclineTarget(float inclinePct, uint32_t nowMs) {
+    if (!initialized_) {
+        return false;
+    }
+    return composite_.stageInclineTarget(inclinePct, nowMs != 0 ? nowMs : millis());
+}
+
+bool TestbenchControlRuntime::stepSimSpeed(bool positive, uint32_t nowMs) {
+    if (!initialized_) {
+        return false;
+    }
+    return composite_.stageSpeedStep(positive, nowMs != 0 ? nowMs : millis());
+}
+
+bool TestbenchControlRuntime::stepSimIncline(bool positive, uint32_t nowMs) {
+    if (!initialized_) {
+        return false;
+    }
+    return composite_.stageInclineStep(positive, nowMs != 0 ? nowMs : millis());
+}
+
+void TestbenchControlRuntime::setSimRunner(VirtualRunnerMode mode, uint16_t cadenceSpm, float magnitudeG, bool valid) {
+    composite_.stageRunner(mode, cadenceSpm, magnitudeG, valid);
 }
 
 bool TestbenchControlRuntime::startControlTask() {
@@ -163,44 +225,37 @@ void TestbenchControlRuntime::runTaskLoop() {
     TickType_t lastWakeTime = xTaskGetTickCount();
     const TickType_t periodTicks = pdMS_TO_TICKS(kPeriodMs);
     uint32_t lastHeadroomCheckMs = 0;
+    uint64_t tickIndex = 0;
 
     while (!stopRequested_) {
+        tickIndex++;
         const uint32_t nowMs = millis();
+        const uint64_t scenarioTimeUs = static_cast<uint64_t>(nowMs) * 1000ULL;
+        const SimulationTick simTick(tickIndex, scenarioTimeUs, kPeriodMs * 1000UL);
 
-        // 0. Process external startup stimuli (e.g. Quick Start) if staged
-        float quickStartSpeed = -1.0f;
-        uint32_t quickStartMs = 0;
-        portENTER_CRITICAL(&snapshotMux_);
-        if (pendingQuickStartSpeed_ >= 0.0f) {
-            quickStartSpeed = pendingQuickStartSpeed_;
-            quickStartMs = pendingQuickStartMs_;
-            pendingQuickStartSpeed_ = -1.0f;
-        }
-        portEXIT_CRITICAL(&snapshotMux_);
+        // 1. Tick composite simulator (drains staged stimuli, advances physics, forwards to adapters)
+        composite_.tick(simTick, 0.0f);
 
-        if (quickStartSpeed >= 0.0f) {
-            simulator_.submitSpeedTarget(quickStartSpeed, quickStartMs);
-        }
+        // 2. Step application orchestrator pipeline in ExternalStep mode
+        const ApplicationTickContext ctx(tickIndex, scenarioTimeUs, kPeriodMs);
+        orchestrator_.step(ctx);
 
-        // 1. Advance simulator state using target accepted prior to this tick
-        simulator_.update(nowMs);
+        // 3. Obtain authoritative ApplicationSnapshot representing resulting state
+        const ApplicationSnapshot snapshot = orchestrator_.getSnapshot();
 
-        // 2. Obtain authoritative ApplicationSnapshot representing resulting simulated state
-        const ApplicationSnapshot snapshot = simulator_.getSnapshot();
-
-        // 3. Evaluate authority
+        // 4. Evaluate authority
         const bool authoritative = ControlRuntime::isSnapshotAuthoritative(snapshot, nowMs);
         if (!authoritative) {
             lostAuthorityCount_++;
         }
 
-        // 4. Tick domain session & target dispatcher
-        coordinator_.tick(session_, dispatcher_, simulator_, snapshot, nowMs);
+        // 5. Tick domain session & target dispatcher
+        coordinator_.tick(session_, dispatcher_, composite_, snapshot, nowMs);
 
-        // 5. Publish snapshot copy for external consumers (cross-core spinlock protected)
+        // 6. Publish snapshot copy for external consumers (cross-core spinlock protected)
         const WorkoutSessionSnapshot sessSnap = session_.getSnapshot();
-        const float targetSpeed = simulator_.getTargetSpeedKmh();
-        const float targetIncline = simulator_.getTargetInclinePct();
+        const float targetSpeed = composite_.getVirtualTreadmill().getTargetSpeedKmh();
+        const float targetIncline = composite_.getVirtualTreadmill().getTargetInclinePct();
 
         portENTER_CRITICAL(&snapshotMux_);
         publishedSnapshot_ = snapshot;
@@ -209,7 +264,7 @@ void TestbenchControlRuntime::runTaskLoop() {
         publishedSimTargetInclinePct_ = targetIncline;
         portEXIT_CRITICAL(&snapshotMux_);
 
-        // 6. Periodically check stack high-water mark (every 1000 ms)
+        // 7. Periodically check stack high-water mark (every 1000 ms)
         if (nowMs - lastHeadroomCheckMs >= 1000) {
             lastHeadroomCheckMs = nowMs;
             UBaseType_t highWater = uxTaskGetStackHighWaterMark(NULL);
@@ -271,7 +326,7 @@ uint32_t TestbenchControlRuntime::getMinFreeStackBytes() const {
 }
 
 const char* TestbenchControlRuntime::version() {
-    return "TestbenchControlRuntime/1.0.0";
+    return "TestbenchControlRuntime/2.0.0";
 }
 
 } // namespace stridecontrol

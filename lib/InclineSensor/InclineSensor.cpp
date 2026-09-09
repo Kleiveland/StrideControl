@@ -106,6 +106,7 @@ struct ModelSnapshot {
 struct InclineSensor::Impl {
   InclineSensorConfig config;
   InclineCalibration calibration;
+  InclineObservationMode observationMode = InclineObservationMode::HardwareInterrupt;
 
   portMUX_TYPE isrMux = portMUX_INITIALIZER_UNLOCKED;
   IsrData isrData;
@@ -134,11 +135,16 @@ struct InclineSensor::Impl {
   uint32_t modelGeneration = 0;
   uint64_t minimumQualifiedBurstPulseCount = 0;
 
+  uint32_t lastEvaluatedMs = 0;
+  uint32_t lastEvaluatedUs = 0;
+
   std::atomic<bool> ready{false};
   std::atomic<bool> isrAttached{false};
 
   static Impl* activeInstance;
   static void IRAM_ATTR isrHandler(void* arg);
+
+  void evaluateInternal(uint32_t nowMs, uint32_t nowUs);
 
   bool isIsrSnapshotCurrent(uint32_t snapSeq, uint32_t snapLastPulseUs) {
     bool current = false;
@@ -210,13 +216,17 @@ InclineSensor::~InclineSensor() {
   delete impl_;
 }
 
-bool InclineSensor::begin(const InclineSensorConfig& config, const InclineCalibration& calibration) {
+bool InclineSensor::begin(const InclineSensorConfig& config,
+                          const InclineCalibration& calibration,
+                          InclineObservationMode mode) {
   if (impl_->ready.load()) {
     return true; // Already initialized
   }
 
-  if (Impl::activeInstance != nullptr && Impl::activeInstance != impl_) {
-    return false; // Another instance is active
+  if (mode == InclineObservationMode::HardwareInterrupt) {
+    if (Impl::activeInstance != nullptr && Impl::activeInstance != impl_) {
+      return false; // Another instance is active
+    }
   }
 
   // Validate config
@@ -229,11 +239,15 @@ bool InclineSensor::begin(const InclineSensorConfig& config, const InclineCalibr
   if (std::isinf(config.minimumInclinePct) || std::isinf(config.maximumInclinePct)) return false;
   if (config.maximumInclinePct <= config.minimumInclinePct) return false;
   if (!isValidCalibration(calibration)) return false;
-  if (!GPIO_IS_VALID_GPIO(config.inputPin)) return false;
-  if (digitalPinToInterrupt(config.inputPin) < 0) return false;
+
+  if (mode == InclineObservationMode::HardwareInterrupt) {
+    if (!GPIO_IS_VALID_GPIO(config.inputPin)) return false;
+    if (digitalPinToInterrupt(config.inputPin) < 0) return false;
+  }
 
   impl_->config = config;
   impl_->calibration = calibration;
+  impl_->observationMode = mode;
 
   impl_->isrData = IsrData{};
 
@@ -241,10 +255,10 @@ bool InclineSensor::begin(const InclineSensorConfig& config, const InclineCalibr
   impl_->baselineAcceptedPulseCount = 0;
   impl_->baselineDirection = InclineDirection::Unknown;
   
-  impl_->initialized = false;
+  impl_->initialized = true;
   impl_->moving = false;
-  impl_->homed = false;
-  impl_->positionTrusted = false;
+  impl_->homed = (mode == InclineObservationMode::SoftwareObservation);
+  impl_->positionTrusted = (mode == InclineObservationMode::SoftwareObservation);
   impl_->signalPresent = false;
   impl_->expectedDirection = InclineDirection::Unknown;
   
@@ -260,20 +274,26 @@ bool InclineSensor::begin(const InclineSensorConfig& config, const InclineCalibr
   impl_->modelGeneration = 0;
   impl_->minimumQualifiedBurstPulseCount = 0;
 
-  pinMode(config.inputPin, config.useInternalPullup ? INPUT_PULLUP : INPUT);
-  Impl::activeInstance = impl_;
+  impl_->lastEvaluatedMs = 0;
+  impl_->lastEvaluatedUs = 0;
 
-  attachInterruptArg(
-      digitalPinToInterrupt(config.inputPin),
-      Impl::isrHandler,
-      impl_,
-      FALLING
-  );
+  if (mode == InclineObservationMode::HardwareInterrupt) {
+    pinMode(config.inputPin, config.useInternalPullup ? INPUT_PULLUP : INPUT);
+    Impl::activeInstance = impl_;
 
-  impl_->isrAttached.store(true);
-  impl_->initialized = true;
+    attachInterruptArg(
+        digitalPinToInterrupt(config.inputPin),
+        Impl::isrHandler,
+        impl_,
+        FALLING
+    );
+
+    impl_->isrAttached.store(true);
+  } else {
+    impl_->isrAttached.store(false);
+  }
+
   impl_->ready.store(true);
-
   return true;
 }
 
@@ -427,7 +447,9 @@ bool InclineSensor::setExpectedDirection(InclineDirection newDirection) {
 bool InclineSensor::confirmHomedAtZero() {
   if (!impl_ || !impl_->ready.load()) return false;
 
-  const uint32_t nowUs = micros();
+  const uint32_t nowUs = (impl_->observationMode == InclineObservationMode::SoftwareObservation)
+                             ? (impl_->lastEvaluatedUs > 0 ? impl_->lastEvaluatedUs : static_cast<uint32_t>(millis() * 1000UL))
+                             : micros();
 
   // Caller Precondition: The treadmill incline mechanism must be physically stationary.
   // Reject if movement is active, recent pulses exist, or a candidate burst is armed.
@@ -487,7 +509,9 @@ bool InclineSensor::restorePosition(float inclinePct, bool trusted) {
   if (std::isnan(inclinePct) || std::isinf(inclinePct)) return false;
   if (inclinePct < impl_->config.minimumInclinePct || inclinePct > impl_->config.maximumInclinePct) return false;
 
-  const uint32_t nowUs = micros();
+  const uint32_t nowUs = (impl_->observationMode == InclineObservationMode::SoftwareObservation)
+                             ? (impl_->lastEvaluatedUs > 0 ? impl_->lastEvaluatedUs : static_cast<uint32_t>(millis() * 1000UL))
+                             : micros();
 
   // Caller Precondition: The treadmill incline mechanism must be physically stationary.
   // Reject if movement is active, recent pulses exist, or a candidate burst is armed.
@@ -544,116 +568,114 @@ bool InclineSensor::restorePosition(float inclinePct, bool trusted) {
   return false;
 }
 
-void InclineSensor::update() {
-  if (!impl_->ready.load()) return;
-
-  const uint32_t nowUs = micros();
-  const uint32_t nowMs = millis();
+void InclineSensor::Impl::evaluateInternal(uint32_t nowMs, uint32_t nowUs) {
+  lastEvaluatedMs = nowMs;
+  lastEvaluatedUs = nowUs;
 
   IsrData isrSnap{};
-  portENTER_CRITICAL(&impl_->isrMux);
-  isrSnap = impl_->isrData;
-  portEXIT_CRITICAL(&impl_->isrMux);
+  portENTER_CRITICAL(&isrMux);
+  isrSnap = isrData;
+  portEXIT_CRITICAL(&isrMux);
 
   ModelSnapshot modelSnap{};
-  portENTER_CRITICAL(&impl_->modelMux);
-  modelSnap.baselineInclinePct = impl_->baselineInclinePct;
-  modelSnap.baselineAcceptedPulseCount = impl_->baselineAcceptedPulseCount;
-  modelSnap.baselineDirection = impl_->baselineDirection;
-  modelSnap.calibration = impl_->calibration;
-  modelSnap.moving = impl_->moving;
-  modelSnap.modelGeneration = impl_->modelGeneration;
-  modelSnap.minimumQualifiedBurstPulseCount = impl_->minimumQualifiedBurstPulseCount;
-  modelSnap.movementStartedMs = impl_->movementStartedMs;
-  modelSnap.movementPulseBaselineCount = impl_->movementPulseBaselineCount;
-  portEXIT_CRITICAL(&impl_->modelMux);
+  portENTER_CRITICAL(&modelMux);
+  modelSnap.baselineInclinePct = baselineInclinePct;
+  modelSnap.baselineAcceptedPulseCount = baselineAcceptedPulseCount;
+  modelSnap.baselineDirection = baselineDirection;
+  modelSnap.calibration = calibration;
+  modelSnap.moving = moving;
+  modelSnap.modelGeneration = modelGeneration;
+  modelSnap.minimumQualifiedBurstPulseCount = minimumQualifiedBurstPulseCount;
+  modelSnap.movementStartedMs = movementStartedMs;
+  modelSnap.movementPulseBaselineCount = movementPulseBaselineCount;
+  portEXIT_CRITICAL(&modelMux);
 
   bool stopProcessed = false;
 
   if (modelSnap.moving) {
     const uint32_t silenceUs = nowUs - isrSnap.lastAcceptedPulseUs;
     const uint64_t delta = (isrSnap.acceptedPulseCount >= modelSnap.baselineAcceptedPulseCount) ? (isrSnap.acceptedPulseCount - modelSnap.baselineAcceptedPulseCount) : 0;
-    const PositionResult posRes = calculatePosition(modelSnap.baselineInclinePct, delta, modelSnap.baselineDirection, modelSnap.calibration, impl_->config);
+    const PositionResult posRes = calculatePosition(modelSnap.baselineInclinePct, delta, modelSnap.baselineDirection, modelSnap.calibration, config);
 
-    if (silenceUs >= (impl_->config.movementStopTimeoutMs * 1000UL)) {
+    if (silenceUs >= (config.movementStopTimeoutMs * 1000UL)) {
       const uint32_t calcMovementPulseCount = static_cast<uint32_t>(std::min<uint64_t>(UINT32_MAX, isrSnap.acceptedPulseCount - modelSnap.movementPulseBaselineCount));
       
-      if (impl_->isIsrSnapshotCurrent(isrSnap.isrSequence, isrSnap.lastAcceptedPulseUs)) {
+      if (isIsrSnapshotCurrent(isrSnap.isrSequence, isrSnap.lastAcceptedPulseUs)) {
         bool stopCommitted = false;
-        portENTER_CRITICAL(&impl_->modelMux);
-        if (impl_->modelGeneration == modelSnap.modelGeneration &&
-            impl_->moving == true &&
-            impl_->baselineAcceptedPulseCount == modelSnap.baselineAcceptedPulseCount) {
+        portENTER_CRITICAL(&modelMux);
+        if (modelGeneration == modelSnap.modelGeneration &&
+            moving == true &&
+            baselineAcceptedPulseCount == modelSnap.baselineAcceptedPulseCount) {
           
-          impl_->moving = false;
-          impl_->signalPresent = false;
-          impl_->baselineInclinePct = posRes.value;
-          impl_->baselineAcceptedPulseCount = isrSnap.acceptedPulseCount;
-          impl_->movementPulseCount = calcMovementPulseCount;
-          impl_->movementDurationMs = (nowMs >= impl_->movementStartedMs) ? (nowMs - impl_->movementStartedMs) : 0;
+          moving = false;
+          signalPresent = false;
+          baselineInclinePct = posRes.value;
+          baselineAcceptedPulseCount = isrSnap.acceptedPulseCount;
+          movementPulseCount = calcMovementPulseCount;
+          movementDurationMs = (nowMs >= movementStartedMs) ? (nowMs - movementStartedMs) : 0;
           
-          if (posRes.exceededLimit && !impl_->positionLimitLatched) {
-            impl_->positionLimitLatched = true;
-            impl_->positionTrusted = false;
+          if (posRes.exceededLimit && !positionLimitLatched) {
+            positionLimitLatched = true;
+            positionTrusted = false;
           }
-          impl_->modelGeneration++;
+          modelGeneration++;
           stopCommitted = true;
         }
-        portEXIT_CRITICAL(&impl_->modelMux);
+        portEXIT_CRITICAL(&modelMux);
 
         if (stopCommitted) {
           stopProcessed = true;
           // Post-commit check to prevent pulse loss.
-          if (impl_->isIsrSnapshotCurrent(isrSnap.isrSequence, isrSnap.lastAcceptedPulseUs)) {
-             impl_->disarmCandidateBurstIfUnchanged(isrSnap.isrSequence, isrSnap.burstStartUs, isrSnap.burstStartPulseCount);
+          if (isIsrSnapshotCurrent(isrSnap.isrSequence, isrSnap.lastAcceptedPulseUs)) {
+             disarmCandidateBurstIfUnchanged(isrSnap.isrSequence, isrSnap.burstStartUs, isrSnap.burstStartPulseCount);
           }
         }
       }
     } else {
       // Active movement continuing: check and latch position limits if exceeded
       if (posRes.exceededLimit) {
-        portENTER_CRITICAL(&impl_->modelMux);
-        if (impl_->modelGeneration == modelSnap.modelGeneration &&
-            impl_->moving == true &&
-            impl_->baselineAcceptedPulseCount == modelSnap.baselineAcceptedPulseCount) {
-          if (!impl_->positionLimitLatched) {
-            impl_->positionLimitLatched = true;
-            impl_->positionTrusted = false;
-            impl_->modelGeneration++;
+        portENTER_CRITICAL(&modelMux);
+        if (modelGeneration == modelSnap.modelGeneration &&
+            moving == true &&
+            baselineAcceptedPulseCount == modelSnap.baselineAcceptedPulseCount) {
+          if (!positionLimitLatched) {
+            positionLimitLatched = true;
+            positionTrusted = false;
+            modelGeneration++;
           }
         }
-        portEXIT_CRITICAL(&impl_->modelMux);
+        portEXIT_CRITICAL(&modelMux);
       }
     }
   } else {
     if (isrSnap.burstArmed) {
       if (isrSnap.burstStartPulseCount < modelSnap.minimumQualifiedBurstPulseCount) {
-        impl_->disarmCandidateBurstIfUnchanged(isrSnap.isrSequence, isrSnap.burstStartUs, isrSnap.burstStartPulseCount);
+        disarmCandidateBurstIfUnchanged(isrSnap.isrSequence, isrSnap.burstStartUs, isrSnap.burstStartPulseCount);
       } else {
         const uint32_t pulseSpanUs = isrSnap.lastAcceptedPulseUs - isrSnap.burstStartUs;
         const uint32_t qualificationAgeUs = nowUs - isrSnap.burstStartUs;
         const uint64_t burstPulseCount = isrSnap.acceptedPulseCount - isrSnap.burstStartPulseCount;
         
-        if (burstPulseCount >= impl_->config.movementStartPulseCount && pulseSpanUs <= (impl_->config.movementStartWindowMs * 1000UL)) {
+        if (burstPulseCount >= config.movementStartPulseCount && pulseSpanUs <= (config.movementStartWindowMs * 1000UL)) {
           // Qualification Success
-          portENTER_CRITICAL(&impl_->modelMux);
-          if (impl_->modelGeneration == modelSnap.modelGeneration && impl_->moving == false) {
-            impl_->moving = true;
-            impl_->movementStartedMs = nowMs;
-            impl_->movementPulseBaselineCount = isrSnap.burstStartPulseCount;
-            impl_->baselineAcceptedPulseCount = isrSnap.burstStartPulseCount;
-            impl_->modelGeneration++;
+          portENTER_CRITICAL(&modelMux);
+          if (modelGeneration == modelSnap.modelGeneration && moving == false) {
+            moving = true;
+            movementStartedMs = nowMs;
+            movementPulseBaselineCount = isrSnap.burstStartPulseCount;
+            baselineAcceptedPulseCount = isrSnap.burstStartPulseCount;
+            modelGeneration++;
           }
-          portEXIT_CRITICAL(&impl_->modelMux);
-        } else if (qualificationAgeUs > (impl_->config.movementStartWindowMs * 1000UL)) {
+          portEXIT_CRITICAL(&modelMux);
+        } else if (qualificationAgeUs > (config.movementStartWindowMs * 1000UL)) {
           // Qualification Failure
-          if (impl_->disarmCandidateBurstIfUnchanged(isrSnap.isrSequence, isrSnap.burstStartUs, isrSnap.burstStartPulseCount)) {
-            portENTER_CRITICAL(&impl_->modelMux);
-            if (impl_->modelGeneration == modelSnap.modelGeneration && impl_->moving == false) {
-              impl_->positionTrusted = false;
-              impl_->modelGeneration++;
+          if (disarmCandidateBurstIfUnchanged(isrSnap.isrSequence, isrSnap.burstStartUs, isrSnap.burstStartPulseCount)) {
+            portENTER_CRITICAL(&modelMux);
+            if (modelGeneration == modelSnap.modelGeneration && moving == false) {
+              positionTrusted = false;
+              modelGeneration++;
             }
-            portEXIT_CRITICAL(&impl_->modelMux);
+            portEXIT_CRITICAL(&modelMux);
           }
         }
       }
@@ -661,16 +683,82 @@ void InclineSensor::update() {
   }
 
   // Motion Timeout Check - latched only on transition
-  portENTER_CRITICAL(&impl_->modelMux);
-  if (impl_->moving && !stopProcessed) {
-    const bool timeoutExceeded = (nowMs - impl_->movementStartedMs) > impl_->config.maximumMovementTimeMs;
-    if (!impl_->motionTimeoutLatched && timeoutExceeded) {
-      impl_->motionTimeoutLatched = true;
-      impl_->positionTrusted = false;
-      impl_->modelGeneration++;
+  portENTER_CRITICAL(&modelMux);
+  if (moving && !stopProcessed) {
+    const bool timeoutExceeded = (nowMs - movementStartedMs) > config.maximumMovementTimeMs;
+    if (!motionTimeoutLatched && timeoutExceeded) {
+      motionTimeoutLatched = true;
+      positionTrusted = false;
+      modelGeneration++;
     }
   }
-  portEXIT_CRITICAL(&impl_->modelMux);
+  portEXIT_CRITICAL(&modelMux);
+}
+
+void InclineSensor::update() {
+  if (!impl_ || !impl_->ready.load()) return;
+  if (impl_->observationMode != InclineObservationMode::HardwareInterrupt) return;
+  impl_->evaluateInternal(millis(), micros());
+}
+
+bool InclineSensor::evaluate(uint32_t nowMs) {
+  if (!impl_ || !impl_->ready.load()) return false;
+  if (impl_->observationMode != InclineObservationMode::SoftwareObservation) return false;
+  impl_->evaluateInternal(nowMs, nowMs * 1000UL);
+  return true;
+}
+
+bool InclineSensor::observePulses(const InclinePulseObservation& obs, uint32_t nowMs) {
+  if (!impl_ || !impl_->ready.load()) return false;
+  if (impl_->observationMode != InclineObservationMode::SoftwareObservation) return false;
+
+  const uint32_t nowUs = nowMs * 1000UL;
+
+  if (!obs.signalValid) {
+    portENTER_CRITICAL(&impl_->modelMux);
+    impl_->hardwareErrorLatched = true;
+    impl_->positionTrusted = false;
+    impl_->modelGeneration++;
+    portEXIT_CRITICAL(&impl_->modelMux);
+    return true;
+  }
+
+  if (obs.direction != InclineDirection::Unknown && obs.direction != impl_->expectedDirection) {
+    setExpectedDirection(obs.direction);
+  }
+
+  if (obs.pulseCount > 0) {
+    portENTER_CRITICAL(&impl_->isrMux);
+    if (!impl_->isrData.hasAcceptedPulse) {
+      impl_->isrData.hasAcceptedPulse = true;
+      impl_->isrData.burstStartUs = nowUs;
+      impl_->isrData.burstStartPulseCount = impl_->isrData.acceptedPulseCount;
+      impl_->isrData.burstArmed = true;
+      impl_->isrData.previousAcceptedPulseUs = nowUs;
+      impl_->isrData.lastAcceptedPulseUs = nowUs;
+      impl_->isrData.acceptedPulseCount += obs.pulseCount;
+      impl_->isrData.isrSequence++;
+    } else {
+      const uint32_t deltaUs = (nowUs >= impl_->isrData.lastAcceptedPulseUs) ?
+                               (nowUs - impl_->isrData.lastAcceptedPulseUs) : 0;
+      if (deltaUs >= (impl_->config.movementStopTimeoutMs * 1000UL)) {
+        impl_->isrData.burstStartUs = nowUs;
+        impl_->isrData.burstStartPulseCount = impl_->isrData.acceptedPulseCount;
+        impl_->isrData.burstArmed = true;
+      }
+      impl_->isrData.previousAcceptedPulseUs = impl_->isrData.lastAcceptedPulseUs;
+      impl_->isrData.lastAcceptedPulseUs = nowUs;
+      impl_->isrData.acceptedPulseCount += obs.pulseCount;
+      impl_->isrData.isrSequence++;
+    }
+    portEXIT_CRITICAL(&impl_->isrMux);
+  }
+
+  return true;
+}
+
+InclineObservationMode InclineSensor::getObservationMode() const {
+  return impl_ ? impl_->observationMode : InclineObservationMode::HardwareInterrupt;
 }
 
 InclineState InclineSensor::getState() const {
@@ -685,8 +773,12 @@ InclineState InclineSensor::getState() const {
     return state;
   }
 
-  const uint32_t nowUs = micros();
-  const uint32_t nowMs = millis();
+  const uint32_t nowUs = (impl_->observationMode == InclineObservationMode::SoftwareObservation)
+                             ? (impl_->lastEvaluatedUs > 0 ? impl_->lastEvaluatedUs : static_cast<uint32_t>(millis() * 1000UL))
+                             : micros();
+  const uint32_t nowMs = (impl_->observationMode == InclineObservationMode::SoftwareObservation)
+                             ? (impl_->lastEvaluatedMs > 0 ? impl_->lastEvaluatedMs : millis())
+                             : millis();
 
   IsrData isrSnap{};
   portENTER_CRITICAL(&impl_->isrMux);
