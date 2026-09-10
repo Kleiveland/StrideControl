@@ -39,7 +39,7 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     dispatcher_.begin();
     workoutEngine_.reset();
 
-    composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
+    composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 0, 0.0f, true);
 
     initialized_ = true;
     lostAuthorityCount_ = 0;
@@ -250,12 +250,15 @@ void TestbenchControlRuntime::runTaskLoop() {
 
         // 4. Evaluate authority
         const bool authoritative = ControlRuntime::isSnapshotAuthoritative(snapshot, nowMs);
-        if (!authoritative) {
+        if (authoritative) {
+            // 5. Tick domain session & target dispatcher
+            coordinator_.tick(session_, dispatcher_, composite_, snapshot, nowMs);
+        } else {
             lostAuthorityCount_++;
+            if (session_.getSnapshot().state == WorkoutSessionState::Running) {
+                session_.suspend(nowMs);
+            }
         }
-
-        // 5. Tick domain session & target dispatcher
-        coordinator_.tick(session_, dispatcher_, composite_, snapshot, nowMs);
 
         // 6. Publish snapshot copy for external consumers (cross-core spinlock protected)
         const WorkoutSessionSnapshot sessSnap = session_.getSnapshot();

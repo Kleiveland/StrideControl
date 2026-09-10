@@ -17,8 +17,8 @@ enum class VirtualRunnerMode : uint8_t {
 
 struct VirtualRunnerConfig {
     VirtualRunnerMode mode = VirtualRunnerMode::RunningOnBelt;
-    uint16_t cadenceSpm = 180;
-    float impactMagnitudeG = 0.35f;
+    uint16_t cadenceSpm = 0;
+    float impactMagnitudeG = 0.0f;
     uint32_t impactDurationUs = 30000;
     bool imuSignalValid = true;
 };
@@ -34,7 +34,11 @@ public:
 
     void setMode(VirtualRunnerMode mode) { config_.mode = mode; }
     void setCadenceSpm(uint16_t spm) {
-        config_.cadenceSpm = std::max<uint16_t>(40, std::min<uint16_t>(240, spm));
+        if (spm == 0) {
+            config_.cadenceSpm = 0;
+        } else {
+            config_.cadenceSpm = std::max<uint16_t>(40, std::min<uint16_t>(240, spm));
+        }
     }
     void setSignalValid(bool valid) { config_.imuSignalValid = valid; }
     void setImpactMagnitudeG(float g) { config_.impactMagnitudeG = g; }
@@ -72,7 +76,8 @@ public:
 
             float verticalG = 1.0f; // Gravity baseline
 
-            if (config_.mode == VirtualRunnerMode::RunningOnBelt && config_.imuSignalValid) {
+            if (config_.mode == VirtualRunnerMode::RunningOnBelt && config_.imuSignalValid &&
+                config_.cadenceSpm > 0 && config_.impactMagnitudeG > 0.0f) {
                 uint32_t cycleUs = static_cast<uint32_t>(sampleTimeUs % stepPeriodUs);
                 if (cycleUs < config_.impactDurationUs) {
                     // Symmetric triangular footstrike impact

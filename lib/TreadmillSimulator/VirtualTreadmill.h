@@ -193,6 +193,8 @@ public:
     float getActualInclinePct() const { return actualInclinePct_; }
     float getTargetInclinePct() const { return targetInclinePct_; }
     double getOdometerKm() const { return odometerKm_; }
+    VirtualRunnerLocation getRunnerLocation() const { return runnerLocation_; }
+    uint16_t getCadenceSpm() const { return cadenceSpm_; }
     bool isEStopActive() const { return eStopActive_; }
     bool isBeltMoving() const { return actualSpeedKmh_ > 0.001f; }
     uint64_t getTickCount() const { return lastTickIndex_; }

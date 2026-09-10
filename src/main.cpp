@@ -54,7 +54,17 @@ public:
         report.targetInclinePct = telem.simTargetInclinePct;
         report.runnerSpeedKmh = telem.snapshot.runner.runnerSpeedKmh;
         report.beltDistanceKm = runtime_.getComposite().getVirtualTreadmill().getOdometerKm();
-        report.runnerPresence = stridecontrol::runnerPresenceName(telem.snapshot.runner.presence);
+        const auto runnerLoc = runtime_.getComposite().getVirtualTreadmill().getRunnerLocation();
+        const auto runnerPresence = telem.snapshot.runner.presence;
+        if (runnerPresence == stridecontrol::RunnerPresence::Active) {
+            report.runnerPresence = "ACTIVE";
+        } else if (runnerLoc == stridecontrol::VirtualRunnerLocation::OnBelt) {
+            report.runnerPresence = "Present / OnBelt";
+        } else if (runnerLoc == stridecontrol::VirtualRunnerLocation::OnSideRails) {
+            report.runnerPresence = "SIDE_RAILS";
+        } else {
+            report.runnerPresence = stridecontrol::runnerPresenceName(runnerPresence);
+        }
         report.droppedEventsCount = runtime_.getComposite().getDroppedEventsCount();
         report.heartRateBpm = telem.snapshot.heartRate.heartRateBpm;
         report.heartRateValid = telem.snapshot.heartRate.heartRateValid;
@@ -143,38 +153,11 @@ void setup() {
     s_webServerManager.begin(&s_telemetryProvider);
 
 #if defined(STRIDECONTROL_TESTBENCH)
-    // 4. Initialize Testbench Control Runtime
+    // 4. Initialize Testbench Control Runtime (Clean Idle boot contract)
     s_testbenchRuntime.begin();
     s_webServerManager.attachSimulatorRuntime(&s_testbenchRuntime);
 
-    // 5. Build Sample Workout Definition (Step 0: Warmup 10s @ 5 km/h 1%, Step 1: Work 15s @ 10 km/h 2%)
-    stridecontrol::WorkoutDefinition workoutDef{};
-    workoutDef.id = 1;
-    strncpy(workoutDef.name, "Testbench", stridecontrol::MAX_WORKOUT_NAME_LENGTH);
-    workoutDef.segmentCount = 2;
-
-    workoutDef.segments[0].id = 101;
-    workoutDef.segments[0].type = stridecontrol::SegmentType::SINGLE_STEP;
-    workoutDef.segments[0].repetitions = 1;
-    workoutDef.segments[0].stepCount = 1;
-    workoutDef.segments[0].steps[0] = stridecontrol::WorkoutStep(
-        1, stridecontrol::StepRole::WARMUP, stridecontrol::DurationType::TIME_SECONDS,
-        10, stridecontrol::SpeedMode::FIXED, 5.0f, 1, true
-    );
-
-    workoutDef.segments[1].id = 102;
-    workoutDef.segments[1].type = stridecontrol::SegmentType::SINGLE_STEP;
-    workoutDef.segments[1].repetitions = 1;
-    workoutDef.segments[1].stepCount = 1;
-    workoutDef.segments[1].steps[0] = stridecontrol::WorkoutStep(
-        2, stridecontrol::StepRole::WORK, stridecontrol::DurationType::TIME_SECONDS,
-        15, stridecontrol::SpeedMode::FIXED, 10.0f, 2, true
-    );
-
-    const bool armOk = s_testbenchRuntime.armWorkout(workoutDef, millis());
-    Serial.printf("[Testbench] Sample workout armed: %s\n", armOk ? "SUCCESS" : "FAILED");
-
-    // 6. Start Dedicated Core 0 Testbench Control Task
+    // 5. Start Dedicated Core 0 Testbench Control Task
     const bool taskOk = s_testbenchRuntime.startControlTask();
     Serial.printf("[Testbench] TestbenchControlRuntime task start: %s\n", taskOk ? "SUCCESS" : "FAILED");
     Serial.println("[Testbench] Testbench mode active: TreadmillSimulator closed-loop host running on Core 0.");
@@ -222,9 +205,11 @@ void loop() {
         if (c == 'q' || c == 'Q') {
             Serial.println("[SerialCmd] QuickStart triggered");
             s_testbenchRuntime.triggerQuickStart(nowMs);
+            s_testbenchRuntime.setSimRunner(stridecontrol::VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
         } else if (c == 's' || c == 'S') {
             Serial.println("[SerialCmd] Stop triggered");
             s_testbenchRuntime.triggerStop(nowMs);
+            s_testbenchRuntime.setSimRunner(stridecontrol::VirtualRunnerMode::RunningOnBelt, 0, 0.0f, true);
         } else if (c == '+') {
             Serial.println("[SerialCmd] SpeedPlus triggered");
             s_testbenchRuntime.stepSimSpeed(true, nowMs);
@@ -242,10 +227,17 @@ void loop() {
         const char* roleStr = stridecontrol::stepRoleName(telem.sessionSnapshot.currentRole);
         const uint32_t remSeconds = telem.sessionSnapshot.stepRemainingMs / 1000;
         const double distMeters = telem.snapshot.runner.validatedDistanceKm * 1000.0;
+        const auto runnerLoc = s_testbenchRuntime.getComposite().getVirtualTreadmill().getRunnerLocation();
+        const char* presenceStr = (telem.snapshot.runner.presence == stridecontrol::RunnerPresence::Active) ? "ACTIVE" :
+            (runnerLoc == stridecontrol::VirtualRunnerLocation::OnBelt ? "Present / OnBelt" :
+            (runnerLoc == stridecontrol::VirtualRunnerLocation::OnSideRails ? "SIDE_RAILS" : stridecontrol::runnerPresenceName(telem.snapshot.runner.presence)));
+        const uint16_t cadence = s_testbenchRuntime.getComposite().getVirtualTreadmill().getCadenceSpm();
 
-        Serial.printf("[Telemetry] Time:%u | State:%s | Step:%u (%s) | Rem:%us | TargetSpd:%.1f km/h | SimSpd:%.2f km/h | TargetInc:%.0f%% | SimInc:%.0f%% | Dist:%.1f m | Auth:%s\n",
+        Serial.printf("[Telemetry] Time:%u | State:%s | Presence:%s | Cadence:%u | Step:%u (%s) | Rem:%us | TargetSpd:%.1f km/h | SimSpd:%.2f km/h | TargetInc:%.0f%% | SimInc:%.0f%% | Dist:%.1f m | Auth:%s\n",
             telem.snapshot.timestampMs,
             stateStr,
+            presenceStr,
+            cadence,
             telem.sessionSnapshot.currentStepIndex,
             roleStr,
             remSeconds,
