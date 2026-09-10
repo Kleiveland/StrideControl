@@ -39,6 +39,8 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     dispatcher_.begin();
     workoutEngine_.reset();
 
+    composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
+
     initialized_ = true;
     lostAuthorityCount_ = 0;
     minFreeStackBytes_ = 8192;
@@ -48,6 +50,7 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     publishedSessionSnapshot_ = session_.getSnapshot();
     publishedSimTargetSpeedKmh_ = composite_.getVirtualTreadmill().getTargetSpeedKmh();
     publishedSimTargetInclinePct_ = composite_.getVirtualTreadmill().getTargetInclinePct();
+    publishedAuthoritative_ = false;
     portEXIT_CRITICAL(&snapshotMux_);
 
     return true;
@@ -82,6 +85,7 @@ bool TestbenchControlRuntime::armWorkout(const WorkoutDefinition& def, uint32_t 
         publishedSessionSnapshot_ = session_.getSnapshot();
         publishedSimTargetSpeedKmh_ = composite_.getVirtualTreadmill().getTargetSpeedKmh();
         publishedSimTargetInclinePct_ = composite_.getVirtualTreadmill().getTargetInclinePct();
+        publishedAuthoritative_ = false;
         portEXIT_CRITICAL(&snapshotMux_);
     }
     return armed;
@@ -226,11 +230,12 @@ void TestbenchControlRuntime::runTaskLoop() {
     const TickType_t periodTicks = pdMS_TO_TICKS(kPeriodMs);
     uint32_t lastHeadroomCheckMs = 0;
     uint64_t tickIndex = 0;
+    const uint64_t baseTimeUs = static_cast<uint64_t>(millis()) * 1000ULL;
 
     while (!stopRequested_) {
         tickIndex++;
-        const uint32_t nowMs = millis();
-        const uint64_t scenarioTimeUs = static_cast<uint64_t>(nowMs) * 1000ULL;
+        const uint64_t scenarioTimeUs = baseTimeUs + (tickIndex * (static_cast<uint64_t>(kPeriodMs) * 1000ULL));
+        const uint32_t nowMs = static_cast<uint32_t>(scenarioTimeUs / 1000ULL);
         const SimulationTick simTick(tickIndex, scenarioTimeUs, kPeriodMs * 1000UL);
 
         // 1. Tick composite simulator (drains staged stimuli, advances physics, forwards to adapters)
@@ -262,6 +267,7 @@ void TestbenchControlRuntime::runTaskLoop() {
         publishedSessionSnapshot_ = sessSnap;
         publishedSimTargetSpeedKmh_ = targetSpeed;
         publishedSimTargetInclinePct_ = targetIncline;
+        publishedAuthoritative_ = authoritative;
         portEXIT_CRITICAL(&snapshotMux_);
 
         // 7. Periodically check stack high-water mark (every 1000 ms)
@@ -300,17 +306,18 @@ WorkoutSessionSnapshot TestbenchControlRuntime::getSessionSnapshot() const {
 }
 
 TestbenchTelemetry TestbenchControlRuntime::getTelemetry(uint32_t nowMs) const {
+    (void)nowMs;
     TestbenchTelemetry telem;
     portENTER_CRITICAL(&snapshotMux_);
     telem.snapshot = publishedSnapshot_;
     telem.sessionSnapshot = publishedSessionSnapshot_;
     telem.simTargetSpeedKmh = publishedSimTargetSpeedKmh_;
     telem.simTargetInclinePct = publishedSimTargetInclinePct_;
+    telem.authoritative = publishedAuthoritative_;
     telem.lostAuthorityCount = lostAuthorityCount_;
     telem.minFreeStackBytes = minFreeStackBytes_;
     portEXIT_CRITICAL(&snapshotMux_);
 
-    telem.authoritative = ControlRuntime::isSnapshotAuthoritative(telem.snapshot, nowMs);
     return telem;
 }
 

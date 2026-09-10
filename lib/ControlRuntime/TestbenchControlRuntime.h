@@ -103,6 +103,7 @@ private:
     WorkoutSessionSnapshot publishedSessionSnapshot_{};
     float publishedSimTargetSpeedKmh_ = 0.0f;
     float publishedSimTargetInclinePct_ = 0.0f;
+    bool publishedAuthoritative_ = false;
 
     TaskHandle_t taskHandle_ = nullptr;
     SemaphoreHandle_t exitSem_ = nullptr;

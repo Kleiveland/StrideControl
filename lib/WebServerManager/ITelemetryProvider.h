@@ -22,6 +22,9 @@ struct TelemetryReport {
     double beltDistanceKm = 0.0;
     const char* runnerPresence = "UNKNOWN";
     uint32_t droppedEventsCount = 0;
+    uint8_t heartRateBpm = 0;
+    bool heartRateValid = false;
+    uint32_t totalElapsedTimeMs = 0;
 };
 
 /**

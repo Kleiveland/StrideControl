@@ -82,7 +82,13 @@ void WebServerManager::registerRoutes() {
         session["state"] = report.sessionState;
         session["stepIndex"] = report.stepIndex;
         session["stepRemainingMs"] = report.stepRemainingMs;
+        session["elapsedTimeMs"] = report.totalElapsedTimeMs;
 
+        JsonObject hr = doc["heartRate"].to<JsonObject>();
+        hr["bpm"] = report.heartRateBpm;
+        hr["valid"] = report.heartRateValid;
+
+        doc["elapsedTimeMs"] = report.totalElapsedTimeMs;
         doc["targetSpeedKmh"] = report.targetSpeedKmh;
         doc["targetInclinePct"] = report.targetInclinePct;
         doc["droppedEvents"] = report.droppedEventsCount;

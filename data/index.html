@@ -820,19 +820,19 @@
                 <div class="tele-col">
                     <div class="tele-content">
                         <div class="tele-lbl">Distanse</div>
-                        <div class="tele-val">3.12</div>
+                        <div class="tele-val">0.00</div>
                     </div>
                 </div>
                 <div class="tele-col" id="man-col-puls">
                     <div class="tele-content">
                         <div class="tele-lbl">Puls</div>
-                        <div class="tele-val" id="man-puls-val">164</div>
+                        <div class="tele-val" id="man-puls-val">--</div>
                     </div>
                 </div>
                 <div class="tele-col" id="man-col-spd">
                     <div class="tele-content">
                         <div class="tele-lbl" id="man-spd-lbl">Fart</div>
-                        <div class="tele-val" id="man-spd-val">15.0</div>
+                        <div class="tele-val" id="man-spd-val">0.0</div>
                     </div>
                 </div>
             </div>
@@ -2944,15 +2944,18 @@
                 const manSpdVal = document.getElementById('man-spd-val');
                 const manIncVal = document.getElementById('man-inc-val');
                 const klatret = document.getElementById('col-klatret');
+                const manPulsVal = document.getElementById('man-puls-val');
                 if (manSpdVal) manSpdVal.innerText = '--';
                 if (manIncVal) manIncVal.innerText = '--';
+                if (manPulsVal) manPulsVal.innerText = '--';
                 if (klatret) klatret.style.display = 'none';
 
                 document.querySelectorAll('#manual-telemetry .tele-col').forEach(col => {
                     const lbl = col.querySelector('.tele-lbl');
                     const val = col.querySelector('.tele-val');
                     if (!lbl || !val) return;
-                    if (lbl.innerText.trim().toUpperCase() === 'DISTANSE') {
+                    const txt = lbl.innerText.trim().toUpperCase();
+                    if (txt === 'DISTANSE' || txt === 'PULS') {
                         val.innerText = '--';
                     }
                 });
@@ -2962,7 +2965,7 @@
                     const val = col.querySelector('.tele-val');
                     if (!lbl || !val) return;
                     const txt = lbl.innerText.trim().toUpperCase();
-                    if (txt === 'FART' || txt === 'STIGNING' || txt === 'DISTANSE') {
+                    if (txt === 'FART' || txt === 'STIGNING' || txt === 'DISTANSE' || txt === 'PULS') {
                         val.innerText = '--';
                     }
                 });
@@ -3032,12 +3035,22 @@
                 klatret.style.display = (incPct > 0) ? 'flex' : 'none';
             }
 
+            const hrStr = (telem.heartRate && telem.heartRate.valid && telem.heartRate.bpm > 0) ? String(telem.heartRate.bpm) : '--';
+
+            const manPulsVal = document.getElementById('man-puls-val');
+            if (manPulsVal) {
+                manPulsVal.innerText = hrStr;
+            }
+
             document.querySelectorAll('#manual-telemetry .tele-col').forEach(col => {
                 const lbl = col.querySelector('.tele-lbl');
                 const val = col.querySelector('.tele-val');
                 if (!lbl || !val) return;
-                if (lbl.innerText.trim().toUpperCase() === 'DISTANSE') {
+                const txt = lbl.innerText.trim().toUpperCase();
+                if (txt === 'DISTANSE') {
                     val.innerText = distStr;
+                } else if (txt === 'PULS') {
+                    val.innerText = hrStr;
                 }
             });
 
@@ -3053,6 +3066,8 @@
                     val.innerText = incStr;
                 } else if (txt === 'DISTANSE') {
                     val.innerText = distStr;
+                } else if (txt === 'PULS') {
+                    val.innerText = hrStr;
                 }
             });
 

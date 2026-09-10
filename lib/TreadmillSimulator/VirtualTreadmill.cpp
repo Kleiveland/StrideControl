@@ -68,8 +68,7 @@ bool VirtualTreadmill::tick(const SimulationTick& tick) {
     const uint32_t deltaMs = tick.deltaMs != 0 ? tick.deltaMs : (deltaUs / 1000UL);
 
     if (lastTickIndex_ > 0) {
-        const uint64_t elapsedUs = scenarioTimeUs - lastScenarioTimeUs_;
-        if (elapsedUs != deltaUs) {
+        if (scenarioTimeUs <= lastScenarioTimeUs_) {
             return false;
         }
     }

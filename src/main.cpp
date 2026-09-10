@@ -56,6 +56,9 @@ public:
         report.beltDistanceKm = runtime_.getComposite().getVirtualTreadmill().getOdometerKm();
         report.runnerPresence = stridecontrol::runnerPresenceName(telem.snapshot.runner.presence);
         report.droppedEventsCount = runtime_.getComposite().getDroppedEventsCount();
+        report.heartRateBpm = telem.snapshot.heartRate.heartRateBpm;
+        report.heartRateValid = telem.snapshot.heartRate.heartRateValid;
+        report.totalElapsedTimeMs = telem.sessionSnapshot.totalElapsedTimeMs;
         return true;
     }
 
@@ -103,6 +106,9 @@ public:
         report.beltDistanceKm = snap.runner.validatedDistanceKm;
         report.runnerPresence = stridecontrol::runnerPresenceName(snap.runner.presence);
         report.droppedEventsCount = 0;
+        report.heartRateBpm = snap.heartRate.heartRateBpm;
+        report.heartRateValid = snap.heartRate.heartRateValid;
+        report.totalElapsedTimeMs = sessSnap.totalElapsedTimeMs;
         return true;
     }
 
@@ -211,17 +217,21 @@ void loop() {
 #if defined(STRIDECONTROL_TESTBENCH)
     const uint32_t nowMs = millis();
 
-    // External Quick Start stimulus after initial Armed demonstration (~2 seconds)
-    static bool quickStartFired = false;
-    static uint32_t startupMs = 0;
-    if (startupMs == 0) {
-        startupMs = nowMs;
-    }
-
-    if (!quickStartFired && (nowMs - startupMs >= 2000)) {
-        quickStartFired = true;
-        Serial.println("[Testbench] Simulating external physical Quick Start (1.0 km/h belt start)...");
-        s_testbenchRuntime.triggerQuickStart(nowMs);
+    while (Serial.available() > 0) {
+        char c = Serial.read();
+        if (c == 'q' || c == 'Q') {
+            Serial.println("[SerialCmd] QuickStart triggered");
+            s_testbenchRuntime.triggerQuickStart(nowMs);
+        } else if (c == 's' || c == 'S') {
+            Serial.println("[SerialCmd] Stop triggered");
+            s_testbenchRuntime.triggerStop(nowMs);
+        } else if (c == '+') {
+            Serial.println("[SerialCmd] SpeedPlus triggered");
+            s_testbenchRuntime.stepSimSpeed(true, nowMs);
+        } else if (c == '-') {
+            Serial.println("[SerialCmd] SpeedMinus triggered");
+            s_testbenchRuntime.stepSimSpeed(false, nowMs);
+        }
     }
 
     static uint32_t s_lastDiagMs = 0;
