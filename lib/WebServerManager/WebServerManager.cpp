@@ -20,18 +20,26 @@ WebServerManager::~WebServerManager() {
     end();
 }
 
+void WebServerManager::attachCommandStager(IControlCommandStager* commandStager) {
+    commandStager_ = commandStager;
+}
+
 #if defined(STRIDECONTROL_TESTBENCH)
 void WebServerManager::attachSimulatorRuntime(TestbenchControlRuntime* simRuntime) {
     simRuntime_ = simRuntime;
+    commandStager_ = simRuntime;
 }
 #endif
 
-bool WebServerManager::begin(const ITelemetryProvider* telemetryProvider) {
+bool WebServerManager::begin(const ITelemetryProvider* telemetryProvider, IControlCommandStager* commandStager) {
     if (running_) {
         return true;
     }
 
     telemetryProvider_ = telemetryProvider;
+    if (commandStager != nullptr) {
+        commandStager_ = commandStager;
+    }
     registerRoutes();
     server_.begin();
     running_ = true;
@@ -238,6 +246,227 @@ void WebServerManager::registerRoutes() {
     // Static asset handler from LittleFS root
     server_.serveStatic("/", LittleFS, "/").setCacheControl("public, max-age=3600");
 
+    // -------------------------------------------------------------------------
+    // Control Command API Routes (Producer interface into ControlTask queue)
+    // -------------------------------------------------------------------------
+    auto quickstartHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::QuickStart;
+        cmd.timestampMs = millis();
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/quickstart", HTTP_POST, quickstartHandler);
+    server_.on("/api/v1/control/quickstart", HTTP_POST, quickstartHandler);
+
+    auto stopHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::Stop;
+        cmd.timestampMs = millis();
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/stop", HTTP_POST, stopHandler);
+    server_.on("/api/v1/control/stop", HTTP_POST, stopHandler);
+
+    auto pauseHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::Pause;
+        cmd.timestampMs = millis();
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/pause", HTTP_POST, pauseHandler);
+    server_.on("/api/v1/control/pause", HTTP_POST, pauseHandler);
+
+    auto resumeHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::Resume;
+        cmd.timestampMs = millis();
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/resume", HTTP_POST, resumeHandler);
+    server_.on("/api/v1/control/resume", HTTP_POST, resumeHandler);
+
+    auto commandBodyBuffer = [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+        if (total > 2048) {
+            request->send(413, "application/json", "{\"error\":\"Payload too large\"}");
+            return;
+        }
+        std::vector<uint8_t>* buffer = nullptr;
+        if (index == 0) {
+            buffer = new std::vector<uint8_t>();
+            buffer->reserve(total);
+            request->_tempObject = buffer;
+        } else {
+            buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
+        }
+        if (buffer && data && len > 0) {
+            buffer->insert(buffer->end(), data, data + len);
+        }
+    };
+
+    auto speedHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        bool hasTarget = false;
+        float targetSpeed = 0.0f;
+        bool hasDelta = false;
+        float deltaSpeed = 0.0f;
+
+        if (request->_tempObject) {
+            auto* buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->size());
+            delete buffer;
+            request->_tempObject = nullptr;
+            if (!err) {
+                if (doc.containsKey("speed")) {
+                    hasTarget = true;
+                    targetSpeed = doc["speed"].as<float>();
+                } else if (doc.containsKey("delta")) {
+                    hasDelta = true;
+                    deltaSpeed = doc["delta"].as<float>();
+                } else if (doc.containsKey("deltaSpeed")) {
+                    hasDelta = true;
+                    deltaSpeed = doc["deltaSpeed"].as<float>();
+                }
+            }
+        }
+        if (!hasTarget && !hasDelta) {
+            if (request->hasParam("speed")) {
+                hasTarget = true;
+                targetSpeed = request->getParam("speed")->value().toFloat();
+            } else if (request->hasParam("delta")) {
+                hasDelta = true;
+                deltaSpeed = request->getParam("delta")->value().toFloat();
+            } else if (request->hasParam("deltaSpeed")) {
+                hasDelta = true;
+                deltaSpeed = request->getParam("deltaSpeed")->value().toFloat();
+            }
+        }
+
+        if (!hasTarget && !hasDelta) {
+            request->send(400, "application/json", "{\"error\":\"Missing speed or delta parameter\"}");
+            return;
+        }
+
+        ControlCommand cmd{};
+        cmd.timestampMs = millis();
+        if (hasTarget) {
+            cmd.type = ControlCommandType::SetSpeed;
+            cmd.data.target.speedKmh = targetSpeed;
+        } else {
+            cmd.type = ControlCommandType::StepSpeed;
+            cmd.data.stepSpeed.deltaSpeedKmh = deltaSpeed;
+        }
+
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/speed", HTTP_POST, speedHandler, nullptr, commandBodyBuffer);
+    server_.on("/api/v1/control/speed", HTTP_POST, speedHandler, nullptr, commandBodyBuffer);
+
+    auto inclineHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        bool hasTarget = false;
+        float targetIncline = 0.0f;
+        bool hasDelta = false;
+        float deltaIncline = 0.0f;
+
+        if (request->_tempObject) {
+            auto* buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->size());
+            delete buffer;
+            request->_tempObject = nullptr;
+            if (!err) {
+                if (doc.containsKey("incline")) {
+                    hasTarget = true;
+                    targetIncline = doc["incline"].as<float>();
+                } else if (doc.containsKey("delta")) {
+                    hasDelta = true;
+                    deltaIncline = doc["delta"].as<float>();
+                } else if (doc.containsKey("deltaIncline")) {
+                    hasDelta = true;
+                    deltaIncline = doc["deltaIncline"].as<float>();
+                }
+            }
+        }
+        if (!hasTarget && !hasDelta) {
+            if (request->hasParam("incline")) {
+                hasTarget = true;
+                targetIncline = request->getParam("incline")->value().toFloat();
+            } else if (request->hasParam("delta")) {
+                hasDelta = true;
+                deltaIncline = request->getParam("delta")->value().toFloat();
+            } else if (request->hasParam("deltaIncline")) {
+                hasDelta = true;
+                deltaIncline = request->getParam("deltaIncline")->value().toFloat();
+            }
+        }
+
+        if (!hasTarget && !hasDelta) {
+            request->send(400, "application/json", "{\"error\":\"Missing incline or delta parameter\"}");
+            return;
+        }
+
+        ControlCommand cmd{};
+        cmd.timestampMs = millis();
+        if (hasTarget) {
+            cmd.type = ControlCommandType::SetIncline;
+            cmd.data.target.inclinePct = targetIncline;
+        } else {
+            cmd.type = ControlCommandType::StepIncline;
+            cmd.data.stepIncline.deltaInclinePct = deltaIncline;
+        }
+
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/incline", HTTP_POST, inclineHandler, nullptr, commandBodyBuffer);
+    server_.on("/api/v1/control/incline", HTTP_POST, inclineHandler, nullptr, commandBodyBuffer);
+
 #if defined(STRIDECONTROL_TESTBENCH)
     // GET /simulator.html (Testbench active universe UI)
     server_.on("/simulator.html", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -249,10 +478,6 @@ void WebServerManager::registerRoutes() {
         "/api/v1/simulator/console",
         HTTP_POST,
         [this](AsyncWebServerRequest* request) {
-            if (simRuntime_ == nullptr) {
-                request->send(503, "application/json", "{\"error\":\"Simulator runtime not attached\"}");
-                return;
-            }
             if (!request->_tempObject) {
                 request->send(400, "application/json", "{\"error\":\"Missing body\"}");
                 return;
@@ -271,30 +496,48 @@ void WebServerManager::registerRoutes() {
             const char* btn = doc["button"] | "";
             float val = doc["value"] | 0.0f;
             bool ok = false;
+            ControlCommand cmd{};
+            cmd.timestampMs = millis();
+
             if (strcmp(btn, "QuickStart") == 0) {
-                ok = simRuntime_->triggerQuickStart();
+                cmd.type = ControlCommandType::QuickStart;
+                ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "Stop") == 0) {
-                ok = simRuntime_->triggerStop();
+                cmd.type = ControlCommandType::Stop;
+                ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "EmergencyStop") == 0) {
-                ok = simRuntime_->triggerEmergencyStop();
+                cmd.type = ControlCommandType::Stop;
+                ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "SpeedPlus") == 0) {
-                ok = simRuntime_->stepSimSpeed(true);
+                cmd.type = ControlCommandType::StepSpeed;
+                cmd.data.stepSpeed.deltaSpeedKmh = 0.5f;
+                ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "SpeedMinus") == 0) {
-                ok = simRuntime_->stepSimSpeed(false);
+                cmd.type = ControlCommandType::StepSpeed;
+                cmd.data.stepSpeed.deltaSpeedKmh = -0.5f;
+                ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "InclinePlus") == 0) {
-                ok = simRuntime_->stepSimIncline(true);
+                cmd.type = ControlCommandType::StepIncline;
+                cmd.data.stepIncline.deltaInclinePct = 0.5f;
+                ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "InclineMinus") == 0) {
-                ok = simRuntime_->stepSimIncline(false);
+                cmd.type = ControlCommandType::StepIncline;
+                cmd.data.stepIncline.deltaInclinePct = -0.5f;
+                ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "SetSpeed") == 0) {
-                ok = simRuntime_->setSimSpeedTarget(val);
+                cmd.type = ControlCommandType::SetSpeed;
+                cmd.data.target.speedKmh = val;
+                ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "SetIncline") == 0) {
-                ok = simRuntime_->setSimInclineTarget(val);
+                cmd.type = ControlCommandType::SetIncline;
+                cmd.data.target.inclinePct = val;
+                ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else {
                 request->send(400, "application/json", "{\"error\":\"Unknown button or command\"}");
                 return;
             }
 
-            request->send(ok ? 200 : 500, "application/json", ok ? "{\"status\":\"staged\"}" : "{\"error\":\"Staging failed\"}");
+            request->send(ok ? 200 : 503, "application/json", ok ? "{\"status\":\"queued\"}" : "{\"error\":\"queue_full\"}");
         },
         nullptr,
         [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {

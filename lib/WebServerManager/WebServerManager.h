@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include "NetworkManager.h"
 #include "ITelemetryProvider.h"
+#include "ControlCommand.h"
 
 namespace stridecontrol {
 
@@ -21,7 +22,8 @@ public:
     WebServerManager(const WebServerManager&) = delete;
     WebServerManager& operator=(const WebServerManager&) = delete;
 
-    bool begin(const ITelemetryProvider* telemetryProvider = nullptr);
+    bool begin(const ITelemetryProvider* telemetryProvider = nullptr, IControlCommandStager* commandStager = nullptr);
+    void attachCommandStager(IControlCommandStager* commandStager);
 #if defined(STRIDECONTROL_TESTBENCH)
     void attachSimulatorRuntime(TestbenchControlRuntime* simRuntime);
 #endif
@@ -32,6 +34,7 @@ private:
 
     AsyncWebServer server_;
     const ITelemetryProvider* telemetryProvider_{nullptr};
+    IControlCommandStager* commandStager_{nullptr};
 #if defined(STRIDECONTROL_TESTBENCH)
     TestbenchControlRuntime* simRuntime_{nullptr};
 #endif

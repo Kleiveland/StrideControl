@@ -41,6 +41,10 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
 
     composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 0, 0.0f, true);
 
+    if (commandQueue_ == nullptr) {
+        commandQueue_ = xQueueCreate(kCommandQueueDepth, sizeof(ControlCommand));
+    }
+
     initialized_ = true;
     lostAuthorityCount_ = 0;
     minFreeStackBytes_ = 8192;
@@ -58,6 +62,11 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
 
 void TestbenchControlRuntime::end() {
     stopControlTask(1000);
+
+    if (commandQueue_ != nullptr) {
+        vQueueDelete(commandQueue_);
+        commandQueue_ = nullptr;
+    }
 
     if (initialized_) {
         orchestrator_.end();
@@ -92,52 +101,56 @@ bool TestbenchControlRuntime::armWorkout(const WorkoutDefinition& def, uint32_t 
 }
 
 bool TestbenchControlRuntime::triggerQuickStart(uint32_t nowMs) {
-    if (!initialized_) {
-        return false;
-    }
-    return composite_.stageQuickStart(nowMs != 0 ? nowMs : millis());
+    ControlCommand cmd{};
+    cmd.type = ControlCommandType::QuickStart;
+    cmd.timestampMs = nowMs != 0 ? nowMs : millis();
+    return stageCommand(cmd);
 }
 
 bool TestbenchControlRuntime::triggerStop(uint32_t nowMs) {
-    if (!initialized_) {
-        return false;
-    }
-    return composite_.stageStop(nowMs != 0 ? nowMs : millis());
+    ControlCommand cmd{};
+    cmd.type = ControlCommandType::Stop;
+    cmd.timestampMs = nowMs != 0 ? nowMs : millis();
+    return stageCommand(cmd);
 }
 
 bool TestbenchControlRuntime::triggerEmergencyStop(uint32_t nowMs) {
-    if (!initialized_) {
-        return false;
-    }
-    return composite_.stageEmergencyStop(nowMs != 0 ? nowMs : millis());
+    ControlCommand cmd{};
+    cmd.type = ControlCommandType::Stop;
+    cmd.timestampMs = nowMs != 0 ? nowMs : millis();
+    return stageCommand(cmd);
 }
 
 bool TestbenchControlRuntime::setSimSpeedTarget(float speedKmh, uint32_t nowMs) {
-    if (!initialized_) {
-        return false;
-    }
-    return composite_.stageSpeedTarget(speedKmh, nowMs != 0 ? nowMs : millis());
+    ControlCommand cmd{};
+    cmd.type = ControlCommandType::SetSpeed;
+    cmd.timestampMs = nowMs != 0 ? nowMs : millis();
+    cmd.data.target.speedKmh = speedKmh;
+    return stageCommand(cmd);
 }
 
 bool TestbenchControlRuntime::setSimInclineTarget(float inclinePct, uint32_t nowMs) {
-    if (!initialized_) {
-        return false;
-    }
-    return composite_.stageInclineTarget(inclinePct, nowMs != 0 ? nowMs : millis());
+    ControlCommand cmd{};
+    cmd.type = ControlCommandType::SetIncline;
+    cmd.timestampMs = nowMs != 0 ? nowMs : millis();
+    cmd.data.target.inclinePct = inclinePct;
+    return stageCommand(cmd);
 }
 
 bool TestbenchControlRuntime::stepSimSpeed(bool positive, uint32_t nowMs) {
-    if (!initialized_) {
-        return false;
-    }
-    return composite_.stageSpeedStep(positive, nowMs != 0 ? nowMs : millis());
+    ControlCommand cmd{};
+    cmd.type = ControlCommandType::StepSpeed;
+    cmd.timestampMs = nowMs != 0 ? nowMs : millis();
+    cmd.data.stepSpeed.deltaSpeedKmh = positive ? 0.5f : -0.5f;
+    return stageCommand(cmd);
 }
 
 bool TestbenchControlRuntime::stepSimIncline(bool positive, uint32_t nowMs) {
-    if (!initialized_) {
-        return false;
-    }
-    return composite_.stageInclineStep(positive, nowMs != 0 ? nowMs : millis());
+    ControlCommand cmd{};
+    cmd.type = ControlCommandType::StepIncline;
+    cmd.timestampMs = nowMs != 0 ? nowMs : millis();
+    cmd.data.stepIncline.deltaInclinePct = positive ? 0.5f : -0.5f;
+    return stageCommand(cmd);
 }
 
 void TestbenchControlRuntime::setSimRunner(VirtualRunnerMode mode, uint16_t cadenceSpm, float magnitudeG, bool valid) {
@@ -236,6 +249,10 @@ void TestbenchControlRuntime::runTaskLoop() {
         tickIndex++;
         const uint64_t scenarioTimeUs = baseTimeUs + (tickIndex * (static_cast<uint64_t>(kPeriodMs) * 1000ULL));
         const uint32_t nowMs = static_cast<uint32_t>(scenarioTimeUs / 1000ULL);
+
+        // 0. Drain staged external commands up to batch limit (8)
+        processQueuedCommands(nowMs);
+
         const SimulationTick simTick(tickIndex, scenarioTimeUs, kPeriodMs * 1000UL);
 
         // 1. Tick composite simulator (drains staged stimuli, advances physics, forwards to adapters)
@@ -290,6 +307,62 @@ void TestbenchControlRuntime::runTaskLoop() {
         xSemaphoreGive(exitSem_);
     }
     vTaskSuspend(NULL);
+}
+
+void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
+    ControlCommand cmd{};
+    size_t processed = 0;
+    while (commandQueue_ != nullptr && xQueueReceive(commandQueue_, &cmd, 0) == pdTRUE && processed < 8) {
+        const uint32_t cmdNowMs = (cmd.timestampMs != 0) ? cmd.timestampMs : nowMs;
+        switch (cmd.type) {
+            case ControlCommandType::QuickStart:
+                composite_.stageQuickStart(cmdNowMs);
+                composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
+                break;
+            case ControlCommandType::Stop:
+                composite_.stageStop(cmdNowMs);
+                session_.registerPhysicalStop(cmdNowMs);
+                break;
+            case ControlCommandType::Pause:
+                session_.suspend(cmdNowMs);
+                break;
+            case ControlCommandType::Resume:
+                session_.resume(cmdNowMs);
+                break;
+            case ControlCommandType::SetSpeed:
+                composite_.stageSpeedTarget(cmd.data.target.speedKmh, cmdNowMs);
+                dispatcher_.stageSpeedTarget(cmd.data.target.speedKmh);
+                break;
+            case ControlCommandType::SetIncline:
+                composite_.stageInclineTarget(cmd.data.target.inclinePct, cmdNowMs);
+                dispatcher_.stageInclineTarget(cmd.data.target.inclinePct);
+                break;
+            case ControlCommandType::StepSpeed: {
+                const bool positive = (cmd.data.stepSpeed.deltaSpeedKmh > 0.0f);
+                composite_.stageSpeedStep(positive, cmdNowMs);
+                const float currentSimSpd = composite_.getVirtualTreadmill().getTargetSpeedKmh();
+                dispatcher_.stepSpeedTarget(cmd.data.stepSpeed.deltaSpeedKmh, currentSimSpd);
+                break;
+            }
+            case ControlCommandType::StepIncline: {
+                const bool positive = (cmd.data.stepIncline.deltaInclinePct > 0.0f);
+                composite_.stageInclineStep(positive, cmdNowMs);
+                const float currentSimInc = composite_.getVirtualTreadmill().getTargetInclinePct();
+                dispatcher_.stepInclineTarget(cmd.data.stepIncline.deltaInclinePct, currentSimInc);
+                break;
+            }
+            case ControlCommandType::ArmWorkout:
+                session_.armWorkout(&workoutEngine_.getExpandedWorkout(), cmdNowMs);
+                break;
+            case ControlCommandType::CancelWorkout:
+                session_.abortSession(cmdNowMs);
+                break;
+            case ControlCommandType::None:
+            default:
+                break;
+        }
+        processed++;
+    }
 }
 
 ApplicationSnapshot TestbenchControlRuntime::getSnapshot() const {

@@ -6,7 +6,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <freertos/queue.h>
 
+#include "ControlCommand.h"
 #include "TreadmillSimulatorComposite.h"
 #include "SpeedSensor.h"
 #include "InclineSensor.h"
@@ -35,7 +37,7 @@ struct TestbenchTelemetry {
     uint32_t minFreeStackBytes = 0;
 };
 
-class TestbenchControlRuntime {
+class TestbenchControlRuntime : public IControlCommandStager {
 public:
     TestbenchControlRuntime();
     ~TestbenchControlRuntime();
@@ -75,10 +77,19 @@ public:
 
     static const char* version();
 
+    // Command Staging Producer Interface
+    static constexpr size_t kCommandQueueDepth = 16;
+    bool stageCommand(const ControlCommand& cmd) override {
+        if (!commandQueue_) return false;
+        return (xQueueSend(commandQueue_, &cmd, 0) == pdTRUE);
+    }
+
 private:
     static void taskEntry(void* param);
     void runTaskLoop();
+    void processQueuedCommands(uint32_t nowMs);
 
+    QueueHandle_t commandQueue_ = nullptr;
     mutable portMUX_TYPE snapshotMux_ = portMUX_INITIALIZER_UNLOCKED;
 
     // Production Sensor & Domain Drivers (SoftwareObservation Mode)

@@ -23,6 +23,10 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
         return true;
     }
 
+    if (commandQueue_ == nullptr) {
+        commandQueue_ = xQueueCreate(kCommandQueueDepth, sizeof(ControlCommand));
+    }
+
     controller_.begin();
     session_.begin(sessionConfig);
     dispatcher_.begin();
@@ -36,6 +40,11 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
 
 void ControlRuntime::end() {
     stopControlTask(1000);
+
+    if (commandQueue_ != nullptr) {
+        vQueueDelete(commandQueue_);
+        commandQueue_ = nullptr;
+    }
 
     if (initialized_) {
         session_.end();
@@ -249,6 +258,9 @@ void ControlRuntime::runTaskLoop() {
     while (!stopRequested_) {
         const uint32_t nowMs = millis();
 
+        // 0. Drain staged external commands up to batch limit (8)
+        processQueuedCommands(nowMs);
+
         ApplicationSnapshot snap{};
         if (orchestrator_ != nullptr) {
             snap = orchestrator_->getSnapshot();
@@ -273,6 +285,55 @@ void ControlRuntime::runTaskLoop() {
         xSemaphoreGive(exitSem_);
     }
     vTaskSuspend(NULL);
+}
+
+void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
+    ControlCommand cmd{};
+    size_t processed = 0;
+    while (commandQueue_ != nullptr && xQueueReceive(commandQueue_, &cmd, 0) == pdTRUE && processed < 8) {
+        const uint32_t cmdNowMs = (cmd.timestampMs != 0) ? cmd.timestampMs : nowMs;
+        switch (cmd.type) {
+            case ControlCommandType::QuickStart:
+                controller_.submitSpeedTarget(1.0f, cmdNowMs);
+                break;
+            case ControlCommandType::Stop:
+                controller_.submitStop(cmdNowMs);
+                session_.registerPhysicalStop(cmdNowMs);
+                break;
+            case ControlCommandType::Pause:
+                session_.suspend(cmdNowMs);
+                break;
+            case ControlCommandType::Resume:
+                session_.resume(cmdNowMs);
+                break;
+            case ControlCommandType::SetSpeed:
+                dispatcher_.stageSpeedTarget(cmd.data.target.speedKmh);
+                break;
+            case ControlCommandType::SetIncline:
+                dispatcher_.stageInclineTarget(cmd.data.target.inclinePct);
+                break;
+            case ControlCommandType::StepSpeed: {
+                const float currentSpd = controller_.getSnapshot().acceptedPhysicalSpeedTargetKmh;
+                dispatcher_.stepSpeedTarget(cmd.data.stepSpeed.deltaSpeedKmh, currentSpd);
+                break;
+            }
+            case ControlCommandType::StepIncline: {
+                const float currentInc = controller_.getSnapshot().acceptedInclineTargetPct;
+                dispatcher_.stepInclineTarget(cmd.data.stepIncline.deltaInclinePct, currentInc);
+                break;
+            }
+            case ControlCommandType::ArmWorkout:
+                // Arming if workout is already prepared
+                break;
+            case ControlCommandType::CancelWorkout:
+                session_.abortSession(cmdNowMs);
+                break;
+            case ControlCommandType::None:
+            default:
+                break;
+        }
+        processed++;
+    }
 }
 
 WorkoutSessionSnapshot ControlRuntime::getSessionSnapshot() const {

@@ -189,6 +189,7 @@ void setup() {
     // 5. Initialize System Manager and Start Dedicated Core 0 Control Task
     s_systemManager.begin(millis());
     s_systemManager.startControlTask(&s_orchestrator);
+    s_webServerManager.attachCommandStager(&s_systemManager.getControlRuntime());
 
     Serial.println("[System] Production hardware profile active.");
 #endif

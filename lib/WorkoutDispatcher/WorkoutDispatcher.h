@@ -39,6 +39,34 @@ public:
 
     bool hasPendingTargets() const;
 
+    void stageSpeedTarget(float speedKmh) {
+        staged_.pendingSpeed = true;
+        staged_.speedKmh = speedKmh;
+    }
+
+    void stageInclineTarget(float inclinePct) {
+        staged_.pendingIncline = true;
+        staged_.inclinePct = inclinePct;
+    }
+
+    void stepSpeedTarget(float deltaKmh, float currentSpeedKmh = 0.0f) {
+        if (!staged_.pendingSpeed) {
+            staged_.speedKmh = currentSpeedKmh;
+        }
+        staged_.pendingSpeed = true;
+        staged_.speedKmh += deltaKmh;
+        if (staged_.speedKmh < 0.0f) staged_.speedKmh = 0.0f;
+    }
+
+    void stepInclineTarget(float deltaPct, float currentInclinePct = 0.0f) {
+        if (!staged_.pendingIncline) {
+            staged_.inclinePct = currentInclinePct;
+        }
+        staged_.pendingIncline = true;
+        staged_.inclinePct += deltaPct;
+        if (staged_.inclinePct < 0.0f) staged_.inclinePct = 0.0f;
+    }
+
     StagedTargets getStagedTargets() const;
 
     static const char* version();

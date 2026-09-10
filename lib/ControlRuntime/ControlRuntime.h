@@ -4,7 +4,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include <freertos/queue.h>
 
+#include "ControlCommand.h"
 #include "../ConsoleInterface/ConsoleInterface.h"
 #include "../SpeedCalibration/SpeedCalibration.h"
 #include "../DiagnosticsService/DiagnosticsService.h"
@@ -25,7 +27,7 @@ namespace stridecontrol {
  * WorkoutDispatcher, and ControlCoordinator with strict dependency-safe lifetimes.
  * Enforces snapshot authority gating, lost-telemetry session freezing, and Core 0 serialization.
  */
-class ControlRuntime {
+class ControlRuntime : public IControlCommandStager {
 public:
     ControlRuntime(
         ConsoleInterface& console,
@@ -77,6 +79,13 @@ public:
 
     static const char* version();
 
+    // Command Staging Producer Interface
+    static constexpr size_t kCommandQueueDepth = 16;
+    bool stageCommand(const ControlCommand& cmd) override {
+        if (!commandQueue_) return false;
+        return (xQueueSend(commandQueue_, &cmd, 0) == pdTRUE);
+    }
+
     // Timing and task constants
     static constexpr uint32_t kPeriodMs = 20;            // 50 Hz control cadence
     static constexpr uint32_t kMaxSnapshotAgeMs = 200;   // 10 frames @ 50 Hz
@@ -87,6 +96,9 @@ public:
 private:
     static void taskEntry(void* param);
     void runTaskLoop();
+    void processQueuedCommands(uint32_t nowMs);
+
+    QueueHandle_t commandQueue_ = nullptr;
 
     // STRICT MEMBER DECLARATION ORDER:
     // controller_ MUST precede adapter_ so adapter_ never outlives controller_
