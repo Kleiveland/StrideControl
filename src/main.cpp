@@ -87,6 +87,18 @@ static stridecontrol::InclineSensor s_inclineSensor;
 static stridecontrol::ApplicationOrchestrator s_orchestrator;
 static stridecontrol::SystemManager s_systemManager(s_console, s_speedCalibration, s_diagnosticsService);
 
+#if !defined(STRIDECONTROL_TESTBENCH)
+static stridecontrol::ImuInterface s_imuInterface;
+static stridecontrol::CsafeInterface s_csafeInterface;
+static stridecontrol::RunnerDynamics s_runnerDynamics;
+static stridecontrol::InclineVerifier s_inclineVerifier;
+static stridecontrol::MaintenanceService s_maintenanceService;
+static stridecontrol::BleManager s_bleManager;
+static stridecontrol::HeartRateClient s_heartRateClient;
+static stridecontrol::RscService s_rscService;
+static stridecontrol::FtmsService s_ftmsService;
+#endif
+
 class ProductionTelemetryProvider : public stridecontrol::ITelemetryProvider {
 public:
     ProductionTelemetryProvider(
@@ -165,25 +177,52 @@ void setup() {
     // 4. Initialize Sensors & Subsystem Orchestration
     s_console.begin();
 
-    // Configure SpeedSensor (XIAO D0 / GPIO 1) with internal pullup
+    // Configure SpeedSensor per DESIGN_GUIDE.md §4.3 (integrated GPIO allocation): GPIO 3
     stridecontrol::SpeedSensorConfig speedConfig;
-    speedConfig.inputPin = GPIO_NUM_1;
+    speedConfig.inputPin = GPIO_NUM_3;
     speedConfig.useInternalPullup = true;
     const bool speedOk = s_speedSensor.begin(speedConfig);
 
-    // Configure InclineSensor (XIAO D1 / GPIO 2) with internal pullup
+    // Configure InclineSensor per DESIGN_GUIDE.md §4.3: GPIO 14
+    // NOTE: GPIO 2 is reserved exclusively for TXS0108E OE per §4.3 - must never be reused.
     stridecontrol::InclineSensorConfig inclineConfig;
-    inclineConfig.inputPin = GPIO_NUM_2;
+    inclineConfig.inputPin = GPIO_NUM_14;
     inclineConfig.useInternalPullup = true;
     const bool inclineOk = s_inclineSensor.begin(inclineConfig, stridecontrol::InclineCalibration{});
 
     Serial.printf("[Sensors] SpeedSensor begin: %s (Pin %d, Pullup)\n", speedOk ? "SUCCESS" : "FAILED", speedConfig.inputPin);
     Serial.printf("[Sensors] InclineSensor begin: %s (Pin %d, Pullup)\n", inclineOk ? "SUCCESS" : "FAILED", inclineConfig.inputPin);
 
+    const bool imuOk = s_imuInterface.begin();
+    const bool csafeOk = s_csafeInterface.begin();
+    const bool runnerDynamicsOk = s_runnerDynamics.begin();
+    const bool inclineVerifierOk = s_inclineVerifier.begin();
+    s_maintenanceService.begin(&stridecontrol::SettingsService::instance());
+
+    s_bleManager.attachServices(&s_rscService, &s_ftmsService);
+    const stridecontrol::BleConfig bleConfig{};
+    const bool bleOk = s_bleManager.begin(bleConfig);
+    const bool hrOk = s_heartRateClient.begin(bleConfig, &s_bleManager);
+
+    Serial.printf("[Sensors] ImuInterface begin: %s\n", imuOk ? "SUCCESS" : "FAILED");
+    Serial.printf("[Sensors] CsafeInterface begin: %s\n", csafeOk ? "SUCCESS" : "FAILED");
+    Serial.printf("[Sensors] RunnerDynamics begin: %s\n", runnerDynamicsOk ? "SUCCESS" : "FAILED");
+    Serial.printf("[Sensors] InclineVerifier begin: %s\n", inclineVerifierOk ? "SUCCESS" : "FAILED");
+    Serial.printf("[BLE] BleManager begin: %s\n", bleOk ? "SUCCESS" : "FAILED");
+    Serial.printf("[BLE] HeartRateClient begin: %s\n", hrOk ? "SUCCESS" : "FAILED");
+
     stridecontrol::ApplicationOrchestratorDependencies orchestratorDeps{};
     orchestratorDeps.speedSensor = &s_speedSensor;
     orchestratorDeps.inclineSensor = &s_inclineSensor;
     orchestratorDeps.diagnosticsService = &s_diagnosticsService;
+    orchestratorDeps.imuInterface = &s_imuInterface;
+    orchestratorDeps.csafeInterface = &s_csafeInterface;
+    orchestratorDeps.runnerDynamics = &s_runnerDynamics;
+    orchestratorDeps.inclineVerifier = &s_inclineVerifier;
+    orchestratorDeps.maintenanceService = &s_maintenanceService;
+    orchestratorDeps.bleManager = &s_bleManager;
+    orchestratorDeps.hrClient = &s_heartRateClient;
+    orchestratorDeps.bleConfig = bleConfig;
     s_orchestrator.begin(orchestratorDeps);
 
     // 5. Initialize System Manager and Start Dedicated Core 0 Control Task
