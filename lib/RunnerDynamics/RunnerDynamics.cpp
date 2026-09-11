@@ -308,8 +308,15 @@ struct RunnerDynamics::Impl {
             return true;
         }
 
-        // Non-zero pulse-derived speed requires fresh pulse data
-        return (speedState.lastPulseAgeMs <= config_.speedDataMaxAgeMs);
+        // Non-zero pulse-derived speed: the physically expected time between pulses grows
+        // as speed drops (real T610 calibration: speedSensorKmhPerHz). A fixed timeout
+        // is guaranteed to misfire below some speed - scale the tolerance with expected
+        // pulse interval instead, with margin, never looser than 2x the configured floor.
+        const float expectedIntervalMs = (config_.speedSensorKmhPerHz / speedState.speedKmh) * 1000.0f;
+        const uint32_t dynamicMaxAgeMs = static_cast<uint32_t>(expectedIntervalMs * 1.5f);
+        const uint32_t effectiveMaxAgeMs = std::max(config_.speedDataMaxAgeMs, dynamicMaxAgeMs);
+
+        return (speedState.lastPulseAgeMs <= effectiveMaxAgeMs);
     }
 
     void commitSnapshot(uint32_t nowMs) {

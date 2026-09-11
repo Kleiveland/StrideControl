@@ -55,7 +55,8 @@ struct RunnerDynamicsConfig {
 
     // Speed & Distance integration
     float beltMovingThresholdKmh = 0.5f;
-    uint32_t speedDataMaxAgeMs = 1000;
+    uint32_t speedDataMaxAgeMs = 1000;       // Floor only - see isSpeedStateValid() for the dynamic, speed-aware check
+    float speedSensorKmhPerHz = 1.1148f;     // MUST match SpeedSensorConfig::kmhPerHz - real T610 tacho calibration
     uint32_t imuDataMaxAgeMs = 500;
     uint32_t maximumDistanceIntegrationIntervalMs = 500;
     size_t maximumSamplesPerUpdate = 64;
