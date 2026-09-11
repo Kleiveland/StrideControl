@@ -46,10 +46,12 @@ private:
     NetworkState state_{NetworkState::Uninitialized};
     uint32_t staStartTimeMs_{0};
     uint32_t lastApRetryTimeMs_{0};
+    uint32_t lastGoodStatusMs_{0};
     bool mdnsStarted_{false};
 
     static constexpr uint32_t kStaTimeoutMs = 15000;          // 15 seconds before AP fallback
     static constexpr uint32_t kApRetryIntervalMs = 60000;     // Retry STA every 60 seconds when in AP mode
+    static constexpr uint32_t kDisconnectGraceMs = 3000;      // Require 3s sustained loss before reconnecting
     static constexpr const char* kApSsid = "StrideControl-Setup";
     static constexpr const char* kApPass = "stride1234";
 };

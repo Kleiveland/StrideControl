@@ -27,6 +27,7 @@ void NetworkManager::startSTA() {
     WiFi.disconnect(true, true);
     delay(100);
     WiFi.mode(WIFI_STA);
+    WiFi.setSleep(false);
     WiFi.setHostname(Secrets::MDNS_HOSTNAME);
     WiFi.begin(Secrets::WIFI_SSID, Secrets::WIFI_PASS);
 }
@@ -40,6 +41,7 @@ void NetworkManager::startAP() {
     WiFi.disconnect(true, true);
     delay(100);
     WiFi.mode(WIFI_AP);
+    WiFi.setSleep(false);
     WiFi.softAP(kApSsid, kApPass);
 
     Serial.print("[NetworkManager] AP IP Address: ");
@@ -67,6 +69,7 @@ void NetworkManager::update() {
         case NetworkState::ConnectingSTA: {
             if (WiFi.status() == WL_CONNECTED) {
                 state_ = NetworkState::ConnectedSTA;
+                lastGoodStatusMs_ = nowMs;
                 Serial.printf("[NetworkManager] Wi-Fi Connected! IP: %s, RSSI: %d dBm\n",
                               WiFi.localIP().toString().c_str(), WiFi.RSSI());
                 initMDNS();
@@ -78,8 +81,10 @@ void NetworkManager::update() {
         }
 
         case NetworkState::ConnectedSTA: {
-            if (WiFi.status() != WL_CONNECTED) {
-                Serial.println("[NetworkManager] Wi-Fi connection lost. Attempting reconnection...");
+            if (WiFi.status() == WL_CONNECTED) {
+                lastGoodStatusMs_ = nowMs;
+            } else if (nowMs - lastGoodStatusMs_ >= kDisconnectGraceMs) {
+                Serial.println("[NetworkManager] Wi-Fi connection lost (sustained). Attempting reconnection...");
                 startSTA();
             }
             break;
