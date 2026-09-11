@@ -3314,14 +3314,15 @@
                     targetViewId = 'view-interval-pre';
                     break;
                 case 'Running':
-                    if (activeViewEl.id === 'view-interval-pause-1' || activeViewEl.id === 'view-interval-pause-2') {
+                    if (activeViewEl.id === 'view-interval-pause-1' || activeViewEl.id === 'view-interval-pause-2' ||
+                        activeViewEl.id === 'view-manual') {
                         targetViewId = activeViewEl.id;
                     } else {
                         targetViewId = 'view-interval-run';
                     }
                     break;
                 case 'Suspended':
-                    targetViewId = 'view-interval-stop';
+                    targetViewId = (activeViewEl.id === 'view-manual') ? 'view-manual' : 'view-interval-stop';
                     break;
                 case 'CompletionPending':
                 case 'Completed':
