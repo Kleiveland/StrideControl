@@ -2,6 +2,7 @@
 #include <cmath>
 #include <atomic>
 #include <Arduino.h>
+#include "../SettingsService/SettingsService.h"
 
 namespace stridecontrol {
 
@@ -339,9 +340,17 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 dispatcher_.stepInclineTarget(cmd.data.stepIncline.deltaInclinePct, currentInc);
                 break;
             }
-            case ControlCommandType::ArmWorkout:
-                // Arming if workout is already prepared
+            case ControlCommandType::ArmWorkout: {
+                const WorkoutDefinition* def = SettingsService::instance().findWorkout(
+                    cmd.data.arm.userId, cmd.data.arm.workoutId);
+                if (def != nullptr && workoutEngine_.loadWorkout(*def)) {
+                    session_.armWorkout(&workoutEngine_.getExpandedWorkout(), cmdNowMs);
+                    Serial.printf("[ControlRuntime] Armed workout id=%u for user=%u\n", cmd.data.arm.workoutId, cmd.data.arm.userId);
+                } else {
+                    Serial.printf("[ControlRuntime] FAILED to arm workout id=%u for user=%u (def=%p)\n", cmd.data.arm.workoutId, cmd.data.arm.userId, def);
+                }
                 break;
+            }
             case ControlCommandType::CancelWorkout:
                 session_.abortSession(cmdNowMs);
                 break;

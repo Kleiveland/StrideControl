@@ -13,6 +13,7 @@
 #include "../TreadmillController/TreadmillController.h"
 #include "../TreadmillController/TreadmillControllerAdapter.h"
 #include "../WorkoutSession/WorkoutSession.h"
+#include "../WorkoutEngine/WorkoutEngine.h"
 #include "../WorkoutDispatcher/WorkoutDispatcher.h"
 #include "../ControlCoordinator/ControlCoordinator.h"
 #include "../ApplicationSnapshot/ApplicationSnapshot.h"
@@ -105,6 +106,7 @@ private:
     TreadmillController controller_;
     TreadmillControllerAdapter adapter_;
     WorkoutSession session_;
+    WorkoutEngine workoutEngine_;
     WorkoutDispatcher dispatcher_;
     ControlCoordinator coordinator_;
 

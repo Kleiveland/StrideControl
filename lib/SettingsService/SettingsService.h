@@ -48,6 +48,7 @@ public:
     // =======================================================================
     bool loadSystemSettings();
     const SystemSettings* getActiveSettings() const;
+    const WorkoutDefinition* findWorkout(uint8_t userId, uint16_t workoutId) const;
     bool updateSystemSettings(const SystemSettings& candidate, char* errBuf = nullptr, size_t errBufLen = 0);
 
     static bool validateSystemSettings(const SystemSettings& candidate, char* errBuf = nullptr, size_t errBufLen = 0);

@@ -3,6 +3,7 @@
 #if defined(STRIDECONTROL_TESTBENCH)
 
 #include <Arduino.h>
+#include "../SettingsService/SettingsService.h"
 
 namespace stridecontrol {
 
@@ -351,9 +352,17 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 dispatcher_.stepInclineTarget(cmd.data.stepIncline.deltaInclinePct, currentSimInc);
                 break;
             }
-            case ControlCommandType::ArmWorkout:
-                session_.armWorkout(&workoutEngine_.getExpandedWorkout(), cmdNowMs);
+            case ControlCommandType::ArmWorkout: {
+                const WorkoutDefinition* def = SettingsService::instance().findWorkout(
+                    cmd.data.arm.userId, cmd.data.arm.workoutId);
+                if (def != nullptr && workoutEngine_.loadWorkout(*def)) {
+                    session_.armWorkout(&workoutEngine_.getExpandedWorkout(), cmdNowMs);
+                    Serial.printf("[TestbenchControlRuntime] Armed workout id=%u for user=%u\n", cmd.data.arm.workoutId, cmd.data.arm.userId);
+                } else {
+                    Serial.printf("[TestbenchControlRuntime] FAILED to arm workout id=%u for user=%u (def=%p)\n", cmd.data.arm.workoutId, cmd.data.arm.userId, def);
+                }
                 break;
+            }
             case ControlCommandType::CancelWorkout:
                 session_.abortSession(cmdNowMs);
                 break;

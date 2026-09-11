@@ -513,6 +513,74 @@ void WebServerManager::registerRoutes() {
     server_.on("/api/control/speed", HTTP_POST, speedHandler, nullptr, commandBodyBuffer);
     server_.on("/api/v1/control/speed", HTTP_POST, speedHandler, nullptr, commandBodyBuffer);
 
+    auto workoutSelectHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+
+        if (commandStager_ == nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        bool hasUserId = false;
+        uint8_t userId = 0;
+        bool hasWorkoutId = false;
+        uint16_t workoutId = 0;
+
+        if (request->_tempObject) {
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received != buffer->capacity) {
+                free(buffer);
+                request->_tempObject = nullptr;
+                request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+                return;
+            }
+            if (buffer->received > 0) {
+                JsonDocument doc;
+                DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+                if (!err) {
+                    if (doc.containsKey("userId")) {
+                        hasUserId = true;
+                        userId = doc["userId"].as<uint8_t>();
+                    }
+                    if (doc.containsKey("workoutId")) {
+                        hasWorkoutId = true;
+                        workoutId = doc["workoutId"].as<uint16_t>();
+                    }
+                }
+            }
+            free(buffer);
+            request->_tempObject = nullptr;
+        }
+
+        if (!hasUserId || !hasWorkoutId) {
+            request->send(400, "application/json", "{\"error\":\"Missing userId or workoutId\"}");
+            return;
+        }
+
+        ControlCommand cmd{};
+        cmd.timestampMs = millis();
+        cmd.type = ControlCommandType::ArmWorkout;
+        cmd.data.arm.userId = userId;
+        cmd.data.arm.workoutId = workoutId;
+
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
+    server_.on("/api/v1/control/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
+
     auto inclineHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {
             if (request->_tempObject) {

@@ -1116,6 +1116,25 @@ const SystemSettings* SettingsService::getActiveSettings() const {
     return activeSettings_.get();
 }
 
+const WorkoutDefinition* SettingsService::findWorkout(uint8_t userId, uint16_t workoutId) const {
+    const SystemSettings* settings = getActiveSettings();
+    if (settings == nullptr) {
+        return nullptr;
+    }
+    for (const auto& user : settings->users) {
+        if (user.id != userId) {
+            continue;
+        }
+        for (uint8_t i = 0; i < user.workoutCount && i < user.workouts.size(); ++i) {
+            if (user.workouts[i].id == workoutId) {
+                return &user.workouts[i];
+            }
+        }
+        return nullptr;
+    }
+    return nullptr;
+}
+
 bool SettingsService::updateSystemSettings(const SystemSettings& candidate, char* errBuf, size_t errBufLen) {
     if (!validateSystemSettings(candidate, errBuf, errBufLen)) {
         return false;
