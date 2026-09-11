@@ -2083,6 +2083,24 @@
             model = found;
             renderIntervalButtonsStatic();
             renderApp();
+
+            if (activeUserProfile && typeof activeUserProfile.id === 'number' && found && typeof found.numericId === 'number') {
+                fetch('/api/v1/control/workout/select', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: activeUserProfile.id, workoutId: found.numericId })
+                })
+                .then(res => {
+                    if (!res.ok) {
+                        console.error('[Control] Workout select rejected:', res.status);
+                        showGlobalToast('KOMMANDO AVVIST AV MØLLEN');
+                    }
+                })
+                .catch(err => {
+                    console.error('[Control] Workout select failed:', err);
+                    showGlobalToast('INGEN FORBINDELSE TIL MØLLEN');
+                });
+            }
         }
 
         // ===================================================================
@@ -3208,6 +3226,13 @@
                 telem.session?.state !== 'Completed' &&
                 telem.session?.state !== 'Aborted';
             setDashboardHotkeysEnabled(isBeltRunning);
+
+            // GUI-SAFETY-001: Global Activity Interlock (DESIGN_GUIDE.md §14.1)
+            const manualTopBar = document.getElementById('manual-topbar');
+            if (manualTopBar) {
+                const beltIsMoving = typeof spd === 'number' && spd > 0.0;
+                manualTopBar.classList.toggle('running-dim', beltIsMoving);
+            }
         }
 
         function syncIntervalViewOnStateChange(sessionState) {
