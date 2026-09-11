@@ -57,6 +57,7 @@ struct WorkoutSessionSnapshot {
 
     // Plan & Step progress
     uint16_t workoutId = 0;
+    uint8_t armedUserId = 0;
     uint8_t currentStepIndex = 0;
     uint8_t totalStepCount = 0;
 

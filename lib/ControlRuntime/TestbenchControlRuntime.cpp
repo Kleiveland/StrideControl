@@ -356,7 +356,7 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 const WorkoutDefinition* def = SettingsService::instance().findWorkout(
                     cmd.data.arm.userId, cmd.data.arm.workoutId);
                 if (def != nullptr && workoutEngine_.loadWorkout(*def)) {
-                    session_.armWorkout(&workoutEngine_.getExpandedWorkout(), cmdNowMs);
+                    session_.armWorkout(&workoutEngine_.getExpandedWorkout(), cmdNowMs, cmd.data.arm.userId);
                     Serial.printf("[TestbenchControlRuntime] Armed workout id=%u for user=%u\n", cmd.data.arm.workoutId, cmd.data.arm.userId);
                 } else {
                     Serial.printf("[TestbenchControlRuntime] FAILED to arm workout id=%u for user=%u (def=%p)\n", cmd.data.arm.workoutId, cmd.data.arm.userId, def);

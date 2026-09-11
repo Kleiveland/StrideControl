@@ -1,6 +1,7 @@
 #include "WorkoutSession.h"
 #include <cmath>
 #include <algorithm>
+#include <cstring>
 
 namespace stridecontrol {
 
@@ -62,6 +63,30 @@ bool WorkoutSession::begin(const WorkoutSessionConfig& config) {
     lowSpeedStartMs_ = 0;
     distanceOvershootCarryKm_ = 0.0;
 
+    beltHasStoppedSinceSuspend_ = false;
+    desiredGuiUserId_ = 0;
+    desiredGuiIsManual_ = false;
+
+    // Populate persistent synthetic 1-step workout for Manual mode
+    freeRunWorkout_ = ExpandedWorkout{};
+    freeRunWorkout_.workoutId = kFreeRunWorkoutId;
+    freeRunWorkout_.totalEstimatedDurationSeconds = kFreeRunDurationSeconds;
+    strncpy(freeRunWorkout_.workoutName, "Manual Run", sizeof(freeRunWorkout_.workoutName) - 1);
+    freeRunWorkout_.totalSteps = 1;
+
+    ExpandedStep step{};
+    step.stepIndex = 0;
+    step.role = StepRole::WORK;
+    step.speedMode = SpeedMode::FREE;
+    step.targetSpeedKmh = 0.0f;
+    step.setIncline = false;
+    step.targetInclinePct = 0;
+    step.durationType = DurationType::TIME_SECONDS;
+    step.durationValue = kFreeRunDurationSeconds;
+    step.repNumber = 1;
+    step.totalRepsInGroup = 1;
+    freeRunWorkout_.steps[0] = step;
+
     return true;
 }
 
@@ -71,9 +96,12 @@ void WorkoutSession::end() {
     snapshot_ = WorkoutSessionSnapshot{};
     snapshot_.state = WorkoutSessionState::Uninitialized;
     pendingIntent_ = WorkoutCommandIntent{};
+    beltHasStoppedSinceSuspend_ = false;
+    desiredGuiUserId_ = 0;
+    desiredGuiIsManual_ = false;
 }
 
-bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs) {
+bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, uint8_t userId) {
     if (!initialized_ || workout == nullptr || workout->totalSteps == 0) {
         return false;
     }
@@ -87,6 +115,7 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs) 
     snapshot_.suspended = false;
     snapshot_.completionPending = false;
     snapshot_.workoutId = workout->workoutId;
+    snapshot_.armedUserId = userId;
     snapshot_.currentStepIndex = 0;
     snapshot_.totalStepCount = workout->totalSteps;
     snapshot_.currentStep = workout->steps[0];
@@ -110,6 +139,7 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs) 
     continuationWindowExpiresMs_ = 0;
     isEmergencyStopped_ = false;
     eStopRestartPending_ = false;
+    beltHasStoppedSinceSuspend_ = false;
 
     pendingShiftPrompt_ = false;
     netWorkSpeedDeltaKmh_ = 0.0f;
@@ -139,6 +169,88 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs) 
     pendingIntent_ = WorkoutCommandIntent{};
 
     return true;
+}
+
+bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
+    if (!initialized_) {
+        return false;
+    }
+
+    const bool continuingPausedSession =
+        (snapshot_.state == WorkoutSessionState::Suspended) &&
+        (snapshot_.armedUserId == userId);
+
+    const double preservedLastRunnerDistanceKm = lastRunnerDistanceKm_;
+
+    workout_ = &freeRunWorkout_;
+
+    if (continuingPausedSession) {
+        // Same user resuming into Manual: preserve all accumulated totals. Only clear
+        // stop/continuation bookkeeping, exactly as a normal resume() would.
+        physicalStopCount_ = 0;
+        continuationWindowExpiresMs_ = 0;
+        isEmergencyStopped_ = false;
+        eStopRestartPending_ = false;
+        lowSpeedDebounceActive_ = false;
+        snapshot_.physicalStopCount = 0;
+        snapshot_.continuationWindowActive = false;
+        snapshot_.continuationWindowRemainingMs = 0;
+        snapshot_.isEmergencyStopped = false;
+        clearPendingCommandIntent();
+        lastRunnerDistanceKm_ = preservedLastRunnerDistanceKm;
+    } else {
+        // Fresh start (from Idle, or a different user than the one who paused) - full reset,
+        // mirroring armWorkout()'s reset block exactly.
+        snapshot_ = WorkoutSessionSnapshot{};
+        totalElapsedTimeMs_ = 0;
+        activeRunningTimeMs_ = 0;
+        totalValidatedDistanceKm_ = 0.0;
+        stepElapsedMs_ = 0;
+        stepElapsedValidatedDistanceKm_ = 0.0;
+        distanceAtStepEntryKm_ = 0.0;
+        lastRunnerDistanceKm_ = -1.0;
+        partialDragCount_ = 0;
+        isPartialDragCurrent_ = false;
+        isRestExtendedCurrent_ = false;
+        restExtensionSecondsTotal_ = 0;
+        physicalStopCount_ = 0;
+        continuationWindowExpiresMs_ = 0;
+        isEmergencyStopped_ = false;
+        eStopRestartPending_ = false;
+        pendingShiftPrompt_ = false;
+        netWorkSpeedDeltaKmh_ = 0.0f;
+        speedAdjustmentShiftAppliedKmh_ = 0.0f;
+        speedAdjustmentPromptExpiresMs_ = 0;
+        acknowledgedHasSpeed_ = false;
+        acknowledgedSpeedTargetKmh_ = 0.0f;
+        acknowledgedHasIncline_ = false;
+        acknowledgedInclineTargetPct_ = 0;
+        restartReissuePending_ = false;
+        lowSpeedDebounceActive_ = false;
+        lowSpeedStartMs_ = 0;
+        distanceOvershootCarryKm_ = 0.0;
+    }
+
+    beltHasStoppedSinceSuspend_ = false;
+
+    snapshot_.armedUserId = userId;
+    snapshot_.state = WorkoutSessionState::Running;
+    snapshot_.initialized = true;
+    snapshot_.active = true;
+    snapshot_.suspended = false;
+    snapshot_.completionPending = false;
+    snapshot_.workoutId = freeRunWorkout_.workoutId;
+    snapshot_.totalStepCount = freeRunWorkout_.totalSteps;
+
+    const double distanceForStepStart = (lastRunnerDistanceKm_ >= 0.0) ? lastRunnerDistanceKm_ : 0.0;
+    startStep(0, nowMs, distanceForStepStart);
+
+    return true;
+}
+
+void WorkoutSession::setDesiredGuiMode(uint8_t userId, bool isManual) {
+    desiredGuiUserId_ = userId;
+    desiredGuiIsManual_ = isManual;
 }
 
 void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double currentRunnerDistanceKm) {
@@ -342,7 +454,7 @@ void WorkoutSession::update(
     const ApplicationSnapshot& applicationSnapshot,
     uint32_t nowMs
 ) {
-    if (!initialized_ || workout_ == nullptr) {
+    if (!initialized_) {
         return;
     }
 
@@ -384,6 +496,18 @@ void WorkoutSession::update(
     }
     lastRunnerDistanceKm_ = currentRunnerDist;
 
+    // 0. Idle state -> Auto-start free run if belt begins moving in manual mode
+    if (snapshot_.state == WorkoutSessionState::Idle) {
+        if (beltMoving && desiredGuiIsManual_) {
+            startFreeRun(nowMs, desiredGuiUserId_);
+        }
+        return;
+    }
+
+    if (workout_ == nullptr) {
+        return;
+    }
+
     // 1. Armed -> Transition to Running once belt movement begins
     if (snapshot_.state == WorkoutSessionState::Armed) {
         if (beltMoving) {
@@ -396,12 +520,18 @@ void WorkoutSession::update(
 
     // 2. Suspended state -> Check for automatic continuation after normal physical restart
     if (snapshot_.state == WorkoutSessionState::Suspended) {
-        if (beltMoving && !isEmergencyStopped_) {
-            physicalStopCount_ = 0;
-            snapshot_.physicalStopCount = 0;
-            snapshot_.continuationWindowActive = false;
-            snapshot_.continuationWindowRemainingMs = 0;
-            resume(nowMs);
+        if (!beltMoving) {
+            beltHasStoppedSinceSuspend_ = true;
+        } else if (beltHasStoppedSinceSuspend_ && !isEmergencyStopped_) {
+            if (desiredGuiIsManual_) {
+                startFreeRun(nowMs, desiredGuiUserId_);
+            } else {
+                physicalStopCount_ = 0;
+                snapshot_.physicalStopCount = 0;
+                snapshot_.continuationWindowActive = false;
+                snapshot_.continuationWindowRemainingMs = 0;
+                resume(nowMs);
+            }
         }
         return;
     }
@@ -512,6 +642,7 @@ bool WorkoutSession::suspend(uint32_t nowMs) {
     }
     snapshot_.state = WorkoutSessionState::Suspended;
     snapshot_.suspended = true;
+    beltHasStoppedSinceSuspend_ = false;
     lastUpdateTimestampMs_ = nowMs;
     lowSpeedDebounceActive_ = false;
     clearPendingCommandIntent();

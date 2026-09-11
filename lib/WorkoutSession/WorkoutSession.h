@@ -34,7 +34,9 @@ public:
      * @note The caller must ensure the ExpandedWorkout pointer points to the persistent
      *       ExpandedWorkout member owned by WorkoutEngine.
      */
-    bool armWorkout(const ExpandedWorkout* workout, uint32_t nowMs);
+    bool armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, uint8_t userId = 0);
+    bool startFreeRun(uint32_t nowMs, uint8_t userId);
+    void setDesiredGuiMode(uint8_t userId, bool isManual);
 
     void update(
         const ApplicationSnapshot& applicationSnapshot,
@@ -126,6 +128,15 @@ private:
 
     // Distance overshoot rollover
     double distanceOvershootCarryKm_ = 0.0;
+
+    // Manual "free run" support
+    ExpandedWorkout freeRunWorkout_{};
+    bool beltHasStoppedSinceSuspend_ = false;
+    uint8_t desiredGuiUserId_ = 0;
+    bool desiredGuiIsManual_ = false;
+
+    static constexpr uint16_t kFreeRunWorkoutId = 65535;
+    static constexpr uint32_t kFreeRunDurationSeconds = 36000; // 10 hours - effectively indefinite
 };
 
 } // namespace stridecontrol
