@@ -3,7 +3,8 @@
 #include <LittleFS.h>
 #include "FileSystemManager.h"
 #include "SettingsService.h"
-#include <vector>
+#include <cstdlib>
+#include <cstring>
 
 #if defined(STRIDECONTROL_TESTBENCH)
 #include "TestbenchControlRuntime.h"
@@ -12,6 +13,112 @@
 #endif
 
 namespace stridecontrol {
+
+namespace {
+
+struct HttpBodyBuffer {
+    size_t capacity;
+    size_t received;
+    uint8_t* data() { return reinterpret_cast<uint8_t*>(this + 1); }
+    const uint8_t* data() const { return reinterpret_cast<const uint8_t*>(this + 1); }
+};
+
+void handleRequestBodyChunk(AsyncWebServerRequest* request,
+                            uint8_t* data,
+                            size_t len,
+                            size_t index,
+                            size_t total,
+                            size_t maxLimit,
+                            const char* payloadTooLargeJson) {
+    if (request == nullptr) {
+        return;
+    }
+
+    // If an error response was already staged (e.g. 413 or 400 on an earlier chunk), ignore subsequent chunks
+    if (request->getResponse() != nullptr) {
+        return;
+    }
+
+    // Contract 2: Validate non-null data pointer for non-empty fragment
+    if (len > 0 && data == nullptr) {
+        if (request->_tempObject) {
+            free(request->_tempObject);
+            request->_tempObject = nullptr;
+        }
+        request->send(400, "application/json", "{\"error\":\"Null data fragment pointer\"}");
+        return;
+    }
+
+    if (index == 0) {
+        // Contract 3: Handle repeated index == 0 deterministically
+        if (request->_tempObject != nullptr) {
+            free(request->_tempObject);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Duplicate initial body fragment\"}");
+            return;
+        }
+
+        // Contract 6 & 8: Enforce maximum body size & defensive integer overflow guard
+        if (total > maxLimit || total > (SIZE_MAX - sizeof(HttpBodyBuffer) - 1)) {
+            request->send(413, "application/json", payloadTooLargeJson);
+            return;
+        }
+
+        // Zero-length bodies do not require buffer allocation
+        if (total == 0) {
+            return;
+        }
+
+        void* mem = malloc(sizeof(HttpBodyBuffer) + total + 1);
+        if (!mem) {
+            request->send(500, "application/json", "{\"error\":\"Memory allocation failed\"}");
+            return;
+        }
+
+        HttpBodyBuffer* buf = static_cast<HttpBodyBuffer*>(mem);
+        buf->capacity = total;
+        buf->received = 0;
+        buf->data()[total] = '\0';
+        request->_tempObject = buf;
+    }
+
+    HttpBodyBuffer* buf = static_cast<HttpBodyBuffer*>(request->_tempObject);
+    if (!buf) {
+        // Allocation failed or was rejected on index == 0
+        return;
+    }
+
+    // Contract 4: Enforce stable total length on subsequent chunks
+    if (index > 0 && total != buf->capacity) {
+        free(buf);
+        request->_tempObject = nullptr;
+        request->send(400, "application/json", "{\"error\":\"Inconsistent total body length\"}");
+        return;
+    }
+
+    // Contract 1: Strictly contiguous fragment assembly
+    if (index != buf->received) {
+        free(buf);
+        request->_tempObject = nullptr;
+        request->send(400, "application/json", "{\"error\":\"Non-contiguous body fragment\"}");
+        return;
+    }
+
+    // Contract 2: Validate remaining capacity using subtraction
+    if (len > (buf->capacity - buf->received)) {
+        free(buf);
+        request->_tempObject = nullptr;
+        request->send(400, "application/json", "{\"error\":\"Body fragment exceeds declared capacity\"}");
+        return;
+    }
+
+    if (len > 0) {
+        memcpy(buf->data() + index, data, len);
+        buf->received += len;
+    }
+}
+
+} // anonymous namespace
 
 WebServerManager::WebServerManager(uint16_t port)
     : server_(port) {}
@@ -153,22 +260,37 @@ void WebServerManager::registerRoutes() {
         "/api/settings",
         HTTP_POST,
         [](AsyncWebServerRequest* request) {
+            if (request->getResponse() != nullptr) {
+                if (request->_tempObject) {
+                    free(request->_tempObject);
+                    request->_tempObject = nullptr;
+                }
+                return;
+            }
+
             if (!request->_tempObject) {
                 request->send(400, "application/json", "{\"error\":\"Missing request body\"}");
                 return;
             }
 
-            auto* buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
-            if (buffer->empty()) {
-                delete buffer;
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received == 0) {
+                free(buffer);
                 request->_tempObject = nullptr;
                 request->send(400, "application/json", "{\"error\":\"Empty payload\"}");
                 return;
             }
 
+            if (buffer->received != buffer->capacity) {
+                free(buffer);
+                request->_tempObject = nullptr;
+                request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+                return;
+            }
+
             SystemSettingsPtr candidate = makeSystemSettings();
             if (!candidate) {
-                delete buffer;
+                free(buffer);
                 request->_tempObject = nullptr;
                 request->send(500, "application/json", "{\"error\":\"Memory allocation failed\"}");
                 return;
@@ -176,10 +298,10 @@ void WebServerManager::registerRoutes() {
 
             char errBuf[128] = {};
             bool parseOk = SettingsService::deserializeSettingsJson(
-                buffer->data(), buffer->size(), *candidate, errBuf, sizeof(errBuf)
+                buffer->data(), buffer->received, *candidate, errBuf, sizeof(errBuf)
             );
 
-            delete buffer;
+            free(buffer);
             request->_tempObject = nullptr;
 
             if (!parseOk) {
@@ -209,23 +331,7 @@ void WebServerManager::registerRoutes() {
         },
         nullptr,
         [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-            if (total > 32768) {
-                request->send(413, "application/json", "{\"error\":\"Payload too large (max 32KB)\"}");
-                return;
-            }
-
-            std::vector<uint8_t>* buffer = nullptr;
-            if (index == 0) {
-                buffer = new std::vector<uint8_t>();
-                buffer->reserve(total);
-                request->_tempObject = buffer;
-            } else {
-                buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
-            }
-
-            if (buffer != nullptr && data != nullptr && len > 0) {
-                buffer->insert(buffer->end(), data, data + len);
-            }
+            handleRequestBodyChunk(request, data, len, index, total, 32768, "{\"error\":\"Payload too large (max 32KB)\"}");
         }
     );
 
@@ -318,25 +424,23 @@ void WebServerManager::registerRoutes() {
     server_.on("/api/v1/control/resume", HTTP_POST, resumeHandler);
 
     auto commandBodyBuffer = [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-        if (total > 2048) {
-            request->send(413, "application/json", "{\"error\":\"Payload too large\"}");
-            return;
-        }
-        std::vector<uint8_t>* buffer = nullptr;
-        if (index == 0) {
-            buffer = new std::vector<uint8_t>();
-            buffer->reserve(total);
-            request->_tempObject = buffer;
-        } else {
-            buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
-        }
-        if (buffer && data && len > 0) {
-            buffer->insert(buffer->end(), data, data + len);
-        }
+        handleRequestBodyChunk(request, data, len, index, total, 2048, "{\"error\":\"Payload too large\"}");
     };
 
     auto speedHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+
         if (commandStager_ == nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
             request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
             return;
         }
@@ -346,23 +450,31 @@ void WebServerManager::registerRoutes() {
         float deltaSpeed = 0.0f;
 
         if (request->_tempObject) {
-            auto* buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
-            JsonDocument doc;
-            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->size());
-            delete buffer;
-            request->_tempObject = nullptr;
-            if (!err) {
-                if (doc.containsKey("speed")) {
-                    hasTarget = true;
-                    targetSpeed = doc["speed"].as<float>();
-                } else if (doc.containsKey("delta")) {
-                    hasDelta = true;
-                    deltaSpeed = doc["delta"].as<float>();
-                } else if (doc.containsKey("deltaSpeed")) {
-                    hasDelta = true;
-                    deltaSpeed = doc["deltaSpeed"].as<float>();
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received != buffer->capacity) {
+                free(buffer);
+                request->_tempObject = nullptr;
+                request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+                return;
+            }
+            if (buffer->received > 0) {
+                JsonDocument doc;
+                DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+                if (!err) {
+                    if (doc.containsKey("speed")) {
+                        hasTarget = true;
+                        targetSpeed = doc["speed"].as<float>();
+                    } else if (doc.containsKey("delta")) {
+                        hasDelta = true;
+                        deltaSpeed = doc["delta"].as<float>();
+                    } else if (doc.containsKey("deltaSpeed")) {
+                        hasDelta = true;
+                        deltaSpeed = doc["deltaSpeed"].as<float>();
+                    }
                 }
             }
+            free(buffer);
+            request->_tempObject = nullptr;
         }
         if (!hasTarget && !hasDelta) {
             if (request->hasParam("speed")) {
@@ -402,7 +514,19 @@ void WebServerManager::registerRoutes() {
     server_.on("/api/v1/control/speed", HTTP_POST, speedHandler, nullptr, commandBodyBuffer);
 
     auto inclineHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+
         if (commandStager_ == nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
             request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
             return;
         }
@@ -412,23 +536,31 @@ void WebServerManager::registerRoutes() {
         float deltaIncline = 0.0f;
 
         if (request->_tempObject) {
-            auto* buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
-            JsonDocument doc;
-            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->size());
-            delete buffer;
-            request->_tempObject = nullptr;
-            if (!err) {
-                if (doc.containsKey("incline")) {
-                    hasTarget = true;
-                    targetIncline = doc["incline"].as<float>();
-                } else if (doc.containsKey("delta")) {
-                    hasDelta = true;
-                    deltaIncline = doc["delta"].as<float>();
-                } else if (doc.containsKey("deltaIncline")) {
-                    hasDelta = true;
-                    deltaIncline = doc["deltaIncline"].as<float>();
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received != buffer->capacity) {
+                free(buffer);
+                request->_tempObject = nullptr;
+                request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+                return;
+            }
+            if (buffer->received > 0) {
+                JsonDocument doc;
+                DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+                if (!err) {
+                    if (doc.containsKey("incline")) {
+                        hasTarget = true;
+                        targetIncline = doc["incline"].as<float>();
+                    } else if (doc.containsKey("delta")) {
+                        hasDelta = true;
+                        deltaIncline = doc["delta"].as<float>();
+                    } else if (doc.containsKey("deltaIncline")) {
+                        hasDelta = true;
+                        deltaIncline = doc["deltaIncline"].as<float>();
+                    }
                 }
             }
+            free(buffer);
+            request->_tempObject = nullptr;
         }
         if (!hasTarget && !hasDelta) {
             if (request->hasParam("incline")) {
@@ -478,14 +610,28 @@ void WebServerManager::registerRoutes() {
         "/api/v1/simulator/console",
         HTTP_POST,
         [this](AsyncWebServerRequest* request) {
+            if (request->getResponse() != nullptr) {
+                if (request->_tempObject) {
+                    free(request->_tempObject);
+                    request->_tempObject = nullptr;
+                }
+                return;
+            }
+
             if (!request->_tempObject) {
                 request->send(400, "application/json", "{\"error\":\"Missing body\"}");
                 return;
             }
-            auto* buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received != buffer->capacity) {
+                free(buffer);
+                request->_tempObject = nullptr;
+                request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+                return;
+            }
             JsonDocument doc;
-            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->size());
-            delete buffer;
+            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+            free(buffer);
             request->_tempObject = nullptr;
 
             if (err) {
@@ -541,17 +687,7 @@ void WebServerManager::registerRoutes() {
         },
         nullptr,
         [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-            std::vector<uint8_t>* buffer = nullptr;
-            if (index == 0) {
-                buffer = new std::vector<uint8_t>();
-                buffer->reserve(total);
-                request->_tempObject = buffer;
-            } else {
-                buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
-            }
-            if (buffer && data && len > 0) {
-                buffer->insert(buffer->end(), data, data + len);
-            }
+            handleRequestBodyChunk(request, data, len, index, total, 2048, "{\"error\":\"Payload too large\"}");
         }
     );
 
@@ -560,7 +696,19 @@ void WebServerManager::registerRoutes() {
         "/api/v1/simulator/runner",
         HTTP_POST,
         [this](AsyncWebServerRequest* request) {
+            if (request->getResponse() != nullptr) {
+                if (request->_tempObject) {
+                    free(request->_tempObject);
+                    request->_tempObject = nullptr;
+                }
+                return;
+            }
+
             if (simRuntime_ == nullptr) {
+                if (request->_tempObject) {
+                    free(request->_tempObject);
+                    request->_tempObject = nullptr;
+                }
                 request->send(503, "application/json", "{\"error\":\"Simulator runtime not attached\"}");
                 return;
             }
@@ -568,10 +716,16 @@ void WebServerManager::registerRoutes() {
                 request->send(400, "application/json", "{\"error\":\"Missing body\"}");
                 return;
             }
-            auto* buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received != buffer->capacity) {
+                free(buffer);
+                request->_tempObject = nullptr;
+                request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+                return;
+            }
             JsonDocument doc;
-            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->size());
-            delete buffer;
+            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+            free(buffer);
             request->_tempObject = nullptr;
 
             if (err) {
@@ -596,17 +750,7 @@ void WebServerManager::registerRoutes() {
         },
         nullptr,
         [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-            std::vector<uint8_t>* buffer = nullptr;
-            if (index == 0) {
-                buffer = new std::vector<uint8_t>();
-                buffer->reserve(total);
-                request->_tempObject = buffer;
-            } else {
-                buffer = static_cast<std::vector<uint8_t>*>(request->_tempObject);
-            }
-            if (buffer && data && len > 0) {
-                buffer->insert(buffer->end(), data, data + len);
-            }
+            handleRequestBodyChunk(request, data, len, index, total, 2048, "{\"error\":\"Payload too large\"}");
         }
     );
 #endif

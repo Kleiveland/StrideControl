@@ -1,5 +1,7 @@
 #include "ControlRuntime.h"
 #include <cmath>
+#include <atomic>
+#include <Arduino.h>
 
 namespace stridecontrol {
 
@@ -57,59 +59,74 @@ bool ControlRuntime::isSnapshotAuthoritative(
     const ApplicationSnapshot& snapshot,
     uint32_t nowMs
 ) {
+    static bool s_wasAuthoritative = false;
+    const char* dropReason = nullptr;
+    char reasonBuf[96]{};
+
     // 1. Initialized state check: Reject default or unpopulated snapshots
     if (snapshot.timestampMs == 0 && snapshot.sequenceNumber == 0) {
-        return false;
+        dropReason = "Unpopulated (timestamp=0, seq=0)";
     }
-
     // 2. Rollover-safe snapshot age calculation
-    const uint32_t ageMs = nowMs - snapshot.timestampMs;
-    if (ageMs > kMaxSnapshotAgeMs) {
-        return false;
+    else if ((nowMs - snapshot.timestampMs) > kMaxSnapshotAgeMs) {
+        const uint32_t ageMs = nowMs - snapshot.timestampMs;
+        snprintf(reasonBuf, sizeof(reasonBuf), "Age: %lu ms (limit %u ms)",
+                 static_cast<unsigned long>(ageMs), static_cast<unsigned int>(kMaxSnapshotAgeMs));
+        dropReason = reasonBuf;
     }
-
     // 3. System health check: Reject critical or fatal fault severities
-    if (snapshot.health.highestSeverity == FaultSeverity::Critical ||
-        snapshot.health.highestSeverity == FaultSeverity::Fatal) {
-        return false;
+    else if (snapshot.health.highestSeverity == FaultSeverity::Critical ||
+             snapshot.health.highestSeverity == FaultSeverity::Fatal) {
+        snprintf(reasonBuf, sizeof(reasonBuf), "Severity: %d",
+                 static_cast<int>(snapshot.health.highestSeverity));
+        dropReason = reasonBuf;
     }
-
     // 4. Speed sensor check with operational stopped-speed exemption
-    if (!snapshot.speed.initialized) {
-        return false;
+    else if (!snapshot.speed.initialized) {
+        dropReason = "SpeedNotInit";
+    } else if (snapshot.speed.status == SpeedSensorStatus::HardwareError ||
+               snapshot.speed.status == SpeedSensorStatus::Uninitialized) {
+        snprintf(reasonBuf, sizeof(reasonBuf), "SpeedStatus: %d",
+                 static_cast<int>(snapshot.speed.status));
+        dropReason = reasonBuf;
+    } else if (snapshot.speed.speedKmh > 0.1f &&
+               (!snapshot.speed.measurementValid ||
+                snapshot.speed.status != SpeedSensorStatus::Measuring)) {
+        snprintf(reasonBuf, sizeof(reasonBuf), "SpeedInvalid (valid=%d, status=%d, spd=%.2f km/h)",
+                 static_cast<int>(snapshot.speed.measurementValid),
+                 static_cast<int>(snapshot.speed.status),
+                 snapshot.speed.speedKmh);
+        dropReason = reasonBuf;
     }
-    if (snapshot.speed.status == SpeedSensorStatus::HardwareError ||
-        snapshot.speed.status == SpeedSensorStatus::Uninitialized) {
-        return false;
-    }
-
-    if (snapshot.speed.speedKmh > 0.1f) {
-        // When belt is moving, speed pulses must be actively measuring and valid
-        if (!snapshot.speed.measurementValid ||
-            snapshot.speed.status != SpeedSensorStatus::Measuring) {
-            return false;
-        }
-    } else {
-        // Standstill exemption: At operational standstill (speed <= 0.1 km/h),
-        // pulse intervals are not generated. AwaitingFirstPulse and TimedOut
-        // are accepted as valid stopped belt states.
-    }
-
     // 5. Incline sensor basic health
-    if (!snapshot.incline.initialized ||
-        snapshot.incline.status == InclineStatus::HardwareError) {
-        return false;
+    else if (!snapshot.incline.initialized ||
+             snapshot.incline.status == InclineStatus::HardwareError) {
+        snprintf(reasonBuf, sizeof(reasonBuf), "InclineStatus: init=%d, stat=%d",
+                 static_cast<int>(snapshot.incline.initialized),
+                 static_cast<int>(snapshot.incline.status));
+        dropReason = reasonBuf;
     }
-
     // 6. Runner dynamics check when moving
-    if (snapshot.runner.initialized && snapshot.speed.speedKmh > 0.1f) {
-        if (snapshot.runner.distancePauseReason == RunnerDistancePauseReason::SpeedInvalid ||
-            snapshot.runner.distancePauseReason == RunnerDistancePauseReason::ImuInvalid) {
-            return false;
-        }
+    else if (snapshot.runner.initialized && snapshot.speed.speedKmh > 0.1f &&
+             (snapshot.runner.distancePauseReason == RunnerDistancePauseReason::SpeedInvalid ||
+              snapshot.runner.distancePauseReason == RunnerDistancePauseReason::ImuInvalid)) {
+        snprintf(reasonBuf, sizeof(reasonBuf), "PauseReason: %d",
+                 static_cast<int>(snapshot.runner.distancePauseReason));
+        dropReason = reasonBuf;
     }
 
-    return true;
+    const bool authoritative = (dropReason == nullptr);
+
+    if (s_wasAuthoritative && !authoritative) {
+        Serial.printf("[Authority] DROPPED: Reason: %s | Time: %lu ms | Seq: %lu | Now: %lu ms\n",
+                      dropReason ? dropReason : "Unknown",
+                      static_cast<unsigned long>(snapshot.timestampMs),
+                      static_cast<unsigned long>(snapshot.sequenceNumber),
+                      static_cast<unsigned long>(nowMs));
+    }
+    s_wasAuthoritative = authoritative;
+
+    return authoritative;
 }
 
 void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs) {
