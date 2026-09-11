@@ -1056,7 +1056,7 @@
                     <div class="dialog-txt-wrap"><div class="dialog-main-title">Start møllen for å fortsette, eller velg:</div></div>
                     <div class="dialog-btn-group">
                         <button class="btn-dialog-act sec clickable nav-btn" data-target="view-manual">Bytt til manuell</button>
-                        <button class="btn-dialog-act prim clickable nav-btn" data-target="view-summary">Avslutt økt</button>
+                        <button class="btn-dialog-act prim clickable" id="btn-finalize-session">Avslutt økt</button>
                     </div>
                 </div>
             </div>
@@ -1391,6 +1391,25 @@
                     renderSummaryScreen();
                 }
 
+                if (activeUserProfile && typeof activeUserProfile.id === 'number') {
+                    const manualTargets = ['view-manual'];
+                    const intervalTargets = ['view-interval-pre', 'view-interval-run',
+                        'view-interval-pause-1', 'view-interval-pause-2', 'view-interval-stop'];
+                    let isManualTarget = null;
+                    if (manualTargets.includes(target)) {
+                        isManualTarget = true;
+                    } else if (intervalTargets.includes(target)) {
+                        isManualTarget = false;
+                    }
+                    if (isManualTarget !== null) {
+                        fetch('/api/v1/control/mode', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ userId: activeUserProfile.id, isManual: isManualTarget })
+                        }).catch(err => console.error('[Control] SetGuiMode failed:', err));
+                    }
+                }
+
                 document.querySelectorAll('.view, .view-grid, .view-flex').forEach(el => el.classList.remove('active'));
                 const bootView = document.getElementById('view-boot');
                 if (bootView) bootView.classList.remove('active');
@@ -1452,6 +1471,23 @@
                 showGlobalToast('INGEN FORBINDELSE TIL MØLLEN');
             });
         });
+
+        const btnFinalizeSession = document.getElementById('btn-finalize-session');
+        if (btnFinalizeSession) {
+            btnFinalizeSession.addEventListener('click', () => {
+                fetch('/api/v1/control/workout/finalize', { method: 'POST' })
+                .then(res => {
+                    if (!res.ok) {
+                        console.error('[Control] Finalize session rejected:', res.status);
+                        showGlobalToast('KOMMANDO AVVIST AV MØLLEN');
+                    }
+                })
+                .catch(err => {
+                    console.error('[Control] Finalize session failed:', err);
+                    showGlobalToast('INGEN FORBINDELSE TIL MØLLEN');
+                });
+            });
+        }
 
 
         let speedTimer = null;
@@ -2883,6 +2919,8 @@
         // Manual Mode Elapsed Time State
         let manualElapsedMs = 0;
         let lastManualTelemetryTimestampMs = null;
+        let suspendedSinceMs = null;
+        const MANUAL_PAUSE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 
         const TELEMETRY_POLL_INTERVAL_MS = 500;
         const TELEMETRY_TIMEOUT_MS = 1500;
@@ -3237,6 +3275,25 @@
 
         function syncIntervalViewOnStateChange(sessionState) {
             if (!sessionState || typeof sessionState !== 'string') return;
+
+            // 15-minute continuous-Suspended timeout: force the launcher screen (Screen 8) so the
+            // treadmill doesn't sit indefinitely on a stale pause screen. This intentionally bypasses
+            // the modal-open guard below, since after 15 minutes of total inactivity we want to
+            // reclaim the display regardless of what's on screen.
+            if (sessionState === 'Suspended') {
+                if (suspendedSinceMs === null) {
+                    suspendedSinceMs = Date.now();
+                } else if (Date.now() - suspendedSinceMs >= MANUAL_PAUSE_TIMEOUT_MS) {
+                    suspendedSinceMs = null;
+                    document.querySelectorAll('.modal').forEach(el => el.classList.remove('active'));
+                    document.querySelectorAll('.view, .view-grid, .view-flex').forEach(el => el.classList.remove('active'));
+                    const bootView = document.getElementById('view-boot');
+                    if (bootView) bootView.classList.add('active');
+                    return;
+                }
+            } else {
+                suspendedSinceMs = null;
+            }
 
             // Query active view without allowing dormant views (like view-boot) to shadow active interval views
             const activeCandidates = Array.from(document.querySelectorAll('.view.active, .view-grid.active, .view-flex.active'));
