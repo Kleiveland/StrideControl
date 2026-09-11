@@ -443,6 +443,23 @@ void WebServerManager::registerRoutes() {
     server_.on("/api/control/resume", HTTP_POST, resumeHandler);
     server_.on("/api/v1/control/resume", HTTP_POST, resumeHandler);
 
+    auto finalizeHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::FinalizeWorkout;
+        cmd.timestampMs = millis();
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/workout/finalize", HTTP_POST, finalizeHandler);
+    server_.on("/api/v1/control/workout/finalize", HTTP_POST, finalizeHandler);
+
     auto commandBodyBuffer = [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
         handleRequestBodyChunk(request, data, len, index, total, 2048, "{\"error\":\"Payload too large\"}");
     };
@@ -600,6 +617,71 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/control/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
     server_.on("/api/v1/control/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
+
+    auto setGuiModeHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+        if (commandStager_ == nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        bool hasUserId = false;
+        uint8_t userId = 0;
+        bool isManual = false;
+
+        if (request->_tempObject) {
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received != buffer->capacity) {
+                free(buffer);
+                request->_tempObject = nullptr;
+                request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+                return;
+            }
+            if (buffer->received > 0) {
+                JsonDocument doc;
+                DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+                if (!err) {
+                    if (doc.containsKey("userId")) {
+                        hasUserId = true;
+                        userId = doc["userId"].as<uint8_t>();
+                    }
+                    if (doc.containsKey("isManual")) {
+                        isManual = doc["isManual"].as<bool>();
+                    }
+                }
+            }
+            free(buffer);
+            request->_tempObject = nullptr;
+        }
+
+        if (!hasUserId) {
+            request->send(400, "application/json", "{\"error\":\"Missing userId\"}");
+            return;
+        }
+
+        ControlCommand cmd{};
+        cmd.timestampMs = millis();
+        cmd.type = ControlCommandType::SetGuiMode;
+        cmd.data.guiMode.userId = userId;
+        cmd.data.guiMode.isManual = isManual;
+
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/mode", HTTP_POST, setGuiModeHandler, nullptr, commandBodyBuffer);
+    server_.on("/api/v1/control/mode", HTTP_POST, setGuiModeHandler, nullptr, commandBodyBuffer);
 
     auto inclineHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {

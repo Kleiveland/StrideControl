@@ -16,7 +16,9 @@ enum class ControlCommandType : uint8_t {
     StepSpeed,
     StepIncline,
     ArmWorkout,
-    CancelWorkout
+    CancelWorkout,
+    FinalizeWorkout,
+    SetGuiMode
 };
 
 struct ControlCommand {
@@ -37,6 +39,10 @@ struct ControlCommand {
             uint16_t workoutId;
             uint8_t userId;
         } arm;
+        struct {
+            uint8_t userId;
+            bool isManual;
+        } guiMode;
     } data{};
 };
 

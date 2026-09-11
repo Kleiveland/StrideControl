@@ -354,6 +354,12 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::CancelWorkout:
                 session_.abortSession(cmdNowMs);
                 break;
+            case ControlCommandType::FinalizeWorkout:
+                session_.finalizeSession(cmdNowMs);
+                break;
+            case ControlCommandType::SetGuiMode:
+                session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual);
+                break;
             case ControlCommandType::None:
             default:
                 break;
