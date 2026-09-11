@@ -309,8 +309,8 @@ bool BleManager::begin(const BleConfig& config) {
     }
 
     scan_->setActiveScan(true);
-    scan_->setInterval(100);
-    scan_->setWindow(60);
+    scan_->setInterval(320); // 200 ms (320 * 0.625 ms) for low RF duty cycle
+    scan_->setWindow(48);    // 30 ms (48 * 0.625 ms) -> ~15% duty cycle to protect Wi-Fi throughput
     scan_->setAdvertisedDeviceCallbacks(&s_scanCallbackAdapter, true);
 
     portENTER_CRITICAL(&mux_);

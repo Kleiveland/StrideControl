@@ -131,19 +131,24 @@ bool HeartRateClient::begin(const BleConfig& config, BleManager* bleManager) {
         return false;
     }
 
-    bool scanningActive = bleManager_->getState().isScanning;
-    if (config.autoConnectHr && !scanningActive) {
-        scanningActive = bleManager_->startScan();
+    const bool hasTargetDevice = (config.preferredHrMac[0] != '\0');
+    const bool shouldAutoScan = (config.autoConnectHr && hasTargetDevice);
+
+    bool scanningActive = false;
+    if (shouldAutoScan && bleManager_ != nullptr) {
+        scanningActive = bleManager_->getState().isScanning || bleManager_->startScan();
     }
 
     portENTER_CRITICAL(&mux_);
     state_.initialized = true;
-    if (config.autoConnectHr && scanningActive) {
+    if (shouldAutoScan && scanningActive) {
         state_.connectionState = HeartRateConnectionState::Scanning;
         internalState_ = HeartRateInternalState::Scanning;
+        stateEntryTimestampMs_ = millis();
     } else {
         state_.connectionState = HeartRateConnectionState::Disconnected;
         internalState_ = HeartRateInternalState::Idle;
+        stateEntryTimestampMs_ = millis();
     }
     isTransitioningLifecycle_ = false;
     portEXIT_CRITICAL(&mux_);
@@ -223,6 +228,7 @@ void HeartRateClient::startScan() {
     if (ok && !isShuttingDown_) {
         state_.connectionState = HeartRateConnectionState::Scanning;
         internalState_ = HeartRateInternalState::Scanning;
+        stateEntryTimestampMs_ = millis();
     }
     portEXIT_CRITICAL(&mux_);
 }
@@ -381,7 +387,11 @@ void HeartRateClient::update(uint32_t nowMs) {
         metrics_.disconnectEvents++;
         state_.connectionState = HeartRateConnectionState::Disconnected;
         state_.heartRateValid = false;
-        internalState_ = HeartRateInternalState::CooldownWait;
+        if (config_.preferredHrMac[0] != '\0' && config_.autoConnectHr) {
+            internalState_ = HeartRateInternalState::CooldownWait;
+        } else {
+            internalState_ = HeartRateInternalState::Idle;
+        }
         stateEntryTimestampMs_ = nowMs;
         hrChar_ = nullptr;
     }
@@ -419,6 +429,29 @@ void HeartRateClient::update(uint32_t nowMs) {
     }
     portEXIT_CRITICAL(&mux_);
 
+    // 3b. Scan Duration Watchdog (Enforce bounded scan window; never scan continuously)
+    BleManager* scanStopMgr = nullptr;
+    portENTER_CRITICAL(&mux_);
+    if (internalState_ == HeartRateInternalState::Scanning &&
+        (nowMs - stateEntryTimestampMs_ >= HeartRateClientTiming::SCAN_DURATION_MS)) {
+        scanStopMgr = bleManager_;
+        if (config_.preferredHrMac[0] != '\0' && config_.autoConnectHr) {
+            // Saved paired sensor: enter bounded cooldown before next targeted scan attempt
+            internalState_ = HeartRateInternalState::CooldownWait;
+            state_.connectionState = HeartRateConnectionState::Disconnected;
+            stateEntryTimestampMs_ = nowMs;
+        } else {
+            // Unpaired / discovery scan: return to completely Idle state (0% radio airtime)
+            internalState_ = HeartRateInternalState::Idle;
+            state_.connectionState = HeartRateConnectionState::Disconnected;
+        }
+    }
+    portEXIT_CRITICAL(&mux_);
+
+    if (scanStopMgr != nullptr) {
+        scanStopMgr->stopScan();
+    }
+
     // 4. Connection Handshake (Triggered on Core 0)
     char localTargetAddress[18]{};
     uint8_t localTargetAddressType = 0;
@@ -443,6 +476,12 @@ void HeartRateClient::update(uint32_t nowMs) {
     portEXIT_CRITICAL(&mux_);
 
     if (doConnect) {
+        // Stop active scanning immediately before establishing connection
+        BleManager* localScanMgr = bleManager_;
+        if (localScanMgr != nullptr) {
+            localScanMgr->stopScan();
+        }
+
         if (localClient == nullptr) {
             localClient = NimBLEDevice::createClient();
             portENTER_CRITICAL(&mux_);
@@ -506,17 +545,25 @@ void HeartRateClient::update(uint32_t nowMs) {
         portEXIT_CRITICAL(&mux_);
     }
 
-    // 5. Cooldown / Retry
+    // 5. Cooldown / Retry (Only if a saved paired device is configured)
     BleManager* localMgr = nullptr;
     bool autoScan = false;
     portENTER_CRITICAL(&mux_);
     if (internalState_ == HeartRateInternalState::CooldownWait &&
         (nowMs - stateEntryTimestampMs_ >= HeartRateClientTiming::RECONNECT_COOLDOWN_MS)) {
-        internalState_ = HeartRateInternalState::Scanning;
-        state_.connectionState = HeartRateConnectionState::Scanning;
-        metrics_.reconnectAttempts++;
-        localMgr = bleManager_;
-        autoScan = config_.autoConnectHr;
+        if (config_.preferredHrMac[0] != '\0' && config_.autoConnectHr) {
+            internalState_ = HeartRateInternalState::Scanning;
+            state_.connectionState = HeartRateConnectionState::Scanning;
+            stateEntryTimestampMs_ = nowMs;
+            metrics_.reconnectAttempts++;
+            localMgr = bleManager_;
+            autoScan = true;
+        } else {
+            // No saved target sensor: remain strictly Idle (0% radio airtime)
+            internalState_ = HeartRateInternalState::Idle;
+            state_.connectionState = HeartRateConnectionState::Disconnected;
+            autoScan = false;
+        }
     }
     portEXIT_CRITICAL(&mux_);
 
