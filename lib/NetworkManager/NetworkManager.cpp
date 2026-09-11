@@ -11,6 +11,7 @@ bool NetworkManager::begin() {
 }
 
 void NetworkManager::startSTA() {
+    dnsServer_.stop();
     state_ = NetworkState::ConnectingSTA;
     staStartTimeMs_ = millis();
 
@@ -43,6 +44,8 @@ void NetworkManager::startAP() {
     WiFi.mode(WIFI_AP);
     WiFi.setSleep(false);
     WiFi.softAP(kApSsid, kApPass);
+    dnsServer_.start(kDnsPort, "*", WiFi.softAPIP());
+    Serial.println("[NetworkManager] Captive portal DNS started (wildcard -> AP IP).");
 
     Serial.print("[NetworkManager] AP IP Address: ");
     Serial.println(WiFi.softAPIP());
@@ -91,6 +94,7 @@ void NetworkManager::update() {
         }
 
         case NetworkState::APFallback: {
+            dnsServer_.processNextRequest();
             if (nowMs - lastApRetryTimeMs_ >= kApRetryIntervalMs) {
                 Serial.println("[NetworkManager] Periodic check: retrying STA connection from AP mode...");
                 startSTA();

@@ -241,6 +241,26 @@ void WebServerManager::registerRoutes() {
         request->send(stream);
     });
 
+    // Captive portal / OS connectivity-check probes
+    server_.on("/generate_204", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(204);
+    });
+    server_.on("/gen_204", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(204);
+    });
+    server_.on("/hotspot-detect.html", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(200, "text/html", "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
+    });
+    server_.on("/library/test/success.html", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(200, "text/html", "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
+    });
+    server_.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(200, "text/plain", "Microsoft Connect Test");
+    });
+    server_.on("/ncsi.txt", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->send(200, "text/plain", "Microsoft NCSI");
+    });
+
     // GET /api/settings: Stream current system settings JSON
     server_.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest* request) {
         AsyncResponseStream* stream = request->beginResponseStream("application/json");
