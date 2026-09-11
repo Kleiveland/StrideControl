@@ -251,6 +251,20 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
 void WorkoutSession::setDesiredGuiMode(uint8_t userId, bool isManual) {
     desiredGuiUserId_ = userId;
     desiredGuiIsManual_ = isManual;
+
+    // A terminal session (Completed/Aborted) never transitions itself back to Idle - without
+    // this, no belt-start can ever be recognized again until a structured workout is
+    // explicitly armed. Since the GUI calls this on every relevant navigation (including
+    // returning to the launcher via "Ferdig"), this is the natural place to clear it.
+    if (snapshot_.state == WorkoutSessionState::Completed ||
+        snapshot_.state == WorkoutSessionState::Aborted) {
+        workout_ = nullptr;
+        snapshot_ = WorkoutSessionSnapshot{};
+        snapshot_.state = WorkoutSessionState::Idle;
+        snapshot_.initialized = true;
+        pendingIntent_ = WorkoutCommandIntent{};
+        beltHasStoppedSinceSuspend_ = false;
+    }
 }
 
 void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double currentRunnerDistanceKm) {
