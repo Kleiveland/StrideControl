@@ -802,6 +802,7 @@
             <div class="zone-manual-time">
                 <div class="hero-lbl-scaled">TID</div>
                 <div class="hero-time-manual">00:00</div>
+                <div id="manual-pause-badge" style="visibility:hidden; font-size: 76px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 3px; margin-top: 5px;">Pause</div>
             </div>
 
             <div class="zone-telemetry-manual" id="manual-telemetry">
@@ -3106,13 +3107,18 @@
                 }
             }
 
-            // Fart (Snitt/Maks) - Missing in backend JSON schema -> render '--'
+            // Fart (Snitt/Maks) - average is derivable from distance+duration (same data as
+            // pace); max speed still requires backend tracking that doesn't exist yet.
             const sumSpdEl = document.getElementById('sum-spd-val');
             if (sumSpdEl) {
+                const totalHrs = (typeof durationMs === 'number' && durationMs > 0) ? (durationMs / 3600000) : 0;
+                const avgSpeedKmh = (typeof distKm === 'number' && distKm > 0.05 && totalHrs > 0) ? (distKm / totalHrs) : null;
+                const avgSpeedText = (typeof avgSpeedKmh === 'number') ? formatDecimalComma(avgSpeedKmh, 1) : '--';
+                const maxSpeedText = (typeof data?.maxSpeedKmh === 'number') ? formatDecimalComma(data.maxSpeedKmh, 1) : '--';
                 if (typeof data?.avgSpeedKmh === 'number' && typeof data?.maxSpeedKmh === 'number') {
                     sumSpdEl.innerText = `${formatDecimalComma(data.avgSpeedKmh, 1)} / ${formatDecimalComma(data.maxSpeedKmh, 1)}`;
                 } else {
-                    sumSpdEl.innerText = '--';
+                    sumSpdEl.innerText = `${avgSpeedText} / ${maxSpeedText}`;
                 }
             }
         }
@@ -3265,6 +3271,11 @@
                 telem.session?.state !== 'Completed' &&
                 telem.session?.state !== 'Aborted';
             setDashboardHotkeysEnabled(isBeltRunning);
+
+            const manualPauseBadge = document.getElementById('manual-pause-badge');
+            if (manualPauseBadge) {
+                manualPauseBadge.style.visibility = (telem.session?.state === 'Suspended') ? 'visible' : 'hidden';
+            }
 
             // GUI-SAFETY-001: Global Activity Interlock (DESIGN_GUIDE.md §14.1)
             const manualTopBar = document.getElementById('manual-topbar');

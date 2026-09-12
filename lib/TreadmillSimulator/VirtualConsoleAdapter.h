@@ -34,6 +34,9 @@ public:
             if (cmd.type == CommandType::PressButton && cmd.button == ButtonId::QuickStart) {
                 treadmill_.setEmergencyStop(false);
                 treadmill_.setTargetSpeedKmh(1.0f);
+                treadmill_.setTargetInclinePct(0.0f);
+                resetResumeDefaults();
+                consecutiveStopPresses_ = 0;
                 quickStartCount_++;
                 return true;
             }
@@ -87,13 +90,25 @@ public:
                 switch (cmd.button) {
                     case ButtonId::QuickStart: {
                         quickStartCount_++;
+                        consecutiveStopPresses_ = 0;
                         treadmill_.setEmergencyStop(false);
-                        treadmill_.setTargetSpeedKmh(1.0f);
+                        treadmill_.setTargetSpeedKmh(preStopTargetSpeedKmh_);
+                        treadmill_.setTargetInclinePct(preStopTargetInclinePct_);
                         return true;
                     }
 
                     case ButtonId::Stop: {
                         stopCount_++;
+                        consecutiveStopPresses_++;
+                        if (consecutiveStopPresses_ == 1) {
+                            const float currentTarget = treadmill_.getTargetSpeedKmh();
+                            if (currentTarget > 0.0f) {
+                                preStopTargetSpeedKmh_ = currentTarget;
+                                preStopTargetInclinePct_ = treadmill_.getTargetInclinePct();
+                            }
+                        } else {
+                            resetResumeDefaults();
+                        }
                         treadmill_.setTargetSpeedKmh(0.0f);
                         return true;
                     }
@@ -174,6 +189,11 @@ public:
     const TreadmillCommand& getLastCommand() const { return lastCommand_; }
 
 private:
+    void resetResumeDefaults() {
+        preStopTargetSpeedKmh_ = 1.0f;
+        preStopTargetInclinePct_ = 0.0f;
+    }
+
     VirtualTreadmill& treadmill_;
     uint32_t totalCommandsReceived_ = 0;
     uint32_t quickStartCount_ = 0;
@@ -181,6 +201,9 @@ private:
     uint32_t emergencyStopCount_ = 0;
     uint32_t speedCommandsCount_ = 0;
     uint32_t inclineCommandsCount_ = 0;
+    float preStopTargetSpeedKmh_ = 1.0f;
+    float preStopTargetInclinePct_ = 0.0f;
+    uint8_t consecutiveStopPresses_ = 0;
     TreadmillCommand lastCommand_{};
 };
 
