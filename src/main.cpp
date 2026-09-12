@@ -69,6 +69,10 @@ public:
         report.heartRateBpm = telem.snapshot.heartRate.heartRateBpm;
         report.heartRateValid = telem.snapshot.heartRate.heartRateValid;
         report.totalElapsedTimeMs = telem.sessionSnapshot.totalElapsedTimeMs;
+        report.totalElevationMeters = telem.sessionSnapshot.totalElevationMeters;
+        report.avgHeartRateBpm = telem.sessionSnapshot.avgHeartRateBpm;
+        report.maxHeartRateBpm = telem.sessionSnapshot.maxHeartRateBpm;
+        report.heartRateEverValid = telem.sessionSnapshot.heartRateEverValid;
         return true;
     }
 
@@ -131,6 +135,10 @@ public:
         report.heartRateBpm = snap.heartRate.heartRateBpm;
         report.heartRateValid = snap.heartRate.heartRateValid;
         report.totalElapsedTimeMs = sessSnap.totalElapsedTimeMs;
+        report.totalElevationMeters = sessSnap.totalElevationMeters;
+        report.avgHeartRateBpm = sessSnap.avgHeartRateBpm;
+        report.maxHeartRateBpm = sessSnap.maxHeartRateBpm;
+        report.heartRateEverValid = sessSnap.heartRateEverValid;
         return true;
     }
 
@@ -160,13 +168,16 @@ void setup() {
     // 2. Initialize Atomic Settings Service
     stridecontrol::SettingsService::instance().begin();
 
+#if defined(STRIDECONTROL_TESTBENCH)
+    // 4. Initialize Testbench Control Runtime & BLE stack before WiFi connects (Coex order)
+    s_testbenchRuntime.begin();
+#endif
+
     // 3. Initialize Network & Web Subsystems
     s_networkManager.begin();
     s_webServerManager.begin(&s_telemetryProvider);
 
 #if defined(STRIDECONTROL_TESTBENCH)
-    // 4. Initialize Testbench Control Runtime (Clean Idle boot contract)
-    s_testbenchRuntime.begin();
     s_webServerManager.attachSimulatorRuntime(&s_testbenchRuntime);
 
     // 5. Start Dedicated Core 0 Testbench Control Task

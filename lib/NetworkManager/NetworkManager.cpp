@@ -28,7 +28,7 @@ void NetworkManager::startSTA() {
     WiFi.disconnect(true, true);
     delay(100);
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);
+    WiFi.setSleep(WIFI_PS_MIN_MODEM);
     WiFi.setHostname(Secrets::MDNS_HOSTNAME);
     WiFi.begin(Secrets::WIFI_SSID, Secrets::WIFI_PASS);
 }
@@ -42,7 +42,7 @@ void NetworkManager::startAP() {
     WiFi.disconnect(true, true);
     delay(100);
     WiFi.mode(WIFI_AP);
-    WiFi.setSleep(false);
+    WiFi.setSleep(WIFI_PS_MIN_MODEM);
     WiFi.softAP(kApSsid, kApPass);
     dnsServer_.start(kDnsPort, "*", WiFi.softAPIP());
     Serial.println("[NetworkManager] Captive portal DNS started (wildcard -> AP IP).");

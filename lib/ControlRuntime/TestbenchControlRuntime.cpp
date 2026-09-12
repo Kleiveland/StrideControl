@@ -27,6 +27,8 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     runnerDynamics_.begin();
 
     // 2. Initialize ApplicationOrchestrator in ExternalStep mode
+    Serial.printf("[Testbench][BLE] Pre-init heap: free=%u, largest_free_block=%u, min_free=%u\n",
+                  ESP.getFreeHeap(), ESP.getMaxAllocHeap(), ESP.getMinFreeHeap());
     bleManager_.attachServices(&rscService_, &ftmsService_);
     const bool bleOk = bleManager_.begin(bleConfig);
     const bool hrOk = heartRateClient_.begin(bleConfig, &bleManager_);

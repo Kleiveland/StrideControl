@@ -198,6 +198,10 @@ void WebServerManager::registerRoutes() {
         session["stepIndex"] = report.stepIndex;
         session["stepRemainingMs"] = report.stepRemainingMs;
         session["elapsedTimeMs"] = report.totalElapsedTimeMs;
+        session["totalElevationMeters"] = report.totalElevationMeters;
+        session["avgHeartRateBpm"] = report.avgHeartRateBpm;
+        session["maxHeartRateBpm"] = report.maxHeartRateBpm;
+        session["heartRateEverValid"] = report.heartRateEverValid;
 
         JsonObject hr = doc["heartRate"].to<JsonObject>();
         hr["bpm"] = report.heartRateBpm;

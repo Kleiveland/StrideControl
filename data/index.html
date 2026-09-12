@@ -929,7 +929,7 @@
                 <div class="telemetry-interval-grid">
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Totaltid</div><div class="tele-val">00:00</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
+                    <div class="tele-col" id="int-run-klatret"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Distanse</div><div class="tele-val">0.00</div></div></div>
                     <div class="tele-col" id="int-run-puls"><div class="tele-content"><div class="tele-lbl">Puls</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div></div></div>
@@ -962,7 +962,7 @@
                 <div class="telemetry-interval-grid">
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Totaltid</div><div class="tele-val">00:00</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
+                    <div class="tele-col" id="int-p1-klatret"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Distanse</div><div class="tele-val">0.00</div></div></div>
                     <div class="tele-col" id="int-p1-puls"><div class="tele-content"><div class="tele-lbl">Puls</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div></div></div>
@@ -1008,7 +1008,7 @@
                 <div class="telemetry-interval-grid">
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Totaltid</div><div class="tele-val" id="p2-tele-totaltid">00:00</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
+                    <div class="tele-col" id="int-p2-klatret"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Distanse</div><div class="tele-val">0.00</div></div></div>
                     <div class="tele-col" id="int-p2-puls"><div class="tele-content"><div class="tele-lbl">Puls</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col">
@@ -1045,9 +1045,9 @@
                 <div class="telemetry-interval-grid">
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Totaltid</div><div class="tele-val">00:00</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
+                    <div class="tele-col" id="int-stop-klatret"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Distanse</div><div class="tele-val">0.00</div></div></div>
-                    <div class="tele-col" id="int-p1-puls"><div class="tele-content"><div class="tele-lbl">Puls</div><div class="tele-val">--</div></div></div>
+                    <div class="tele-col" id="int-stop-puls"><div class="tele-content"><div class="tele-lbl">Puls</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div></div></div>
                 </div>
             </div>
@@ -1094,8 +1094,8 @@
 
                     <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; background: #101010; border: 2px solid var(--border); border-radius: 20px; padding: 25px 15px;">
                         <div class="tele-col" style="border-right: 2px solid var(--border);"><div class="tele-content"><div class="tele-lbl" style="font-size: 28px;">Snittempo</div><div style="font-size: 95px; font-weight: 800; line-height: 0.85;" id="sum-pace-val">-- <span style="font-size: 34px; color: var(--text-dim);">min/km</span></div></div></div>
-                        <div class="tele-col" style="border-right: 2px solid var(--border);"><div class="tele-content"><div class="tele-lbl" style="font-size: 28px;">Klatret</div><div style="font-size: 95px; font-weight: 800; line-height: 0.85;" id="sum-climb-val">-- <span style="font-size: 34px; color: var(--text-dim);">m</span></div></div></div>
-                        <div class="tele-col" style="border-right: 2px solid var(--border);"><div class="tele-content"><div class="tele-lbl" style="font-size: 28px;">Puls (Snitt/Maks)</div><div style="font-size: 95px; font-weight: 800; line-height: 0.85;" id="sum-puls-val">--</div></div></div>
+                        <div class="tele-col" id="sum-climb-col" style="border-right: 2px solid var(--border);"><div class="tele-content"><div class="tele-lbl" style="font-size: 28px;">Klatret</div><div style="font-size: 95px; font-weight: 800; line-height: 0.85;" id="sum-climb-val">-- <span style="font-size: 34px; color: var(--text-dim);">m</span></div></div></div>
+                        <div class="tele-col" id="sum-puls-col" style="border-right: 2px solid var(--border);"><div class="tele-content"><div class="tele-lbl" style="font-size: 28px;">Puls (Snitt/Maks)</div><div style="font-size: 95px; font-weight: 800; line-height: 0.85;" id="sum-puls-val">--</div></div></div>
                         <div class="tele-col"><div class="tele-content"><div class="tele-lbl" style="font-size: 28px;">Fart (Snitt/Maks)</div><div style="font-size: 95px; font-weight: 800; line-height: 0.85;" id="sum-spd-val">--</div></div></div>
                     </div>
 
@@ -1373,6 +1373,11 @@
                             el.innerHTML = '&nbsp;';
                         }
                     });
+                    if (typeof applyUserProfile === 'function') {
+                        const dataId = parseInt(e.currentTarget.getAttribute('data-user-id'), 10);
+                        const userId = (!isNaN(dataId) && dataId > 0) ? dataId : (idx + 1);
+                        applyUserProfile({ id: userId, name: chosen || `Bruker ${idx + 1}` });
+                    }
                 }
 
                 document.getElementById('boot-btn-manuell').classList.add('unlocked');
@@ -1407,7 +1412,13 @@
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ userId: activeUserProfile.id, isManual: isManualTarget })
-                        }).catch(err => console.error('[Control] SetGuiMode failed:', err));
+                        })
+                        .then(res => {
+                            if (!res.ok) {
+                                console.error('[Control] SetGuiMode rejected:', res.status);
+                            }
+                        })
+                        .catch(err => console.error('[Control] SetGuiMode failed:', err));
                     }
                 }
 
@@ -2987,6 +2998,10 @@
             return val.toFixed(decimals).replace('.', ',');
         }
 
+        function setOptionalTeleCol(el, hasData) {
+            if (el) el.style.display = hasData ? '' : 'none';
+        }
+
         // GUI-006 & GUI-006A: Hotkey & Preset Dimming on Runner Dashboard
         function setDashboardHotkeysEnabled(enabled) {
             const hotkeys = document.querySelectorAll('#manual-incline-row .btn, #manual-speed-row .btn, #preset-rest-man, #preset-work-man');
@@ -3086,10 +3101,11 @@
                 }
             }
 
-            // Klatret (Total Elevation Gain) - Missing in backend JSON schema -> render '--'
+            // Klatret (Total Elevation Gain)
             const sumClimbEl = document.getElementById('sum-climb-val');
+            const elev = (typeof data?.elevationM === 'number') ? data.elevationM : ((typeof data?.climbM === 'number') ? data.climbM : null);
+            setOptionalTeleCol(document.getElementById('sum-climb-col'), typeof elev === 'number' && !isNaN(elev) && elev > 0);
             if (sumClimbEl) {
-                const elev = (typeof data?.elevationM === 'number') ? data.elevationM : ((typeof data?.climbM === 'number') ? data.climbM : null);
                 if (typeof elev === 'number' && !isNaN(elev)) {
                     sumClimbEl.innerHTML = `${Math.round(elev)} <span style="font-size: 34px; color: var(--text-dim);">m</span>`;
                 } else {
@@ -3097,10 +3113,13 @@
                 }
             }
 
-            // Puls (Snitt/Maks) - Missing in backend JSON schema -> render '--'
+            // Puls (Snitt/Maks)
             const sumPulsEl = document.getElementById('sum-puls-val');
+            setOptionalTeleCol(document.getElementById('sum-puls-col'), data?.session?.heartRateEverValid === true || (typeof data?.avgHeartRate === 'number' && typeof data?.maxHeartRate === 'number'));
             if (sumPulsEl) {
-                if (typeof data?.avgHeartRate === 'number' && typeof data?.maxHeartRate === 'number') {
+                if (data?.session?.heartRateEverValid === true) {
+                    sumPulsEl.innerText = `${Math.round(data.session.avgHeartRateBpm || 0)} / ${Math.round(data.session.maxHeartRateBpm || 0)}`;
+                } else if (typeof data?.avgHeartRate === 'number' && typeof data?.maxHeartRate === 'number') {
                     sumPulsEl.innerText = `${Math.round(data.avgHeartRate)} / ${Math.round(data.maxHeartRate)}`;
                 } else {
                     sumPulsEl.innerText = '--';
@@ -3139,7 +3158,7 @@
             const totalTimeStr = (typeof durationMs === 'number' && durationMs >= 0) ? formatMsToMMSS(durationMs) : '--';
 
             // Exact elevation field from JSON (missing in backend schema -> flags as '--')
-            const elev = (typeof telem.elevationM === 'number') ? telem.elevationM : ((typeof telem.climbM === 'number') ? telem.climbM : null);
+            const elev = (typeof telem.elevationM === 'number') ? telem.elevationM : ((typeof telem.climbM === 'number') ? telem.climbM : (typeof telem.session?.totalElevationMeters === 'number' ? telem.session.totalElevationMeters : null));
             const climbStr = (typeof elev === 'number' && !isNaN(elev)) ? `${Math.round(elev)} m` : '--';
 
             // Manual Mode Telemetry
@@ -3183,12 +3202,24 @@
                     }
                 }
             }
-            if (klatret) {
-                const incPct = (typeof inc === 'number') ? inc : 0;
-                klatret.style.display = (incPct > 0) ? 'flex' : 'none';
+            const hasElevationData = typeof telem.session?.totalElevationMeters === 'number' && telem.session.totalElevationMeters > 0;
+            setOptionalTeleCol(document.getElementById('col-klatret'), hasElevationData);
+            setOptionalTeleCol(document.getElementById('int-run-klatret'), hasElevationData);
+            setOptionalTeleCol(document.getElementById('int-p1-klatret'), hasElevationData);
+            setOptionalTeleCol(document.getElementById('int-p2-klatret'), hasElevationData);
+            setOptionalTeleCol(document.getElementById('int-stop-klatret'), hasElevationData);
+            if (hasElevationData) {
+                document.querySelectorAll('#col-klatret .tele-val, #int-run-klatret .tele-val, #int-p1-klatret .tele-val, #int-p2-klatret .tele-val, #int-stop-klatret .tele-val').forEach(el => {
+                    el.innerText = `${Math.round(telem.session.totalElevationMeters)} m`;
+                });
             }
 
             const hrStr = (telem.heartRate && telem.heartRate.valid && telem.heartRate.bpm > 0) ? String(telem.heartRate.bpm) : '--';
+
+            const hasHeartRateHistory = telem.session?.heartRateEverValid === true;
+            ['man-col-puls', 'int-pre-puls', 'int-run-puls', 'int-p1-puls', 'int-p2-puls', 'int-stop-puls'].forEach(id => {
+                setOptionalTeleCol(document.getElementById(id), hasHeartRateHistory);
+            });
 
             const manPulsVal = document.getElementById('man-puls-val');
             if (manPulsVal) {
