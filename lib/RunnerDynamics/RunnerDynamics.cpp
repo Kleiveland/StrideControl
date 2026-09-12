@@ -313,7 +313,23 @@ struct RunnerDynamics::Impl {
         // is guaranteed to misfire below some speed - scale the tolerance with expected
         // pulse interval instead, with margin, never looser than 2x the configured floor.
         const float expectedIntervalMs = (config_.speedSensorKmhPerHz / speedState.speedKmh) * 1000.0f;
-        const uint32_t dynamicMaxAgeMs = static_cast<uint32_t>(expectedIntervalMs * 1.5f);
+        // Widen the margin to absorb pulse jitter at low speed, but cap it so a genuinely
+        // dead/faulted signal is never allowed to hang undetected for too long.
+        constexpr uint32_t kDynamicMaxAgeCeilingMs = 2500;
+        constexpr uint32_t kLowSpeedCeilingMs = 3500;
+        constexpr float kLowSpeedZoneKmh = 3.0f;
+        uint32_t dynamicMaxAgeMs = std::min(
+            static_cast<uint32_t>(expectedIntervalMs * 2.0f),
+            kDynamicMaxAgeCeilingMs);
+        // Below kLowSpeedZoneKmh (an explicit low-speed/deceleration zone, kept generously
+        // above beltMovingThresholdKmh regardless of its configured value), active deceleration
+        // stretches pulse intervals far beyond what instantaneous speed predicts - including
+        // the very last pulse before a full stop. Grant a generous ceiling here so the belt can
+        // coast down to zero without tripping SpeedInvalid.
+        const float lowSpeedZoneKmh = std::max(kLowSpeedZoneKmh, config_.beltMovingThresholdKmh * 3.0f);
+        if (speedState.speedKmh <= lowSpeedZoneKmh) {
+            dynamicMaxAgeMs = kLowSpeedCeilingMs;
+        }
         const uint32_t effectiveMaxAgeMs = std::max(config_.speedDataMaxAgeMs, dynamicMaxAgeMs);
 
         return (speedState.lastPulseAgeMs <= effectiveMaxAgeMs);
