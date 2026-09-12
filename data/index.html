@@ -949,6 +949,8 @@
 
             <div class="interval-action-zone">
                 <div class="btn-act-action rest clickable" id="btn-kutt-drag" style="max-width: 540px;">KUTT DRAG</div>
+                <div class="btn-act-action work clickable" id="btn-goto-drag-run" style="max-width: 540px;">START DRAG NÅ</div>
+                <div class="btn-act-action rest clickable" id="btn-extend-rest-run">+30 SEKUNDER</div>
             </div>
         </div>
 
@@ -989,11 +991,11 @@
                             <svg><circle class="bg" cx="48" cy="48" r="40"></circle><circle class="progress" id="ring-progress" cx="48" cy="48" r="40"></circle></svg>
                             <div class="time-text">1:55</div>
                         </div>
-                        <div class="dialog-main-title">Øke med +0.2 km/t på resterende drag?</div>
+                        <div class="dialog-main-title" id="speed-shift-prompt-text">Øke farten på kommende drag i denne gruppen?</div>
                     </div>
                     <div class="dialog-btn-group">
                         <button class="btn-dialog-act yes clickable" id="btn-speed-plus-yes">Ja</button>
-                        <button class="btn-dialog-act no clickable nav-btn" data-target="view-interval-pause-2">Nei</button>
+                        <button class="btn-dialog-act no clickable nav-btn" id="btn-speed-plus-no" data-target="view-interval-pause-2">Nei</button>
                     </div>
                 </div>
             </div>
@@ -1035,6 +1037,7 @@
 
             <div class="interval-action-zone">
                 <div class="btn-act-action rest clickable" id="btn-extend-rest">+30 SEKUNDER</div>
+                <div class="btn-act-action work clickable" id="btn-goto-drag-p2" style="max-width: 540px;">START DRAG NÅ</div>
             </div>
         </div>
 
@@ -1477,26 +1480,18 @@
             }, 3000);
         }
 
-        document.getElementById('btn-speed-plus-yes').addEventListener('click', () => {
-            showGlobalToast('FART ØKT MED +0.2 KM/T');
-            document.getElementById('view-interval-pause-1').classList.remove('active');
-            document.getElementById('view-interval-pause-2').classList.add('active');
+        document.getElementById('btn-speed-plus-yes')?.addEventListener('click', () => {
+            document.getElementById('view-interval-pause-1')?.classList.remove('active');
+            document.getElementById('view-interval-pause-2')?.classList.add('active');
+            fetch('/api/v1/control/workout/acceptspeedshift', { method: 'POST' })
+                .then(res => { if (!res.ok) console.error('[Control] AcceptSpeedShift rejected:', res.status); })
+                .catch(err => console.error('[Control] AcceptSpeedShift failed:', err));
+        });
 
-            fetch('/api/v1/control/speed', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ delta: 0.2 })
-            })
-            .then(res => {
-                if (!res.ok) {
-                    console.error('[Control] Speed delta rejected:', res.status);
-                    showGlobalToast('KOMMANDO AVVIST AV MØLLEN');
-                }
-            })
-            .catch(err => {
-                console.error('[Control] Speed delta failed:', err);
-                showGlobalToast('INGEN FORBINDELSE TIL MØLLEN');
-            });
+        document.getElementById('btn-speed-plus-no')?.addEventListener('click', () => {
+            fetch('/api/v1/control/workout/rejectspeedshift', { method: 'POST' })
+                .then(res => { if (!res.ok) console.error('[Control] RejectSpeedShift rejected:', res.status); })
+                .catch(err => console.error('[Control] RejectSpeedShift failed:', err));
         });
 
         const btnFinalizeSession = document.getElementById('btn-finalize-session');
@@ -1527,6 +1522,20 @@
                 .then(res => { if (!res.ok) console.error('[Control] ExtendRest rejected:', res.status); })
                 .catch(err => console.error('[Control] ExtendRest failed:', err));
         });
+
+        document.getElementById('btn-extend-rest-run')?.addEventListener('click', () => {
+            fetch('/api/v1/control/workout/extendrest', { method: 'POST' })
+                .then(res => { if (!res.ok) console.error('[Control] ExtendRest rejected:', res.status); })
+                .catch(err => console.error('[Control] ExtendRest failed:', err));
+        });
+
+        function triggerSkipToDrag() {
+            fetch('/api/v1/control/workout/skiptodrag', { method: 'POST' })
+                .then(res => { if (!res.ok) console.error('[Control] SkipToNextDrag rejected:', res.status); })
+                .catch(err => console.error('[Control] SkipToNextDrag failed:', err));
+        }
+        document.getElementById('btn-goto-drag-run')?.addEventListener('click', triggerSkipToDrag);
+        document.getElementById('btn-goto-drag-p2')?.addEventListener('click', triggerSkipToDrag);
 
 
         let speedTimer = null;
@@ -2013,7 +2022,7 @@
         // ===================================================================
         // DYNAMISK TIDSLINJE-GENERERING
         // ===================================================================
-        function renderTimelines(wkModel = model, isFreeRun = false) {
+        function renderTimelines(wkModel = model, isFreeRun = false, actualDurationsMs = []) {
             if (isFreeRun) {
                 const freeRunHTML = `<div class="t-block-mass" style="width: 100%;"><div class="t-fill-mass" style="height: 60%; background: var(--phase-work);"></div></div>`;
                 if (dom.runTrack) dom.runTrack.innerHTML = freeRunHTML;
@@ -2026,10 +2035,17 @@
 
             const seq = buildExecutionSequence(wkModel);
             let totalTime = 0;
-            seq.forEach(s => { totalTime += (s.mode === 'time' ? s.amount : 60); });
+            seq.forEach((s, idx) => {
+                const plannedDurSec = s.mode === 'time' ? s.amount : 60;
+                const actualDurMs = actualDurationsMs[idx];
+                const dur = (typeof actualDurMs === 'number' && actualDurMs > 0) ? (actualDurMs / 1000) : plannedDurSec;
+                totalTime += dur;
+            });
 
             const blocksHTML = seq.map((s, idx) => {
-                const dur = s.mode === 'time' ? s.amount : 60;
+                const plannedDurSec = s.mode === 'time' ? s.amount : 60;
+                const actualDurMs = actualDurationsMs[idx];
+                const dur = (typeof actualDurMs === 'number' && actualDurMs > 0) ? (actualDurMs / 1000) : plannedDurSec;
                 const pct = Math.max(1, (dur / totalTime) * 100);
                 let color = 'var(--phase-work)';
                 let hPct = 85;
@@ -3120,7 +3136,7 @@
             } else if (typeof data?.session?.workoutId === 'number') {
                 const summaryWorkout = workoutLibrary.find(w => w.numericId === data.session.workoutId);
                 if (summaryWorkout) {
-                    renderTimelines(summaryWorkout, false);
+                    renderTimelines(summaryWorkout, false, data?.session?.actualStepDurationsMs ?? []);
                 }
             }
 
@@ -3277,13 +3293,67 @@
             }
 
             const isFreeRunSession = telem.session?.workoutId === 65535;
+            const kuttDragBtn = document.getElementById('btn-kutt-drag');
+            const gotoDragRunBtn = document.getElementById('btn-goto-drag-run');
+            const gotoDragP2Btn = document.getElementById('btn-goto-drag-p2');
+            const extendRestRunBtn = document.getElementById('btn-extend-rest-run');
+
             if (isFreeRunSession) {
                 renderTimelines(model, true);
+                if (kuttDragBtn) kuttDragBtn.style.display = 'none';
+                if (gotoDragRunBtn) gotoDragRunBtn.style.display = 'none';
+                if (gotoDragP2Btn) gotoDragP2Btn.style.display = 'none';
+                if (extendRestRunBtn) extendRestRunBtn.style.display = 'none';
             } else if (typeof telem.session?.workoutId === 'number') {
                 const activeWorkout = workoutLibrary.find(w => w.numericId === telem.session.workoutId);
                 if (activeWorkout) {
-                    renderTimelines(activeWorkout, false);
+                    renderTimelines(activeWorkout, false, telem.session.actualStepDurationsMs ?? []);
                     applyLiveTimelineProgress(telem.session.stepIndex ?? 0, telem.session.stepProgressFraction ?? 0);
+
+                    const seq = buildExecutionSequence(activeWorkout);
+                    const currentIdx = telem.session.stepIndex ?? 0;
+                    const currentStep = seq[currentIdx];
+                    const isDragStep = currentStep && currentStep.role === 'drag';
+                    const canStartDragNow = currentStep && currentStep.role !== 'drag' &&
+                        seq.slice(currentIdx + 1).some(s => s.role === 'drag');
+
+                    if (kuttDragBtn) kuttDragBtn.style.display = isDragStep ? '' : 'none';
+                    if (gotoDragRunBtn) gotoDragRunBtn.style.display = canStartDragNow ? '' : 'none';
+                    if (gotoDragP2Btn) gotoDragP2Btn.style.display = canStartDragNow ? '' : 'none';
+
+                    const isRestStep = currentStep && currentStep.role === 'rest';
+                    if (extendRestRunBtn) extendRestRunBtn.style.display = isRestStep ? '' : 'none';
+                } else {
+                    if (kuttDragBtn) kuttDragBtn.style.display = 'none';
+                    if (gotoDragRunBtn) gotoDragRunBtn.style.display = 'none';
+                    if (gotoDragP2Btn) gotoDragP2Btn.style.display = 'none';
+                    if (extendRestRunBtn) extendRestRunBtn.style.display = 'none';
+                }
+            } else {
+                if (kuttDragBtn) kuttDragBtn.style.display = 'none';
+                if (gotoDragRunBtn) gotoDragRunBtn.style.display = 'none';
+                if (gotoDragP2Btn) gotoDragP2Btn.style.display = 'none';
+                if (extendRestRunBtn) extendRestRunBtn.style.display = 'none';
+            }
+
+            if (telem.session?.speedAdjustmentPromptActive === true) {
+                const delta = telem.session.suggestedSpeedDeltaKmh ?? 0;
+                const verb = delta > 0 ? 'Øke' : 'Redusere';
+                const deltaAbs = Math.abs(delta).toFixed(1).replace('.', ',');
+                const promptTextEl = document.getElementById('speed-shift-prompt-text');
+                if (promptTextEl) {
+                    promptTextEl.textContent = `${verb} farten med ${deltaAbs} km/t på kommende drag i denne gruppen?`;
+                }
+                const p1El = document.getElementById('view-interval-pause-1');
+                if (p1El && document.querySelector('.view-flex.active')?.id !== 'view-interval-pause-1') {
+                    document.querySelectorAll('.view, .view-grid, .view-flex').forEach(v => v.classList.remove('active'));
+                    p1El.classList.add('active');
+                }
+            } else if (document.querySelector('.view-flex.active')?.id === 'view-interval-pause-1') {
+                const p2El = document.getElementById('view-interval-pause-2');
+                if (p2El) {
+                    document.querySelectorAll('.view, .view-grid, .view-flex').forEach(v => v.classList.remove('active'));
+                    p2El.classList.add('active');
                 }
             }
 
@@ -3429,8 +3499,11 @@
                     targetViewId = 'view-interval-pre';
                     break;
                 case 'Running':
-                    if (activeViewEl.id === 'view-interval-pause-1' || activeViewEl.id === 'view-interval-pause-2' ||
-                        activeViewEl.id === 'view-manual') {
+                    if (activeViewEl.id === 'view-interval-pause-1') {
+                        targetViewId = (lastAuthoritativeTelemetry?.session?.speedAdjustmentPromptActive === true)
+                            ? 'view-interval-pause-1'
+                            : 'view-interval-pause-2';
+                    } else if (activeViewEl.id === 'view-interval-pause-2' || activeViewEl.id === 'view-manual') {
                         targetViewId = activeViewEl.id;
                     } else {
                         targetViewId = 'view-interval-run';

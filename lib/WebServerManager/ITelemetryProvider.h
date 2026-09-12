@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include "../WorkoutEngine/WorkoutExecutionTypes.h"
 
 namespace stridecontrol {
 
@@ -32,6 +33,10 @@ struct TelemetryReport {
     uint16_t workoutId = 0;
     uint8_t totalStepCount = 0;
     float stepProgressFraction = 0.0f;
+    bool speedAdjustmentPromptActive = false;
+    float suggestedSpeedDeltaKmh = 0.0f;
+    uint32_t speedAdjustmentPromptExpiresMs = 0;
+    uint32_t actualStepDurationsMs[MAX_EXPANDED_WORKOUT_STEPS] = {};
 };
 
 /**

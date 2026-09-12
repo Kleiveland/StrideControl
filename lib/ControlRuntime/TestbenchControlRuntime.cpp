@@ -382,6 +382,7 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::SetSpeed:
                 composite_.stageSpeedTarget(cmd.data.target.speedKmh, cmdNowMs);
                 dispatcher_.stageSpeedTarget(cmd.data.target.speedKmh);
+                session_.reportWorkSpeedAdjustment(cmd.data.target.speedKmh);
                 break;
             case ControlCommandType::SetIncline:
                 composite_.stageInclineTarget(cmd.data.target.inclinePct, cmdNowMs);
@@ -392,6 +393,7 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 composite_.stageSpeedStep(positive, cmdNowMs);
                 const float currentSimSpd = composite_.getVirtualTreadmill().getTargetSpeedKmh();
                 dispatcher_.stepSpeedTarget(cmd.data.stepSpeed.deltaSpeedKmh, currentSimSpd);
+                session_.reportWorkSpeedAdjustment(currentSimSpd + cmd.data.stepSpeed.deltaSpeedKmh);
                 break;
             }
             case ControlCommandType::StepIncline: {
@@ -421,8 +423,17 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::CutDrag:
                 session_.cutDrag(cmdNowMs);
                 break;
+            case ControlCommandType::SkipToNextDrag:
+                session_.skipToNextDrag(cmdNowMs);
+                break;
             case ControlCommandType::ExtendRest:
                 session_.extendRest();
+                break;
+            case ControlCommandType::AcceptSpeedShift:
+                session_.acceptSpeedAdjustmentShift();
+                break;
+            case ControlCommandType::RejectSpeedShift:
+                session_.rejectSpeedAdjustmentShift();
                 break;
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual);

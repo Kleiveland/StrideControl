@@ -206,6 +206,13 @@ void WebServerManager::registerRoutes() {
         session["workoutId"] = report.workoutId;
         session["totalStepCount"] = report.totalStepCount;
         session["stepProgressFraction"] = report.stepProgressFraction;
+        session["speedAdjustmentPromptActive"] = report.speedAdjustmentPromptActive;
+        session["suggestedSpeedDeltaKmh"] = report.suggestedSpeedDeltaKmh;
+        session["speedAdjustmentPromptExpiresMs"] = report.speedAdjustmentPromptExpiresMs;
+        JsonArray actualDurations = session["actualStepDurationsMs"].to<JsonArray>();
+        for (uint8_t i = 0; i < report.stepIndex && i < MAX_EXPANDED_WORKOUT_STEPS; ++i) {
+            actualDurations.add(report.actualStepDurationsMs[i]);
+        }
 
         JsonObject hr = doc["heartRate"].to<JsonObject>();
         hr["bpm"] = report.heartRateBpm;
@@ -488,6 +495,25 @@ void WebServerManager::registerRoutes() {
     );
 
     server_.on(
+        "/api/v1/control/workout/skiptodrag",
+        HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (commandStager_ == nullptr) {
+                request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+                return;
+            }
+            ControlCommand cmd{};
+            cmd.timestampMs = millis();
+            cmd.type = ControlCommandType::SkipToNextDrag;
+            if (commandStager_->stageCommand(cmd)) {
+                request->send(200, "application/json", "{\"status\":\"queued\"}");
+            } else {
+                request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+            }
+        }
+    );
+
+    server_.on(
         "/api/v1/control/workout/extendrest",
         HTTP_POST,
         [this](AsyncWebServerRequest* request) {
@@ -498,6 +524,44 @@ void WebServerManager::registerRoutes() {
             ControlCommand cmd{};
             cmd.timestampMs = millis();
             cmd.type = ControlCommandType::ExtendRest;
+            if (commandStager_->stageCommand(cmd)) {
+                request->send(200, "application/json", "{\"status\":\"queued\"}");
+            } else {
+                request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+            }
+        }
+    );
+
+    server_.on(
+        "/api/v1/control/workout/acceptspeedshift",
+        HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (commandStager_ == nullptr) {
+                request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+                return;
+            }
+            ControlCommand cmd{};
+            cmd.timestampMs = millis();
+            cmd.type = ControlCommandType::AcceptSpeedShift;
+            if (commandStager_->stageCommand(cmd)) {
+                request->send(200, "application/json", "{\"status\":\"queued\"}");
+            } else {
+                request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+            }
+        }
+    );
+
+    server_.on(
+        "/api/v1/control/workout/rejectspeedshift",
+        HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (commandStager_ == nullptr) {
+                request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+                return;
+            }
+            ControlCommand cmd{};
+            cmd.timestampMs = millis();
+            cmd.type = ControlCommandType::RejectSpeedShift;
             if (commandStager_->stageCommand(cmd)) {
                 request->send(200, "application/json", "{\"status\":\"queued\"}");
             } else {

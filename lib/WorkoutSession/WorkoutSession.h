@@ -58,6 +58,7 @@ public:
 
     bool cutDrag(uint32_t nowMs);
     bool extendRest(uint32_t extensionSeconds = 30);
+    bool skipToNextDrag(uint32_t nowMs);
     bool advanceToNextStep(uint32_t nowMs);
     bool abortSession(uint32_t nowMs);
     bool finalizeSession(uint32_t nowMs);
@@ -118,6 +119,9 @@ private:
     bool pendingShiftPrompt_ = false;
     float netWorkSpeedDeltaKmh_ = 0.0f;
     float speedAdjustmentShiftAppliedKmh_ = 0.0f;
+    uint16_t speedAdjustmentShiftSegmentId_ = UINT16_MAX; // Sentinel: no segment tracked yet
+    uint32_t actualStepDurationsMs_[MAX_EXPANDED_WORKOUT_STEPS] = {};
+    bool hasPriorStep_ = false; // False only before the very first step of a fresh session
     uint32_t speedAdjustmentPromptExpiresMs_ = 0;
 
     // Intent latching & de-duplication

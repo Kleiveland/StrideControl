@@ -106,6 +106,7 @@ struct WorkoutSessionSnapshot {
     float suggestedSpeedDeltaKmh = 0.0f;
     float appliedWorkSpeedShiftKmh = 0.0f;
     uint32_t speedAdjustmentPromptExpiresMs = 0;
+    uint32_t actualStepDurationsMs[MAX_EXPANDED_WORKOUT_STEPS] = {};
 
     // Diagnostics & Sequence
     uint32_t snapshotTimestampMs = 0;

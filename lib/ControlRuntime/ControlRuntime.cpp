@@ -342,6 +342,7 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             case ControlCommandType::SetSpeed:
                 dispatcher_.stageSpeedTarget(cmd.data.target.speedKmh);
+                session_.reportWorkSpeedAdjustment(cmd.data.target.speedKmh);
                 break;
             case ControlCommandType::SetIncline:
                 dispatcher_.stageInclineTarget(cmd.data.target.inclinePct);
@@ -349,6 +350,7 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::StepSpeed: {
                 const float currentSpd = controller_.getSnapshot().acceptedPhysicalSpeedTargetKmh;
                 dispatcher_.stepSpeedTarget(cmd.data.stepSpeed.deltaSpeedKmh, currentSpd);
+                session_.reportWorkSpeedAdjustment(currentSpd + cmd.data.stepSpeed.deltaSpeedKmh);
                 break;
             }
             case ControlCommandType::StepIncline: {
@@ -376,8 +378,17 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::CutDrag:
                 session_.cutDrag(cmdNowMs);
                 break;
+            case ControlCommandType::SkipToNextDrag:
+                session_.skipToNextDrag(cmdNowMs);
+                break;
             case ControlCommandType::ExtendRest:
                 session_.extendRest();
+                break;
+            case ControlCommandType::AcceptSpeedShift:
+                session_.acceptSpeedAdjustmentShift();
+                break;
+            case ControlCommandType::RejectSpeedShift:
+                session_.rejectSpeedAdjustmentShift();
                 break;
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual);

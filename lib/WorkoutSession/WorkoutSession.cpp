@@ -57,6 +57,8 @@ bool WorkoutSession::begin(const WorkoutSessionConfig& config) {
     pendingShiftPrompt_ = false;
     netWorkSpeedDeltaKmh_ = 0.0f;
     speedAdjustmentShiftAppliedKmh_ = 0.0f;
+    speedAdjustmentShiftSegmentId_ = UINT16_MAX;
+    hasPriorStep_ = false;
     speedAdjustmentPromptExpiresMs_ = 0;
 
     acknowledgedHasSpeed_ = false;
@@ -154,6 +156,8 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, 
     pendingShiftPrompt_ = false;
     netWorkSpeedDeltaKmh_ = 0.0f;
     speedAdjustmentShiftAppliedKmh_ = 0.0f;
+    speedAdjustmentShiftSegmentId_ = UINT16_MAX;
+    hasPriorStep_ = false;
     speedAdjustmentPromptExpiresMs_ = 0;
 
     acknowledgedHasSpeed_ = false;
@@ -235,6 +239,8 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
         pendingShiftPrompt_ = false;
         netWorkSpeedDeltaKmh_ = 0.0f;
         speedAdjustmentShiftAppliedKmh_ = 0.0f;
+        speedAdjustmentShiftSegmentId_ = UINT16_MAX;
+        hasPriorStep_ = false;
         speedAdjustmentPromptExpiresMs_ = 0;
         acknowledgedHasSpeed_ = false;
         acknowledgedSpeedTargetKmh_ = 0.0f;
@@ -297,8 +303,18 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
         rejectSpeedAdjustmentShift();
     }
 
+    if (hasPriorStep_ && snapshot_.currentStepIndex < MAX_EXPANDED_WORKOUT_STEPS) {
+        actualStepDurationsMs_[snapshot_.currentStepIndex] = stepElapsedMs_;
+    }
+    hasPriorStep_ = true;
+
     snapshot_.currentStepIndex = stepIndex;
     snapshot_.currentStep = workout_->steps[stepIndex];
+    if (workout_->steps[stepIndex].segmentId != speedAdjustmentShiftSegmentId_) {
+        speedAdjustmentShiftAppliedKmh_ = 0.0f;
+        speedAdjustmentShiftSegmentId_ = workout_->steps[stepIndex].segmentId;
+        snapshot_.appliedWorkSpeedShiftKmh = 0.0f;
+    }
     snapshot_.currentRole = workout_->steps[stepIndex].role;
     snapshot_.currentRep = workout_->steps[stepIndex].repNumber;
     snapshot_.totalRepsInGroup = workout_->steps[stepIndex].totalRepsInGroup;
@@ -393,6 +409,9 @@ void WorkoutSession::advanceStep(uint32_t nowMs, double currentRunnerDistanceKm)
     }
 
     if (snapshot_.currentStepIndex + 1 >= workout_->totalSteps) {
+        if (hasPriorStep_ && snapshot_.currentStepIndex < MAX_EXPANDED_WORKOUT_STEPS) {
+            actualStepDurationsMs_[snapshot_.currentStepIndex] = stepElapsedMs_;
+        }
         if (snapshot_.currentStep.role == StepRole::COOLDOWN) {
             // Nedjogg completion: enter CompletionPending, do NOT stop or auto-complete
             snapshot_.state = WorkoutSessionState::CompletionPending;
@@ -595,6 +614,7 @@ void WorkoutSession::update(
         snapshot_.avgHeartRateBpm = (heartRateSampleCount_ > 0) ? (heartRateSampleSum_ / heartRateSampleCount_) : 0;
         snapshot_.maxHeartRateBpm = heartRateMaxBpm_;
         snapshot_.heartRateEverValid = heartRateEverValid_;
+        memcpy(snapshot_.actualStepDurationsMs, actualStepDurationsMs_, sizeof(snapshot_.actualStepDurationsMs));
         return;
     }
 
@@ -693,6 +713,7 @@ void WorkoutSession::update(
         snapshot_.isRestExtended = isRestExtendedCurrent_;
         snapshot_.restExtensionSeconds = restExtensionSecondsTotal_;
         snapshot_.appliedWorkSpeedShiftKmh = speedAdjustmentShiftAppliedKmh_;
+        memcpy(snapshot_.actualStepDurationsMs, actualStepDurationsMs_, sizeof(snapshot_.actualStepDurationsMs));
         return;
     }
 }
@@ -749,6 +770,31 @@ bool WorkoutSession::cutDrag(uint32_t nowMs) {
         startStep(targetStepIndex, nowMs, lastRunnerDistanceKm_);
     }
 
+    return true;
+}
+
+bool WorkoutSession::skipToNextDrag(uint32_t nowMs) {
+    if (!initialized_ || !snapshot_.active || snapshot_.state != WorkoutSessionState::Running ||
+        snapshot_.currentStep.role == StepRole::WORK || workout_ == nullptr) {
+        return false;
+    }
+
+    // Search forward for the next WORK (Drag) step - mirrors cutDrag()'s forward search for REST.
+    uint8_t targetStepIndex = snapshot_.currentStepIndex + 1;
+    bool found = false;
+    for (uint8_t i = snapshot_.currentStepIndex + 1; i < workout_->totalSteps; ++i) {
+        if (workout_->steps[i].role == StepRole::WORK) {
+            targetStepIndex = i;
+            found = true;
+            break;
+        }
+    }
+
+    if (!found) {
+        return false; // No upcoming drag step to skip to
+    }
+
+    startStep(targetStepIndex, nowMs, lastRunnerDistanceKm_);
     return true;
 }
 

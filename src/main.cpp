@@ -77,6 +77,10 @@ public:
         report.workoutId = telem.sessionSnapshot.workoutId;
         report.totalStepCount = telem.sessionSnapshot.totalStepCount;
         report.stepProgressFraction = telem.sessionSnapshot.stepProgressFraction;
+        report.speedAdjustmentPromptActive = telem.sessionSnapshot.speedAdjustmentPromptActive;
+        report.suggestedSpeedDeltaKmh = telem.sessionSnapshot.suggestedSpeedDeltaKmh;
+        report.speedAdjustmentPromptExpiresMs = telem.sessionSnapshot.speedAdjustmentPromptExpiresMs;
+        memcpy(report.actualStepDurationsMs, telem.sessionSnapshot.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
         return true;
     }
 
@@ -146,6 +150,10 @@ public:
         report.workoutId = sessSnap.workoutId;
         report.totalStepCount = sessSnap.totalStepCount;
         report.stepProgressFraction = sessSnap.stepProgressFraction;
+        report.speedAdjustmentPromptActive = sessSnap.speedAdjustmentPromptActive;
+        report.suggestedSpeedDeltaKmh = sessSnap.suggestedSpeedDeltaKmh;
+        report.speedAdjustmentPromptExpiresMs = sessSnap.speedAdjustmentPromptExpiresMs;
+        memcpy(report.actualStepDurationsMs, sessSnap.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
         return true;
     }
 
