@@ -34,6 +34,11 @@ bool WorkoutSession::begin(const WorkoutSessionConfig& config) {
     totalElapsedTimeMs_ = 0;
     activeRunningTimeMs_ = 0;
     totalValidatedDistanceKm_ = 0.0;
+    totalElevationMeters_ = 0.0;
+    heartRateSampleSum_ = 0;
+    heartRateSampleCount_ = 0;
+    heartRateMaxBpm_ = 0;
+    heartRateEverValid_ = false;
     stepElapsedMs_ = 0;
     stepElapsedValidatedDistanceKm_ = 0.0;
     runtimeStepTargetDurationMs_ = 0;
@@ -126,6 +131,11 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, 
     totalElapsedTimeMs_ = 0;
     activeRunningTimeMs_ = 0;
     totalValidatedDistanceKm_ = 0.0;
+    totalElevationMeters_ = 0.0;
+    heartRateSampleSum_ = 0;
+    heartRateSampleCount_ = 0;
+    heartRateMaxBpm_ = 0;
+    heartRateEverValid_ = false;
     stepElapsedMs_ = 0;
     stepElapsedValidatedDistanceKm_ = 0.0;
     distanceAtStepEntryKm_ = 0.0;
@@ -205,6 +215,11 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
         totalElapsedTimeMs_ = 0;
         activeRunningTimeMs_ = 0;
         totalValidatedDistanceKm_ = 0.0;
+        totalElevationMeters_ = 0.0;
+        heartRateSampleSum_ = 0;
+        heartRateSampleCount_ = 0;
+        heartRateMaxBpm_ = 0;
+        heartRateEverValid_ = false;
         stepElapsedMs_ = 0;
         stepElapsedValidatedDistanceKm_ = 0.0;
         distanceAtStepEntryKm_ = 0.0;
@@ -559,11 +574,27 @@ void WorkoutSession::update(
             }
             if (distDelta > 0.0) {
                 totalValidatedDistanceKm_ += distDelta;
+                const float physicalInclinePct = applicationSnapshot.incline.estimatedInclinePct;
+                if (physicalInclinePct > 0.0f) {
+                    totalElevationMeters_ += distDelta * 10.0 * static_cast<double>(physicalInclinePct);
+                }
+            }
+            if (applicationSnapshot.heartRate.heartRateValid && applicationSnapshot.heartRate.heartRateBpm > 0) {
+                heartRateEverValid_ = true;
+                heartRateSampleSum_ += applicationSnapshot.heartRate.heartRateBpm;
+                heartRateSampleCount_++;
+                if (applicationSnapshot.heartRate.heartRateBpm > heartRateMaxBpm_) {
+                    heartRateMaxBpm_ = applicationSnapshot.heartRate.heartRateBpm;
+                }
             }
         }
         snapshot_.totalElapsedTimeMs = totalElapsedTimeMs_;
         snapshot_.activeRunningTimeMs = activeRunningTimeMs_;
         snapshot_.totalValidatedDistanceKm = totalValidatedDistanceKm_;
+        snapshot_.totalElevationMeters = totalElevationMeters_;
+        snapshot_.avgHeartRateBpm = (heartRateSampleCount_ > 0) ? (heartRateSampleSum_ / heartRateSampleCount_) : 0;
+        snapshot_.maxHeartRateBpm = heartRateMaxBpm_;
+        snapshot_.heartRateEverValid = heartRateEverValid_;
         return;
     }
 
@@ -590,6 +621,18 @@ void WorkoutSession::update(
         }
         if (distDelta > 0.0) {
             totalValidatedDistanceKm_ += distDelta;
+            const float physicalInclinePct = applicationSnapshot.incline.estimatedInclinePct;
+            if (physicalInclinePct > 0.0f) {
+                totalElevationMeters_ += distDelta * 10.0 * static_cast<double>(physicalInclinePct);
+            }
+        }
+        if (applicationSnapshot.heartRate.heartRateValid && applicationSnapshot.heartRate.heartRateBpm > 0) {
+            heartRateEverValid_ = true;
+            heartRateSampleSum_ += applicationSnapshot.heartRate.heartRateBpm;
+            heartRateSampleCount_++;
+            if (applicationSnapshot.heartRate.heartRateBpm > heartRateMaxBpm_) {
+                heartRateMaxBpm_ = applicationSnapshot.heartRate.heartRateBpm;
+            }
         }
 
         // Active step progression
@@ -641,6 +684,10 @@ void WorkoutSession::update(
         snapshot_.totalElapsedTimeMs = totalElapsedTimeMs_;
         snapshot_.activeRunningTimeMs = activeRunningTimeMs_;
         snapshot_.totalValidatedDistanceKm = totalValidatedDistanceKm_;
+        snapshot_.totalElevationMeters = totalElevationMeters_;
+        snapshot_.avgHeartRateBpm = (heartRateSampleCount_ > 0) ? (heartRateSampleSum_ / heartRateSampleCount_) : 0;
+        snapshot_.maxHeartRateBpm = heartRateMaxBpm_;
+        snapshot_.heartRateEverValid = heartRateEverValid_;
         snapshot_.isPartialDrag = isPartialDragCurrent_;
         snapshot_.partialDragCount = partialDragCount_;
         snapshot_.isRestExtended = isRestExtendedCurrent_;

@@ -96,6 +96,11 @@ private:
     uint32_t totalElapsedTimeMs_ = 0;
     uint32_t activeRunningTimeMs_ = 0;
     double totalValidatedDistanceKm_ = 0.0;
+    double totalElevationMeters_ = 0.0;
+    uint32_t heartRateSampleSum_ = 0;
+    uint32_t heartRateSampleCount_ = 0;
+    uint8_t heartRateMaxBpm_ = 0;
+    bool heartRateEverValid_ = false;
 
     // Runtime modifiers
     uint8_t partialDragCount_ = 0;

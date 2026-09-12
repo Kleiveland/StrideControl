@@ -78,6 +78,10 @@ struct WorkoutSessionSnapshot {
     uint32_t totalElapsedTimeMs = 0;         // Wall-clock active workout time
     uint32_t activeRunningTimeMs = 0;        // Accumulated strictly when runner dynamics speed credit enabled
     double totalValidatedDistanceKm = 0.0;   // Accumulated strictly via RunnerDynamics
+    double totalElevationMeters = 0.0;
+    uint32_t avgHeartRateBpm = 0;
+    uint8_t maxHeartRateBpm = 0;
+    bool heartRateEverValid = false;
 
     // Target command intent
     bool hasSpeedTarget = false;
