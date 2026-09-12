@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "FileSystemManager.h"
 #include "SettingsService.h"
+#include "DiagnosticsLog.h"
 #include "NetworkManager.h"
 #include "WebServerManager.h"
 
@@ -210,17 +211,25 @@ void setup() {
     const bool inclineVerifierOk = s_inclineVerifier.begin();
     s_maintenanceService.begin(&stridecontrol::SettingsService::instance());
 
-    s_bleManager.attachServices(&s_rscService, &s_ftmsService);
     const stridecontrol::BleConfig bleConfig{};
-    const bool bleOk = s_bleManager.begin(bleConfig);
-    const bool hrOk = s_heartRateClient.begin(bleConfig, &s_bleManager);
+    bool bleOk = false;
+    bool hrOk = false;
+    if (stridecontrol::SettingsService::instance().getBleStackEnabled()) {
+        s_bleManager.attachServices(&s_rscService, &s_ftmsService);
+        bleOk = s_bleManager.begin(bleConfig);
+        hrOk = s_heartRateClient.begin(bleConfig, &s_bleManager);
+    } else {
+        Serial.println("[BLE] Stack disabled via commissioning setting - skipping init");
+    }
 
     Serial.printf("[Sensors] ImuInterface begin: %s\n", imuOk ? "SUCCESS" : "FAILED");
     Serial.printf("[Sensors] CsafeInterface begin: %s\n", csafeOk ? "SUCCESS" : "FAILED");
     Serial.printf("[Sensors] RunnerDynamics begin: %s\n", runnerDynamicsOk ? "SUCCESS" : "FAILED");
     Serial.printf("[Sensors] InclineVerifier begin: %s\n", inclineVerifierOk ? "SUCCESS" : "FAILED");
     Serial.printf("[BLE] BleManager begin: %s\n", bleOk ? "SUCCESS" : "FAILED");
+    stridecontrol::DiagnosticsLog::instance().addEntryf("[BLE] BleManager begin: %s", bleOk ? "SUCCESS" : "FAILED");
     Serial.printf("[BLE] HeartRateClient begin: %s\n", hrOk ? "SUCCESS" : "FAILED");
+    stridecontrol::DiagnosticsLog::instance().addEntryf("[BLE] HeartRateClient begin: %s", hrOk ? "SUCCESS" : "FAILED");
 
     stridecontrol::ApplicationOrchestratorDependencies orchestratorDeps{};
     orchestratorDeps.speedSensor = &s_speedSensor;

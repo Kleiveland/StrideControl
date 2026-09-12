@@ -4,6 +4,7 @@
 
 #include <Arduino.h>
 #include "../SettingsService/SettingsService.h"
+#include "../DiagnosticsLog/DiagnosticsLog.h"
 
 namespace stridecontrol {
 
@@ -29,11 +30,19 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     // 2. Initialize ApplicationOrchestrator in ExternalStep mode
     Serial.printf("[Testbench][BLE] Pre-init heap: free=%u, largest_free_block=%u, min_free=%u\n",
                   ESP.getFreeHeap(), ESP.getMaxAllocHeap(), ESP.getMinFreeHeap());
-    bleManager_.attachServices(&rscService_, &ftmsService_);
-    const bool bleOk = bleManager_.begin(bleConfig);
-    const bool hrOk = heartRateClient_.begin(bleConfig, &bleManager_);
+    bool bleOk = false;
+    bool hrOk = false;
+    if (SettingsService::instance().getBleStackEnabled()) {
+        bleManager_.attachServices(&rscService_, &ftmsService_);
+        bleOk = bleManager_.begin(bleConfig);
+        hrOk = heartRateClient_.begin(bleConfig, &bleManager_);
+    } else {
+        Serial.println("[Testbench][BLE] Stack disabled via commissioning setting - skipping init");
+    }
     Serial.printf("[Testbench][BLE] BleManager begin: %s\n", bleOk ? "SUCCESS" : "FAILED");
+    DiagnosticsLog::instance().addEntryf("[Testbench][BLE] BleManager begin: %s", bleOk ? "SUCCESS" : "FAILED");
     Serial.printf("[Testbench][BLE] HeartRateClient begin: %s\n", hrOk ? "SUCCESS" : "FAILED");
+    DiagnosticsLog::instance().addEntryf("[Testbench][BLE] HeartRateClient begin: %s", hrOk ? "SUCCESS" : "FAILED");
 
     ApplicationOrchestratorDependencies deps{};
     deps.speedSensor = &speedSensor_;

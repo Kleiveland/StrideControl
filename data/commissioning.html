@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StrideControl — Commissioning &amp; Diagnostics</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --surface-border: #30363d;
+            --text: #c9d1d9;
+            --text-dim: #8b949e;
+            --accent: #58a6ff;
+            --green: #2ea043;
+            --green-hover: #3fb950;
+            --red: #da3633;
+            --red-hover: #f85149;
+            --card-bg: #21262d;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        body { background-color: var(--bg); color: var(--text); padding: 20px; line-height: 1.5; }
+        .container { max-width: 1080px; margin: 0 auto; }
+        header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--surface-border); padding-bottom: 15px; margin-bottom: 20px; }
+        h1 { font-size: 1.4rem; font-weight: 600; color: #fff; }
+        .nav-links a { color: var(--accent); text-decoration: none; font-size: 0.9rem; margin-left: 15px; }
+        .nav-links a:hover { text-decoration: underline; }
+
+        .panels-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        @media (max-width: 768px) { .panels-grid { grid-template-columns: 1fr; } }
+
+        .panel { background: var(--surface); border: 1px solid var(--surface-border); border-radius: 8px; padding: 18px; }
+        .panel-title { font-size: 1.05rem; font-weight: 600; color: #fff; margin-bottom: 15px; border-bottom: 1px solid var(--surface-border); padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+
+        button { cursor: pointer; border: none; border-radius: 6px; font-weight: 600; font-size: 0.9rem; padding: 10px 16px; transition: all 0.15s ease; color: #fff; background-color: var(--card-bg); border: 1px solid var(--surface-border); }
+        button:hover { background-color: #30363d; border-color: #8b949e; }
+        button:active { transform: scale(0.98); }
+
+        .control-group { margin-bottom: 16px; }
+        .checkbox-group { display: flex; align-items: center; gap: 10px; background: var(--card-bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--surface-border); cursor: pointer; }
+        .checkbox-group input[type="checkbox"] { cursor: pointer; accent-color: var(--green); transform: scale(1.2); }
+
+        .status-bar { font-size: 0.8rem; color: var(--text-dim); display: flex; justify-content: space-between; background: var(--surface); border: 1px solid var(--surface-border); border-radius: 6px; padding: 8px 14px; }
+        .status-success { color: #3fb950; }
+        .status-error { color: #f85149; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <header>
+        <div>
+            <h1>StrideControl — Commissioning &amp; Diagnostics</h1>
+            <span style="font-size: 0.8rem; color: var(--text-dim);">Device Configuration &amp; Diagnostic Buffer</span>
+        </div>
+        <div class="nav-links">
+            <a href="/index.html" target="_blank">&rarr; Open StrideControl Product GUI</a>
+        </div>
+    </header>
+
+    <div class="panels-grid">
+        <div class="panel">
+            <div class="panel-title">
+                <span>BLE Stack</span>
+                <span style="font-size:0.75rem; color:var(--text-dim)">GET/POST /api/v1/config/ble</span>
+            </div>
+            <div class="control-group">
+                <label class="checkbox-group">
+                    <input type="checkbox" id="ble-stack-enabled" onchange="sendBleConfig()">
+                    <div>
+                        <strong>BLE Stack Enabled</strong>
+                        <div style="font-size:0.75rem; color:var(--text-dim)">Requires a device restart (power cycle or reset) to take effect.</div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">
+                <span>Diagnostic Log</span>
+                <span style="font-size:0.75rem; color:var(--text-dim)">GET /api/v1/diagnostics/log</span>
+            </div>
+            <button onclick="refreshLog()" style="margin-bottom:10px;">Oppdater</button>
+            <pre id="diag-log-output" style="max-height:400px; overflow-y:auto; background:#0a0a0a; padding:12px; border-radius:8px; font-size:0.8rem; white-space:pre-wrap;"></pre>
+        </div>
+    </div>
+
+    <!-- FOOTER / STATUS BAR -->
+    <div class="status-bar">
+        <span id="status-msg">Commissioning ready.</span>
+        <span id="status-ts">--</span>
+    </div>
+</div>
+
+<script>
+    function setStatus(msg, type = '') {
+        const el = document.getElementById('status-msg');
+        el.innerText = msg;
+        el.className = type === 'success' ? 'status-success' : (type === 'error' ? 'status-error' : '');
+        document.getElementById('status-ts').innerText = new Date().toLocaleTimeString();
+    }
+
+    async function loadBleConfig() {
+        try {
+            const res = await fetch('/api/v1/config/ble');
+            const data = await res.json();
+            document.getElementById('ble-stack-enabled').checked = !!data.bleStackEnabled;
+        } catch (e) {
+            setStatus(`Failed to load BLE config: ${e.message}`, 'error');
+        }
+    }
+
+    async function sendBleConfig() {
+        const enabled = document.getElementById('ble-stack-enabled').checked;
+        setStatus(`Saving BLE stack setting: ${enabled ? 'ENABLED' : 'DISABLED'}...`);
+        try {
+            const res = await fetch('/api/v1/config/ble', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bleStackEnabled: enabled })
+            });
+            if (res.ok) {
+                setStatus('BLE setting saved. Restart the device for it to take effect.', 'success');
+            } else {
+                const err = await res.json();
+                setStatus(`Save failed: ${err.error || res.statusText}`, 'error');
+            }
+        } catch (e) {
+            setStatus(`Network error: ${e.message}`, 'error');
+        }
+    }
+
+    async function refreshLog() {
+        try {
+            const res = await fetch('/api/v1/diagnostics/log');
+            const text = await res.text();
+            document.getElementById('diag-log-output').textContent = text || '(empty)';
+        } catch (e) {
+            setStatus(`Failed to load log: ${e.message}`, 'error');
+        }
+    }
+
+    loadBleConfig();
+    refreshLog();
+</script>
+</body>
+</html>
+

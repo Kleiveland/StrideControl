@@ -41,6 +41,8 @@ public:
     bool saveInclineConfig(const InclineConfig& config);
     bool saveSpeedConfig(const SpeedConfig& config);
     bool saveMaintenanceConfig(const MaintenanceConfig& config);
+    bool getBleStackEnabled();
+    bool saveBleStackEnabled(bool enabled);
     void factoryReset();
 
     // =======================================================================

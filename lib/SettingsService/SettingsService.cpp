@@ -248,6 +248,33 @@ bool SettingsService::saveMaintenanceConfig(const MaintenanceConfig& config) {
     return ok;
 }
 
+bool SettingsService::getBleStackEnabled() {
+    bool enabled = true;
+    if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        Preferences prefs;
+        if (prefs.begin(kNvsNamespace, true)) {
+            enabled = prefs.getBool("ble_enabled", true);
+            prefs.end();
+        }
+        xSemaphoreGive(mutex_);
+    }
+    return enabled;
+}
+
+bool SettingsService::saveBleStackEnabled(bool enabled) {
+    bool ok = false;
+    if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        Preferences prefs;
+        if (prefs.begin(kNvsNamespace, false)) {
+            prefs.putBool("ble_enabled", enabled);
+            prefs.end();
+            ok = true;
+        }
+        xSemaphoreGive(mutex_);
+    }
+    return ok;
+}
+
 void SettingsService::factoryReset() {
     if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
         Preferences prefs;

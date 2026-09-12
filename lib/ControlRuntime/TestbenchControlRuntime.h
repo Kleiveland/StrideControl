@@ -139,7 +139,7 @@ private:
     static constexpr uint32_t kPeriodMs = 20; // 50 Hz
     static constexpr uint32_t kTaskStackSize = 8192;
     static constexpr UBaseType_t kTaskPriority = 5;
-    static constexpr BaseType_t kTaskCore = 0; // Pinned strictly to Core 0 (PRO_CPU)
+    static constexpr BaseType_t kTaskCore = 1; // Moved off Core 0 to reduce WiFi/BT radio task contention
 };
 
 } // namespace stridecontrol

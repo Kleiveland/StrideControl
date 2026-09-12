@@ -1,4 +1,5 @@
 #include "NetworkManager.h"
+#include "../DiagnosticsLog/DiagnosticsLog.h"
 
 namespace stridecontrol {
 
@@ -38,6 +39,7 @@ void NetworkManager::startAP() {
     lastApRetryTimeMs_ = millis();
 
     Serial.printf("[NetworkManager] Starting AP Fallback (SSID: %s, Pass: %s)...\n", kApSsid, kApPass);
+    DiagnosticsLog::instance().addEntryf("[NetworkManager] Starting AP Fallback (SSID: %s, Pass: %s)...", kApSsid, kApPass);
 
     WiFi.disconnect(true, true);
     delay(100);
@@ -75,6 +77,8 @@ void NetworkManager::update() {
                 lastGoodStatusMs_ = nowMs;
                 Serial.printf("[NetworkManager] Wi-Fi Connected! IP: %s, RSSI: %d dBm\n",
                               WiFi.localIP().toString().c_str(), WiFi.RSSI());
+                DiagnosticsLog::instance().addEntryf("[NetworkManager] Wi-Fi Connected! IP: %s, RSSI: %d dBm",
+                                                     WiFi.localIP().toString().c_str(), WiFi.RSSI());
                 initMDNS();
             } else if (nowMs - staStartTimeMs_ >= kStaTimeoutMs) {
                 Serial.println("[NetworkManager] Wi-Fi connection timed out. Transitioning to AP mode.");
@@ -88,6 +92,7 @@ void NetworkManager::update() {
                 lastGoodStatusMs_ = nowMs;
             } else if (nowMs - lastGoodStatusMs_ >= kDisconnectGraceMs) {
                 Serial.println("[NetworkManager] Wi-Fi connection lost (sustained). Attempting reconnection...");
+                DiagnosticsLog::instance().addEntry("[NetworkManager] Wi-Fi connection lost (sustained). Attempting reconnection...");
                 startSTA();
             }
             break;

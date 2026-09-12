@@ -3,6 +3,7 @@
 #include <atomic>
 #include <Arduino.h>
 #include "../SettingsService/SettingsService.h"
+#include "../DiagnosticsLog/DiagnosticsLog.h"
 
 namespace stridecontrol {
 
@@ -124,6 +125,11 @@ bool ControlRuntime::isSnapshotAuthoritative(
                       static_cast<unsigned long>(snapshot.timestampMs),
                       static_cast<unsigned long>(snapshot.sequenceNumber),
                       static_cast<unsigned long>(nowMs));
+        DiagnosticsLog::instance().addEntryf("[Authority] DROPPED: Reason: %s | Time: %lu ms | Seq: %lu | Now: %lu ms",
+                                             dropReason ? dropReason : "Unknown",
+                                             static_cast<unsigned long>(snapshot.timestampMs),
+                                             static_cast<unsigned long>(snapshot.sequenceNumber),
+                                             static_cast<unsigned long>(nowMs));
     }
     s_wasAuthoritative = authoritative;
 

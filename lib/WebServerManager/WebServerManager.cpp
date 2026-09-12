@@ -3,6 +3,7 @@
 #include <LittleFS.h>
 #include "FileSystemManager.h"
 #include "SettingsService.h"
+#include "../DiagnosticsLog/DiagnosticsLog.h"
 #include <cstdlib>
 #include <cstring>
 
@@ -772,6 +773,63 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/control/incline", HTTP_POST, inclineHandler, nullptr, commandBodyBuffer);
     server_.on("/api/v1/control/incline", HTTP_POST, inclineHandler, nullptr, commandBodyBuffer);
+
+    server_.on("/commissioning.html", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (LittleFS.exists("/commissioning.html")) {
+            AsyncWebServerResponse* response = request->beginResponse(LittleFS, "/commissioning.html", "text/html");
+            response->addHeader("Cache-Control", "no-cache");
+            request->send(response);
+        } else {
+            request->send(404, "text/plain", "StrideControl: /commissioning.html not found on LittleFS filesystem.");
+        }
+    });
+
+    server_.on("/api/v1/diagnostics/log", HTTP_GET, [](AsyncWebServerRequest* request) {
+        AsyncResponseStream* stream = request->beginResponseStream("text/plain");
+        DiagnosticsLog::instance().dumpTo(*stream);
+        request->send(stream);
+    });
+
+    server_.on("/api/v1/config/ble", HTTP_GET, [](AsyncWebServerRequest* request) {
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        JsonDocument doc;
+        doc["bleStackEnabled"] = SettingsService::instance().getBleStackEnabled();
+        serializeJson(doc, *stream);
+        request->send(stream);
+    });
+
+    auto bleConfigPostHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+            return;
+        }
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received != buffer->capacity) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+            return;
+        }
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+        if (err || !doc.containsKey("bleStackEnabled")) {
+            request->send(400, "application/json", "{\"error\":\"Invalid or missing bleStackEnabled\"}");
+            return;
+        }
+        const bool enabled = doc["bleStackEnabled"].as<bool>();
+        const bool ok = SettingsService::instance().saveBleStackEnabled(enabled);
+        request->send(ok ? 200 : 500, "application/json", ok ? "{\"status\":\"saved\"}" : "{\"error\":\"save_failed\"}");
+    };
+    server_.on("/api/v1/config/ble", HTTP_POST, bleConfigPostHandler, nullptr, commandBodyBuffer);
 
 #if defined(STRIDECONTROL_TESTBENCH)
     // GET /simulator.html (Testbench active universe UI)
