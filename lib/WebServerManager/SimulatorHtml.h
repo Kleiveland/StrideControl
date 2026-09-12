@@ -244,6 +244,23 @@ static const char kSimulatorHtml[] PROGMEM = R"rawliteral(
                 </label>
             </div>
         </div>
+
+        <!-- PANEL C: SIMULATED HEART RATE -->
+        <div class="panel">
+            <div class="panel-title">
+                <span>Simulated Heart Rate</span>
+                <span style="font-size:0.75rem; color:var(--text-dim)">POST /api/v1/simulator/heartrate</span>
+            </div>
+            <div class="control-group">
+                <label class="checkbox-group">
+                    <input type="checkbox" id="sim-hr-speed" onchange="sendHeartRateSim()">
+                    <div>
+                        <strong>Simulate HR from Belt Speed</strong>
+                        <div style="font-size:0.75rem; color:var(--text-dim)">Derives BPM from current belt speed (80 + (speed &minus; 1.0) &times; 6.36, clamped [70, 200]). Overrides BLE strap when active.</div>
+                    </div>
+                </label>
+            </div>
+        </div>
     </div>
 
     <!-- FOOTER / STATUS BAR -->
@@ -307,6 +324,26 @@ static const char kSimulatorHtml[] PROGMEM = R"rawliteral(
             }
         } catch (e) {
             setStatus(`Network error updating runner: ${e.message}`, 'error');
+        }
+    }
+
+    async function sendHeartRateSim() {
+        const enabled = document.getElementById('sim-hr-speed').checked;
+        setStatus(`Setting simulated heart rate override: ${enabled ? 'ENABLED' : 'DISABLED'}...`);
+        try {
+            const res = await fetch('/api/v1/simulator/heartrate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ simulateFromSpeed: enabled })
+            });
+            if (res.ok) {
+                setStatus(`Simulated heart rate ${enabled ? 'enabled' : 'disabled'}`, 'success');
+            } else {
+                const err = await res.json();
+                setStatus(`HR simulation update failed: ${err.error || res.statusText}`, 'error');
+            }
+        } catch (e) {
+            setStatus(`Network error updating HR simulation: ${e.message}`, 'error');
         }
     }
 

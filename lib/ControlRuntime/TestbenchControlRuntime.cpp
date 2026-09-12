@@ -14,7 +14,7 @@ TestbenchControlRuntime::~TestbenchControlRuntime() {
     end();
 }
 
-bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
+bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, const BleConfig& bleConfig) {
     if (initialized_) {
         return true;
     }
@@ -27,12 +27,20 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     runnerDynamics_.begin();
 
     // 2. Initialize ApplicationOrchestrator in ExternalStep mode
+    bleManager_.attachServices(&rscService_, &ftmsService_);
+    const bool bleOk = bleManager_.begin(bleConfig);
+    const bool hrOk = heartRateClient_.begin(bleConfig, &bleManager_);
+    Serial.printf("[Testbench][BLE] BleManager begin: %s\n", bleOk ? "SUCCESS" : "FAILED");
+    Serial.printf("[Testbench][BLE] HeartRateClient begin: %s\n", hrOk ? "SUCCESS" : "FAILED");
+
     ApplicationOrchestratorDependencies deps{};
     deps.speedSensor = &speedSensor_;
     deps.inclineSensor = &inclineSensor_;
     deps.imuInterface = &imu_;
     deps.runnerDynamics = &runnerDynamics_;
     deps.diagnosticsService = &diagService_;
+    deps.bleManager = &bleManager_;
+    deps.hrClient = &heartRateClient_;
     orchestrator_.begin(deps, OrchestratorExecutionMode::ExternalStep);
 
     // 3. Initialize Domain engines
@@ -71,6 +79,8 @@ void TestbenchControlRuntime::end() {
 
     if (initialized_) {
         orchestrator_.end();
+        heartRateClient_.end();
+        bleManager_.end();
         session_.end();
         workoutEngine_.reset();
         runnerDynamics_.end();
@@ -156,6 +166,10 @@ bool TestbenchControlRuntime::stepSimIncline(bool positive, uint32_t nowMs) {
 
 void TestbenchControlRuntime::setSimRunner(VirtualRunnerMode mode, uint16_t cadenceSpm, float magnitudeG, bool valid) {
     composite_.stageRunner(mode, cadenceSpm, magnitudeG, valid);
+}
+
+void TestbenchControlRuntime::setSimHeartRateFromSpeed(bool enabled) {
+    simHeartRateFromSpeedEnabled_ = enabled;
 }
 
 bool TestbenchControlRuntime::startControlTask() {
@@ -264,7 +278,18 @@ void TestbenchControlRuntime::runTaskLoop() {
         orchestrator_.step(ctx);
 
         // 3. Obtain authoritative ApplicationSnapshot representing resulting state
-        const ApplicationSnapshot snapshot = orchestrator_.getSnapshot();
+        ApplicationSnapshot snapshot = orchestrator_.getSnapshot();
+
+        if (simHeartRateFromSpeedEnabled_) {
+            float bpm = 80.0f + (snapshot.speed.speedKmh - 1.0f) * 6.36f;
+            if (bpm < 70.0f) bpm = 70.0f;
+            if (bpm > 200.0f) bpm = 200.0f;
+            snapshot.heartRate.initialized = true;
+            snapshot.heartRate.heartRateValid = true;
+            snapshot.heartRate.heartRateBpm = static_cast<uint8_t>(bpm + 0.5f);
+            snapshot.heartRate.dataAgeMs = 0;
+            snapshot.heartRate.connectionState = HeartRateConnectionState::Connected;
+        }
 
         // 4. Evaluate authority
         const bool authoritative = ControlRuntime::isSnapshotAuthoritative(snapshot, nowMs);
@@ -385,6 +410,18 @@ ApplicationSnapshot TestbenchControlRuntime::getSnapshot() const {
     portENTER_CRITICAL(&snapshotMux_);
     snap = publishedSnapshot_;
     portEXIT_CRITICAL(&snapshotMux_);
+
+    if (simHeartRateFromSpeedEnabled_) {
+        float bpm = 80.0f + (snap.speed.speedKmh - 1.0f) * 6.36f;
+        if (bpm < 70.0f) bpm = 70.0f;
+        if (bpm > 200.0f) bpm = 200.0f;
+        snap.heartRate.initialized = true;
+        snap.heartRate.heartRateValid = true;
+        snap.heartRate.heartRateBpm = static_cast<uint8_t>(bpm + 0.5f);
+        snap.heartRate.dataAgeMs = 0;
+        snap.heartRate.connectionState = HeartRateConnectionState::Connected;
+    }
+
     return snap;
 }
 
@@ -408,6 +445,17 @@ TestbenchTelemetry TestbenchControlRuntime::getTelemetry(uint32_t nowMs) const {
     telem.lostAuthorityCount = lostAuthorityCount_;
     telem.minFreeStackBytes = minFreeStackBytes_;
     portEXIT_CRITICAL(&snapshotMux_);
+
+    if (simHeartRateFromSpeedEnabled_) {
+        float bpm = 80.0f + (telem.snapshot.speed.speedKmh - 1.0f) * 6.36f;
+        if (bpm < 70.0f) bpm = 70.0f;
+        if (bpm > 200.0f) bpm = 200.0f;
+        telem.snapshot.heartRate.initialized = true;
+        telem.snapshot.heartRate.heartRateValid = true;
+        telem.snapshot.heartRate.heartRateBpm = static_cast<uint8_t>(bpm + 0.5f);
+        telem.snapshot.heartRate.dataAgeMs = 0;
+        telem.snapshot.heartRate.connectionState = HeartRateConnectionState::Connected;
+    }
 
     return telem;
 }

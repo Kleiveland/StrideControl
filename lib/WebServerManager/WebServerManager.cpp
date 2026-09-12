@@ -923,6 +923,58 @@ void WebServerManager::registerRoutes() {
             handleRequestBodyChunk(request, data, len, index, total, 2048, "{\"error\":\"Payload too large\"}");
         }
     );
+
+    // POST /api/v1/simulator/heartrate
+    server_.on(
+        "/api/v1/simulator/heartrate",
+        HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (request->getResponse() != nullptr) {
+                if (request->_tempObject) {
+                    free(request->_tempObject);
+                    request->_tempObject = nullptr;
+                }
+                return;
+            }
+
+            if (simRuntime_ == nullptr) {
+                if (request->_tempObject) {
+                    free(request->_tempObject);
+                    request->_tempObject = nullptr;
+                }
+                request->send(503, "application/json", "{\"error\":\"Simulator runtime not attached\"}");
+                return;
+            }
+            if (!request->_tempObject) {
+                request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+                return;
+            }
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received != buffer->capacity) {
+                free(buffer);
+                request->_tempObject = nullptr;
+                request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+                return;
+            }
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+            free(buffer);
+            request->_tempObject = nullptr;
+
+            if (err) {
+                request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+                return;
+            }
+
+            const bool simulate = doc["simulateFromSpeed"] | false;
+            simRuntime_->setSimHeartRateFromSpeed(simulate);
+            request->send(200, "application/json", "{\"status\":\"staged\"}");
+        },
+        nullptr,
+        [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+            handleRequestBodyChunk(request, data, len, index, total, 2048, "{\"error\":\"Payload too large\"}");
+        }
+    );
 #endif
 }
 

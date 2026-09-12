@@ -24,6 +24,10 @@
 #include "ControlRuntime.h"
 #include "WorkoutEngine.h"
 #include "ApplicationSnapshot.h"
+#include "BleManager.h"
+#include "HeartRateClient.h"
+#include "RscService.h"
+#include "FtmsService.h"
 
 namespace stridecontrol {
 
@@ -45,7 +49,8 @@ public:
     TestbenchControlRuntime(const TestbenchControlRuntime&) = delete;
     TestbenchControlRuntime& operator=(const TestbenchControlRuntime&) = delete;
 
-    bool begin(const WorkoutSessionConfig& sessionConfig = WorkoutSessionConfig{});
+    bool begin(const WorkoutSessionConfig& sessionConfig = WorkoutSessionConfig{},
+               const BleConfig& bleConfig = BleConfig{});
     void end();
 
     bool armWorkout(const WorkoutDefinition& def, uint32_t nowMs);
@@ -59,6 +64,7 @@ public:
     bool stepSimSpeed(bool positive, uint32_t nowMs = 0);
     bool stepSimIncline(bool positive, uint32_t nowMs = 0);
     void setSimRunner(VirtualRunnerMode mode, uint16_t cadenceSpm = 180, float magnitudeG = 0.35f, bool valid = true);
+    void setSimHeartRateFromSpeed(bool enabled);
 
     bool startControlTask();
     bool stopControlTask(uint32_t timeoutMs = 1000);
@@ -100,6 +106,11 @@ private:
     RunnerDynamics runnerDynamics_;
     DiagnosticsService diagService_;
     ApplicationOrchestrator orchestrator_;
+    BleManager bleManager_;
+    HeartRateClient heartRateClient_;
+    RscService rscService_;
+    FtmsService ftmsService_;
+    volatile bool simHeartRateFromSpeedEnabled_ = false;
 
     // Passive Composite Simulator
     TreadmillSimulatorComposite composite_;
