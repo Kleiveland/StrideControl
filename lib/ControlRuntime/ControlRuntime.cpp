@@ -149,6 +149,7 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
     if (authoritative) {
         lastAuthoritativeTimestampMs_ = nowMs;
         authorityLostReported_ = false;
+        authorityLostSinceMs_ = 0; // Reset the loss streak - authority has recovered
 
         // 2. Execute sequenced coordinator tick (session.update followed by dispatcher.update)
         coordinator_.tick(session_, dispatcher_, adapter_, snapshot, nowMs);
@@ -161,10 +162,19 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         // - Do NOT clear session intent or dispatcher staging
         // - Do NOT issue physical speed or incline commands
 
-        // 4. Apply explicit existing WorkoutSession suspension contract:
-        // If the session is actively Running, freeze/suspend it so stale time is
-        // not counted when telemetry recovers later.
-        if (session_.getSnapshot().state == WorkoutSessionState::Running) {
+        // 4. Apply explicit existing WorkoutSession suspension contract, but debounced:
+        // A brief, transient authority glitch (a single missed tick or two) should NOT
+        // suspend an actively-running session - the runner hasn't stopped, and suspending
+        // here traps them in Suspended until they physically stop the belt (recovery from
+        // Suspended requires a full stop). Only suspend after authority has been
+        // continuously lost for kAuthorityLossSuspendThresholdMs, indicating a genuine,
+        // sustained outage rather than momentary sensor/radio noise.
+        if (authorityLostSinceMs_ == 0) {
+            authorityLostSinceMs_ = nowMs;
+        }
+        const uint32_t lostDurationMs = nowMs - authorityLostSinceMs_;
+        if (lostDurationMs >= kAuthorityLossSuspendThresholdMs &&
+            session_.getSnapshot().state == WorkoutSessionState::Running) {
             session_.suspend(nowMs);
         }
     }
