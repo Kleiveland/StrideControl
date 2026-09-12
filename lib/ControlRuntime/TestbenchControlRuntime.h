@@ -134,6 +134,8 @@ private:
 
     bool initialized_ = false;
     uint32_t lostAuthorityCount_ = 0;
+    uint32_t authorityLostSinceMs_ = 0; // 0 means "not currently in a lost-authority streak"
+    static constexpr uint32_t kAuthorityLossSuspendThresholdMs = 2000;
     uint32_t minFreeStackBytes_ = 8192;
 
     static constexpr uint32_t kPeriodMs = 20; // 50 Hz

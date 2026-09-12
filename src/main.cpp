@@ -74,6 +74,9 @@ public:
         report.avgHeartRateBpm = telem.sessionSnapshot.avgHeartRateBpm;
         report.maxHeartRateBpm = telem.sessionSnapshot.maxHeartRateBpm;
         report.heartRateEverValid = telem.sessionSnapshot.heartRateEverValid;
+        report.workoutId = telem.sessionSnapshot.workoutId;
+        report.totalStepCount = telem.sessionSnapshot.totalStepCount;
+        report.stepProgressFraction = telem.sessionSnapshot.stepProgressFraction;
         return true;
     }
 
@@ -140,6 +143,9 @@ public:
         report.avgHeartRateBpm = sessSnap.avgHeartRateBpm;
         report.maxHeartRateBpm = sessSnap.maxHeartRateBpm;
         report.heartRateEverValid = sessSnap.heartRateEverValid;
+        report.workoutId = sessSnap.workoutId;
+        report.totalStepCount = sessSnap.totalStepCount;
+        report.stepProgressFraction = sessSnap.stepProgressFraction;
         return true;
     }
 
@@ -172,6 +178,24 @@ void setup() {
 #if defined(STRIDECONTROL_TESTBENCH)
     // 4. Initialize Testbench Control Runtime & BLE stack before WiFi connects (Coex order)
     s_testbenchRuntime.begin();
+#endif
+
+#if !defined(STRIDECONTROL_TESTBENCH)
+    // Initialize BLE stack before WiFi connects (Coex order - matches testbench fix)
+    const stridecontrol::BleConfig bleConfig{};
+    bool bleOk = false;
+    bool hrOk = false;
+    if (stridecontrol::SettingsService::instance().getBleStackEnabled()) {
+        s_bleManager.attachServices(&s_rscService, &s_ftmsService);
+        bleOk = s_bleManager.begin(bleConfig);
+        hrOk = s_heartRateClient.begin(bleConfig, &s_bleManager);
+    } else {
+        Serial.println("[BLE] Stack disabled via commissioning setting - skipping init");
+    }
+    Serial.printf("[BLE] BleManager begin: %s\n", bleOk ? "SUCCESS" : "FAILED");
+    stridecontrol::DiagnosticsLog::instance().addEntryf("[BLE] BleManager begin: %s", bleOk ? "SUCCESS" : "FAILED");
+    Serial.printf("[BLE] HeartRateClient begin: %s\n", hrOk ? "SUCCESS" : "FAILED");
+    stridecontrol::DiagnosticsLog::instance().addEntryf("[BLE] HeartRateClient begin: %s", hrOk ? "SUCCESS" : "FAILED");
 #endif
 
     // 3. Initialize Network & Web Subsystems
@@ -211,25 +235,10 @@ void setup() {
     const bool inclineVerifierOk = s_inclineVerifier.begin();
     s_maintenanceService.begin(&stridecontrol::SettingsService::instance());
 
-    const stridecontrol::BleConfig bleConfig{};
-    bool bleOk = false;
-    bool hrOk = false;
-    if (stridecontrol::SettingsService::instance().getBleStackEnabled()) {
-        s_bleManager.attachServices(&s_rscService, &s_ftmsService);
-        bleOk = s_bleManager.begin(bleConfig);
-        hrOk = s_heartRateClient.begin(bleConfig, &s_bleManager);
-    } else {
-        Serial.println("[BLE] Stack disabled via commissioning setting - skipping init");
-    }
-
     Serial.printf("[Sensors] ImuInterface begin: %s\n", imuOk ? "SUCCESS" : "FAILED");
     Serial.printf("[Sensors] CsafeInterface begin: %s\n", csafeOk ? "SUCCESS" : "FAILED");
     Serial.printf("[Sensors] RunnerDynamics begin: %s\n", runnerDynamicsOk ? "SUCCESS" : "FAILED");
     Serial.printf("[Sensors] InclineVerifier begin: %s\n", inclineVerifierOk ? "SUCCESS" : "FAILED");
-    Serial.printf("[BLE] BleManager begin: %s\n", bleOk ? "SUCCESS" : "FAILED");
-    stridecontrol::DiagnosticsLog::instance().addEntryf("[BLE] BleManager begin: %s", bleOk ? "SUCCESS" : "FAILED");
-    Serial.printf("[BLE] HeartRateClient begin: %s\n", hrOk ? "SUCCESS" : "FAILED");
-    stridecontrol::DiagnosticsLog::instance().addEntryf("[BLE] HeartRateClient begin: %s", hrOk ? "SUCCESS" : "FAILED");
 
     stridecontrol::ApplicationOrchestratorDependencies orchestratorDeps{};
     orchestratorDeps.speedSensor = &s_speedSensor;

@@ -305,11 +305,24 @@ void TestbenchControlRuntime::runTaskLoop() {
         // 4. Evaluate authority
         const bool authoritative = ControlRuntime::isSnapshotAuthoritative(snapshot, nowMs);
         if (authoritative) {
+            authorityLostSinceMs_ = 0; // Reset the loss streak - authority has recovered
+
             // 5. Tick domain session & target dispatcher
             coordinator_.tick(session_, dispatcher_, composite_, snapshot, nowMs);
         } else {
             lostAuthorityCount_++;
-            if (session_.getSnapshot().state == WorkoutSessionState::Running) {
+
+            // Debounced suspend: a brief, transient authority glitch should NOT suspend an
+            // actively-running session - the runner hasn't stopped, and recovery from
+            // Suspended requires a full belt stop. Only suspend after authority has been
+            // continuously lost for kAuthorityLossSuspendThresholdMs. Mirrors the identical
+            // fix already applied to production ControlRuntime.cpp.
+            if (authorityLostSinceMs_ == 0) {
+                authorityLostSinceMs_ = nowMs;
+            }
+            const uint32_t lostDurationMs = nowMs - authorityLostSinceMs_;
+            if (lostDurationMs >= kAuthorityLossSuspendThresholdMs &&
+                session_.getSnapshot().state == WorkoutSessionState::Running) {
                 session_.suspend(nowMs);
             }
         }
@@ -404,6 +417,12 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             case ControlCommandType::FinalizeWorkout:
                 session_.finalizeSession(cmdNowMs);
+                break;
+            case ControlCommandType::CutDrag:
+                session_.cutDrag(cmdNowMs);
+                break;
+            case ControlCommandType::ExtendRest:
+                session_.extendRest();
                 break;
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual);

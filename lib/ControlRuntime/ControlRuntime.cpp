@@ -373,6 +373,12 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::FinalizeWorkout:
                 session_.finalizeSession(cmdNowMs);
                 break;
+            case ControlCommandType::CutDrag:
+                session_.cutDrag(cmdNowMs);
+                break;
+            case ControlCommandType::ExtendRest:
+                session_.extendRest();
+                break;
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual);
                 break;

@@ -203,6 +203,9 @@ void WebServerManager::registerRoutes() {
         session["avgHeartRateBpm"] = report.avgHeartRateBpm;
         session["maxHeartRateBpm"] = report.maxHeartRateBpm;
         session["heartRateEverValid"] = report.heartRateEverValid;
+        session["workoutId"] = report.workoutId;
+        session["totalStepCount"] = report.totalStepCount;
+        session["stepProgressFraction"] = report.stepProgressFraction;
 
         JsonObject hr = doc["heartRate"].to<JsonObject>();
         hr["bpm"] = report.heartRateBpm;
@@ -464,6 +467,44 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/control/workout/finalize", HTTP_POST, finalizeHandler);
     server_.on("/api/v1/control/workout/finalize", HTTP_POST, finalizeHandler);
+
+    server_.on(
+        "/api/v1/control/workout/cutdrag",
+        HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (commandStager_ == nullptr) {
+                request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+                return;
+            }
+            ControlCommand cmd{};
+            cmd.timestampMs = millis();
+            cmd.type = ControlCommandType::CutDrag;
+            if (commandStager_->stageCommand(cmd)) {
+                request->send(200, "application/json", "{\"status\":\"queued\"}");
+            } else {
+                request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+            }
+        }
+    );
+
+    server_.on(
+        "/api/v1/control/workout/extendrest",
+        HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (commandStager_ == nullptr) {
+                request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+                return;
+            }
+            ControlCommand cmd{};
+            cmd.timestampMs = millis();
+            cmd.type = ControlCommandType::ExtendRest;
+            if (commandStager_->stageCommand(cmd)) {
+                request->send(200, "application/json", "{\"status\":\"queued\"}");
+            } else {
+                request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+            }
+        }
+    );
 
     auto commandBodyBuffer = [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
         handleRequestBodyChunk(request, data, len, index, total, 2048, "{\"error\":\"Payload too large\"}");

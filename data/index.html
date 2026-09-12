@@ -224,6 +224,17 @@
         .t-block-mass.completed { opacity: 0.18; }
         .t-block-mass.active { box-shadow: inset 0 0 0 3px #fff; }
         .t-progress-mass { position: absolute; top: 0; left: 0; bottom: 0; background: rgba(255, 255, 255, 0.45); border-right: 5px solid #fff; }
+        .t-block-mass.t-block-completed .t-fill-mass { opacity: 0.45; }
+        .t-block-mass.t-block-active::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: var(--progress, 0%);
+            background: rgba(255, 255, 255, 0.35);
+            pointer-events: none;
+        }
         .telemetry-interval-grid { display: flex; justify-content: space-around; width: 100%; margin-top: 15px; height: 160px; }
         
         .interval-action-zone { display: flex; justify-content: center; align-items: center; gap: 35px; width: 100%; height: 150px; }
@@ -936,7 +947,9 @@
                 </div>
             </div>
 
-            <div class="interval-action-zone"></div>
+            <div class="interval-action-zone">
+                <div class="btn-act-action rest clickable" id="btn-kutt-drag" style="max-width: 540px;">KUTT DRAG</div>
+            </div>
         </div>
 
         <!-- =================================================================== -->
@@ -1020,7 +1033,9 @@
                 </div>
             </div>
 
-            <div class="interval-action-zone"></div>
+            <div class="interval-action-zone">
+                <div class="btn-act-action rest clickable" id="btn-extend-rest">+30 SEKUNDER</div>
+            </div>
         </div>
 
         <!-- =================================================================== -->
@@ -1500,6 +1515,18 @@
                 });
             });
         }
+
+        document.getElementById('btn-kutt-drag')?.addEventListener('click', () => {
+            fetch('/api/v1/control/workout/cutdrag', { method: 'POST' })
+                .then(res => { if (!res.ok) console.error('[Control] CutDrag rejected:', res.status); })
+                .catch(err => console.error('[Control] CutDrag failed:', err));
+        });
+
+        document.getElementById('btn-extend-rest')?.addEventListener('click', () => {
+            fetch('/api/v1/control/workout/extendrest', { method: 'POST' })
+                .then(res => { if (!res.ok) console.error('[Control] ExtendRest rejected:', res.status); })
+                .catch(err => console.error('[Control] ExtendRest failed:', err));
+        });
 
 
         let speedTimer = null;
@@ -1986,12 +2013,22 @@
         // ===================================================================
         // DYNAMISK TIDSLINJE-GENERERING
         // ===================================================================
-        function renderTimelines() {
-            const seq = buildExecutionSequence(model);
+        function renderTimelines(wkModel = model, isFreeRun = false) {
+            if (isFreeRun) {
+                const freeRunHTML = `<div class="t-block-mass" style="width: 100%;"><div class="t-fill-mass" style="height: 60%; background: var(--phase-work);"></div></div>`;
+                if (dom.runTrack) dom.runTrack.innerHTML = freeRunHTML;
+                if (dom.p1Track) dom.p1Track.innerHTML = freeRunHTML;
+                if (dom.p2Track) dom.p2Track.innerHTML = freeRunHTML;
+                if (dom.stopTrack) dom.stopTrack.innerHTML = freeRunHTML;
+                if (dom.summaryTrack) dom.summaryTrack.innerHTML = freeRunHTML;
+                return;
+            }
+
+            const seq = buildExecutionSequence(wkModel);
             let totalTime = 0;
             seq.forEach(s => { totalTime += (s.mode === 'time' ? s.amount : 60); });
 
-            const blocksHTML = seq.map((s) => {
+            const blocksHTML = seq.map((s, idx) => {
                 const dur = s.mode === 'time' ? s.amount : 60;
                 const pct = Math.max(1, (dur / totalTime) * 100);
                 let color = 'var(--phase-work)';
@@ -2001,7 +2038,7 @@
                 else if (s.role === 'rest') { color = 'var(--phase-recovery)'; hPct = 35; }
                 else if (s.role === 'cool') { color = 'var(--phase-cooldown)'; hPct = 40; }
 
-                return `<div class="t-block-mass" style="width: ${pct}%;"><div class="t-fill-mass" style="height: ${hPct}%; background: ${color};"></div></div>`;
+                return `<div class="t-block-mass" data-step-idx="${idx}" style="width: ${pct}%;"><div class="t-fill-mass" style="height: ${hPct}%; background: ${color};"></div></div>`;
             }).join('');
 
             if (dom.preTrack) dom.preTrack.innerHTML = blocksHTML;
@@ -2010,6 +2047,21 @@
             if (dom.p2Track) dom.p2Track.innerHTML = blocksHTML;
             if (dom.stopTrack) dom.stopTrack.innerHTML = blocksHTML;
             if (dom.summaryTrack) dom.summaryTrack.innerHTML = blocksHTML;
+        }
+
+        function applyLiveTimelineProgress(currentStepIdx, stepProgressFraction) {
+            document.querySelectorAll('.t-block-mass').forEach(block => {
+                const idx = parseInt(block.getAttribute('data-step-idx'), 10);
+                block.classList.remove('t-block-completed', 't-block-active');
+                block.style.setProperty('--progress', '0%');
+                if (idx < currentStepIdx) {
+                    block.classList.add('t-block-completed');
+                    block.style.setProperty('--progress', '100%');
+                } else if (idx === currentStepIdx) {
+                    block.classList.add('t-block-active');
+                    block.style.setProperty('--progress', `${Math.round(stepProgressFraction * 100)}%`);
+                }
+            });
         }
 
         // ===================================================================
@@ -3062,6 +3114,16 @@
         function renderSummaryScreen(telem) {
             const data = telem || lastAuthoritativeTelemetry;
 
+            const isFreeRunSummary = data?.session?.workoutId === 65535;
+            if (isFreeRunSummary) {
+                renderTimelines(model, true);
+            } else if (typeof data?.session?.workoutId === 'number') {
+                const summaryWorkout = workoutLibrary.find(w => w.numericId === data.session.workoutId);
+                if (summaryWorkout) {
+                    renderTimelines(summaryWorkout, false);
+                }
+            }
+
             // Distance
             const sumDistEl = document.getElementById('sum-dist-val');
             let distKm = null;
@@ -3212,6 +3274,17 @@
                 document.querySelectorAll('#col-klatret .tele-val, #int-run-klatret .tele-val, #int-p1-klatret .tele-val, #int-p2-klatret .tele-val, #int-stop-klatret .tele-val').forEach(el => {
                     el.innerText = `${Math.round(telem.session.totalElevationMeters)} m`;
                 });
+            }
+
+            const isFreeRunSession = telem.session?.workoutId === 65535;
+            if (isFreeRunSession) {
+                renderTimelines(model, true);
+            } else if (typeof telem.session?.workoutId === 'number') {
+                const activeWorkout = workoutLibrary.find(w => w.numericId === telem.session.workoutId);
+                if (activeWorkout) {
+                    renderTimelines(activeWorkout, false);
+                    applyLiveTimelineProgress(telem.session.stepIndex ?? 0, telem.session.stepProgressFraction ?? 0);
+                }
             }
 
             const hrStr = (telem.heartRate && telem.heartRate.valid && telem.heartRate.bpm > 0) ? String(telem.heartRate.bpm) : '--';

@@ -18,6 +18,8 @@ enum class ControlCommandType : uint8_t {
     ArmWorkout,
     CancelWorkout,
     FinalizeWorkout,
+    CutDrag,
+    ExtendRest,
     SetGuiMode
 };
 

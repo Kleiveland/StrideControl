@@ -29,6 +29,9 @@ struct TelemetryReport {
     uint32_t avgHeartRateBpm = 0;
     uint8_t maxHeartRateBpm = 0;
     bool heartRateEverValid = false;
+    uint16_t workoutId = 0;
+    uint8_t totalStepCount = 0;
+    float stepProgressFraction = 0.0f;
 };
 
 /**
