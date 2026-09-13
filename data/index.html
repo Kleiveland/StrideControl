@@ -2192,6 +2192,26 @@
             dom.intervalButtons.innerHTML = html;
         }
 
+        function armWorkoutSelection(workoutId) {
+            if (!(activeUserProfile && typeof activeUserProfile.id === 'number' && typeof workoutId === 'number')) {
+                return;
+            }
+            fetch('/api/v1/control/workout/select', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: activeUserProfile.id, workoutId: workoutId })
+            })
+            .then(res => {
+                if (!res.ok) {
+                    console.error('[Control] Workout select rejected:', res.status);
+                    showGlobalToast('KOMMANDO AVVIST AV MØLLEN');
+                }
+            })
+            .catch(err => {
+                console.error('[Control] Workout select failed:', err);
+            });
+        }
+
         function switchActiveWorkout(workoutId, updateTimestamp = true) {
             const found = workoutLibrary.find(w => w.id === workoutId);
             if (!found) return;
@@ -2200,23 +2220,7 @@
             renderIntervalButtonsStatic();
             renderApp();
 
-            if (activeUserProfile && typeof activeUserProfile.id === 'number' && found && typeof found.numericId === 'number') {
-                fetch('/api/v1/control/workout/select', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId: activeUserProfile.id, workoutId: found.numericId })
-                })
-                .then(res => {
-                    if (!res.ok) {
-                        console.error('[Control] Workout select rejected:', res.status);
-                        showGlobalToast('KOMMANDO AVVIST AV MØLLEN');
-                    }
-                })
-                .catch(err => {
-                    console.error('[Control] Workout select failed:', err);
-                    showGlobalToast('INGEN FORBINDELSE TIL MØLLEN');
-                });
-            }
+            armWorkoutSelection(found.numericId);
         }
 
         // ===================================================================
@@ -2823,6 +2827,9 @@
                 }
                 model = selectedWk;
                 initIntervalViewSlots();
+                if (selectedWk && typeof selectedWk.numericId === 'number') {
+                    armWorkoutSelection(selectedWk.numericId);
+                }
             }
         }
 
@@ -3698,7 +3705,7 @@
 
         async function fetchSystemSettings() {
             try {
-                const res = await fetch('/api/settings');
+                const res = await fetch('/api/settings', { cache: 'no-cache' });
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status} ${res.statusText}`);
                 }
