@@ -1,9 +1,12 @@
 #include "WorkoutSession.h"
+#include "../SettingsService/SettingsService.h"
 #include <cmath>
 #include <algorithm>
 #include <cstring>
 
 namespace stridecontrol {
+
+constexpr float WorkoutSession::kSpeedZoneBoundsKmh[4];
 
 const char* workoutSessionStateName(WorkoutSessionState state) {
     switch (state) {
@@ -60,6 +63,9 @@ bool WorkoutSession::begin(const WorkoutSessionConfig& config) {
     speedAdjustmentShiftSegmentId_ = UINT16_MAX;
     hasPriorStep_ = false;
     speedAdjustmentPromptExpiresMs_ = 0;
+    preFireTargetStepIndex_ = UINT8_MAX;
+    preFireSent_ = false;
+    preFireLeadMs_ = 0;
 
     acknowledgedHasSpeed_ = false;
     acknowledgedSpeedTargetKmh_ = 0.0f;
@@ -323,6 +329,28 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
         speedAdjustmentShiftSegmentId_ = workout_->steps[stepIndex].segmentId;
         snapshot_.appliedWorkSpeedShiftKmh = 0.0f;
     }
+    preFireSent_ = false;
+    snapshot_.rampPreFireActive = false;
+    preFireLeadMs_ = 0;
+    if ((workout_->steps[stepIndex].role == StepRole::REST ||
+         workout_->steps[stepIndex].role == StepRole::WARMUP) &&
+        stepIndex + 1 < workout_->totalSteps &&
+        workout_->steps[stepIndex + 1].role == StepRole::WORK) {
+        preFireTargetStepIndex_ = stepIndex + 1;
+        const ExpandedStep& nextStep = workout_->steps[stepIndex + 1];
+        uint32_t speedRampMs = 0;
+        if (nextStep.speedMode == SpeedMode::FIXED) {
+            speedRampMs = estimateSpeedRampMs(workout_->steps[stepIndex].targetSpeedKmh, nextStep.targetSpeedKmh);
+        }
+        uint32_t inclineRampMs = 0;
+        if (nextStep.setIncline) {
+            const float inclineDelta = std::abs(static_cast<float>(nextStep.targetInclinePct) - static_cast<float>(workout_->steps[stepIndex].targetInclinePct));
+            inclineRampMs = static_cast<uint32_t>(inclineDelta * kInclineMsPerPct);
+        }
+        preFireLeadMs_ = std::max(speedRampMs, inclineRampMs);
+    } else {
+        preFireTargetStepIndex_ = UINT8_MAX;
+    }
     snapshot_.currentRole = workout_->steps[stepIndex].role;
     snapshot_.currentRep = workout_->steps[stepIndex].repNumber;
     snapshot_.totalRepsInGroup = workout_->steps[stepIndex].totalRepsInGroup;
@@ -369,6 +397,29 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
     }
 
     emitStepCommandIntent(snapshot_.currentStep, false);
+}
+
+uint32_t WorkoutSession::estimateSpeedRampMs(float fromKmh, float toKmh) const {
+    if (std::abs(toKmh - fromKmh) < 0.01f) return 0;
+    const stridecontrol::RampCalibrationConfig cfg = stridecontrol::SettingsService::instance().getRampCalibrationConfig();
+    const bool accelerating = toKmh > fromKmh;
+    const float lo = std::min(fromKmh, toKmh);
+    const float hi = std::max(fromKmh, toKmh);
+    float totalMs = 0.0f;
+    for (int zone = 0; zone < 3; ++zone) {
+        const float zoneLo = kSpeedZoneBoundsKmh[zone];
+        const float zoneHi = kSpeedZoneBoundsKmh[zone + 1];
+        const float overlapLo = std::max(lo, zoneLo);
+        const float overlapHi = std::min(hi, zoneHi);
+        if (overlapHi > overlapLo) {
+            const float spanKmh = overlapHi - overlapLo;
+            const float rate = accelerating ? cfg.accelMsPerKmh[zone] : cfg.decelMsPerKmh[zone];
+            totalMs += spanKmh * rate;
+        }
+    }
+    totalMs += static_cast<float>(cfg.deadTimeMs);
+    totalMs *= cfg.loadMultiplier;
+    return static_cast<uint32_t>(totalMs);
 }
 
 void WorkoutSession::emitStepCommandIntent(const ExpandedStep& step, bool forceReissue) {
@@ -682,8 +733,33 @@ void WorkoutSession::update(
                 if (snapshot_.stepProgressFraction > 1.0f) snapshot_.stepProgressFraction = 1.0f;
                 snapshot_.stepRemainingFraction = 1.0f - snapshot_.stepProgressFraction;
 
+                if (preFireTargetStepIndex_ != UINT8_MAX && !preFireSent_ &&
+                    snapshot_.stepRemainingMs <= preFireLeadMs_) {
+                    emitStepCommandIntent(workout_->steps[preFireTargetStepIndex_], true);
+                    snapshot_.rampPreFireActive = true;
+                    preFireSent_ = true;
+                }
+
                 if (stepElapsedMs_ >= targetMs) {
-                    advanceStep(nowMs, currentRunnerDist);
+                    bool canAdvance = true;
+                    if (preFireTargetStepIndex_ != UINT8_MAX && preFireTargetStepIndex_ < workout_->totalSteps) {
+                        const ExpandedStep& nextStep = workout_->steps[preFireTargetStepIndex_];
+                        if (nextStep.speedMode == SpeedMode::FIXED) {
+                            const float speedDelta = std::abs(applicationSnapshot.speed.speedKmh - nextStep.targetSpeedKmh);
+                            if (speedDelta > kArrivalSpeedToleranceKmh) {
+                                canAdvance = false;
+                            }
+                        }
+                        if (nextStep.setIncline) {
+                            const float inclineDelta = std::abs(applicationSnapshot.incline.estimatedInclinePct - static_cast<float>(nextStep.targetInclinePct));
+                            if (inclineDelta > kArrivalInclineTolerancePct) {
+                                canAdvance = false;
+                            }
+                        }
+                    }
+                    if (canAdvance) {
+                        advanceStep(nowMs, currentRunnerDist);
+                    }
                 }
             }
         } else if (curStep.durationType == DurationType::METERS) {
@@ -802,7 +878,12 @@ bool WorkoutSession::skipToNextDrag(uint32_t nowMs) {
         return false; // No upcoming drag step to skip to
     }
 
-    startStep(targetStepIndex, nowMs, lastRunnerDistanceKm_);
+    preFireTargetStepIndex_ = targetStepIndex;
+    emitStepCommandIntent(workout_->steps[targetStepIndex], true);
+    snapshot_.rampPreFireActive = true;
+    preFireSent_ = true;
+    stepElapsedMs_ = runtimeStepTargetDurationMs_;
+    snapshot_.stepRemainingMs = 0;
     return true;
 }
 
@@ -839,6 +920,9 @@ bool WorkoutSession::abortSession(uint32_t nowMs) {
     snapshot_.suspended = false;
     snapshot_.completionPending = false;
     snapshot_.speedAdjustmentPromptActive = false;
+    snapshot_.rampPreFireActive = false;
+    preFireTargetStepIndex_ = UINT8_MAX;
+    preFireSent_ = false;
     pendingShiftPrompt_ = false;
     netWorkSpeedDeltaKmh_ = 0.0f;
     lowSpeedDebounceActive_ = false;
@@ -855,6 +939,9 @@ bool WorkoutSession::finalizeSession(uint32_t nowMs) {
     snapshot_.suspended = false;
     snapshot_.completionPending = false;
     snapshot_.speedAdjustmentPromptActive = false;
+    snapshot_.rampPreFireActive = false;
+    preFireTargetStepIndex_ = UINT8_MAX;
+    preFireSent_ = false;
     pendingShiftPrompt_ = false;
     netWorkSpeedDeltaKmh_ = 0.0f;
     lowSpeedDebounceActive_ = false;
