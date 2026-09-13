@@ -333,20 +333,8 @@ void TestbenchControlRuntime::runTaskLoop() {
             coordinator_.tick(session_, dispatcher_, composite_, snapshot, nowMs);
         } else {
             lostAuthorityCount_++;
-
-            // Debounced suspend: a brief, transient authority glitch should NOT suspend an
-            // actively-running session - the runner hasn't stopped, and recovery from
-            // Suspended requires a full belt stop. Only suspend after authority has been
-            // continuously lost for kAuthorityLossSuspendThresholdMs. Mirrors the identical
-            // fix already applied to production ControlRuntime.cpp.
-            if (authorityLostSinceMs_ == 0) {
-                authorityLostSinceMs_ = nowMs;
-            }
-            const uint32_t lostDurationMs = nowMs - authorityLostSinceMs_;
-            if (lostDurationMs >= kAuthorityLossSuspendThresholdMs &&
-                session_.getSnapshot().state == WorkoutSessionState::Running) {
-                session_.suspend(nowMs);
-            }
+            // Telemetry jitter freezes data integration, but must never freeze
+            // the athlete's workout session state while the belt moves.
         }
 
         // 6. Publish snapshot copy for external consumers (cross-core spinlock protected)

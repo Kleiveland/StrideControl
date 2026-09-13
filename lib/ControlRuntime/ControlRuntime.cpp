@@ -182,22 +182,8 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         // - Do NOT call dispatcher_.update() (prevents target ingestion & delivery)
         // - Do NOT clear session intent or dispatcher staging
         // - Do NOT issue physical speed or incline commands
-
-        // 4. Apply explicit existing WorkoutSession suspension contract, but debounced:
-        // A brief, transient authority glitch (a single missed tick or two) should NOT
-        // suspend an actively-running session - the runner hasn't stopped, and suspending
-        // here traps them in Suspended until they physically stop the belt (recovery from
-        // Suspended requires a full stop). Only suspend after authority has been
-        // continuously lost for kAuthorityLossSuspendThresholdMs, indicating a genuine,
-        // sustained outage rather than momentary sensor/radio noise.
-        if (authorityLostSinceMs_ == 0) {
-            authorityLostSinceMs_ = nowMs;
-        }
-        const uint32_t lostDurationMs = nowMs - authorityLostSinceMs_;
-        if (lostDurationMs >= kAuthorityLossSuspendThresholdMs &&
-            session_.getSnapshot().state == WorkoutSessionState::Running) {
-            session_.suspend(nowMs);
-        }
+        // - Do NOT suspend session_: telemetry jitter must freeze data integration,
+        //   but must never freeze the athlete's workout session state while the belt moves.
     }
 }
 

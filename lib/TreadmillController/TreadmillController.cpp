@@ -238,6 +238,7 @@ bool TreadmillController::submitStop(uint32_t requestTimestampMs) {
     }
 
     snapshot_.acceptedPhysicalSpeedTargetKmh = 0.0f;
+    snapshot_.acceptedInclineTargetPct = 0.0f;
     snapshot_.physicalSpeedTargetValid = true;
     snapshot_.correctedConsoleSpeedKmh = 0.0f;
     snapshot_.correctedConsoleSpeedValid = true;

@@ -276,6 +276,7 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
 }
 
 void WorkoutSession::setDesiredGuiMode(uint8_t userId, bool isManual, uint32_t nowMs) {
+    (void)nowMs;
     desiredGuiUserId_ = userId;
     desiredGuiIsManual_ = isManual;
 
@@ -287,10 +288,8 @@ void WorkoutSession::setDesiredGuiMode(uint8_t userId, bool isManual, uint32_t n
         abortSession(nowMs);
     }
 
-    // A terminal session (Completed/Aborted) never transitions itself back to Idle - without
-    // this, no belt-start can ever be recognized again until a structured workout is
-    // explicitly armed. Since the GUI calls this on every relevant navigation (including
-    // returning to the launcher via "Ferdig"), this is the natural place to clear it.
+    // If an existing session was completed or aborted, leaving the summary screen must
+    // always transition the session back to Idle, regardless of manual or interval mode.
     if (snapshot_.state == WorkoutSessionState::Completed ||
         snapshot_.state == WorkoutSessionState::Aborted) {
         workout_ = nullptr;
@@ -298,6 +297,27 @@ void WorkoutSession::setDesiredGuiMode(uint8_t userId, bool isManual, uint32_t n
         snapshot_.state = WorkoutSessionState::Idle;
         snapshot_.initialized = true;
         pendingIntent_ = WorkoutCommandIntent{};
+        stepElapsedMs_ = 0;
+        runtimeStepTargetDurationMs_ = 0;
+        distanceAtStepEntryKm_ = 0.0;
+        stepElapsedValidatedDistanceKm_ = 0.0;
+        totalElapsedTimeMs_ = 0;
+        activeRunningTimeMs_ = 0;
+        totalValidatedDistanceKm_ = 0.0;
+        totalElevationMeters_ = 0.0;
+        physicalStopCount_ = 0;
+        continuationWindowExpiresMs_ = 0;
+        isEmergencyStopped_ = false;
+        eStopRestartPending_ = false;
+        pendingShiftPrompt_ = false;
+        netWorkSpeedDeltaKmh_ = 0.0f;
+        speedAdjustmentShiftAppliedKmh_ = 0.0f;
+        speedAdjustmentShiftSegmentId_ = UINT16_MAX;
+        hasPriorStep_ = false;
+        speedAdjustmentPromptExpiresMs_ = 0;
+        preFireTargetStepIndex_ = UINT8_MAX;
+        preFireSent_ = false;
+        preFireLeadMs_ = 0;
         beltHasStoppedSinceSuspend_ = false;
     }
 }
