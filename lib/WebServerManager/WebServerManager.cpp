@@ -730,10 +730,7 @@ void WebServerManager::registerRoutes() {
     server_.on("/api/control/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
     server_.on("/api/v1/control/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
 
-    server_.on(
-        "/api/v1/settings/workout",
-        HTTP_POST,
-        [this](AsyncWebServerRequest* request) {
+    auto workoutSaveHandler = [this](AsyncWebServerRequest* request) {
             if (request->getResponse() != nullptr) {
                 if (request->_tempObject) { free(request->_tempObject); request->_tempObject = nullptr; }
                 return;
@@ -842,12 +839,17 @@ void WebServerManager::registerRoutes() {
 
             char errBuf[128] = {};
             if (SettingsService::instance().updateSystemSettings(*candidate, errBuf, sizeof(errBuf))) {
-                JsonDocument respDoc;
-                respDoc["status"] = "saved";
-                respDoc["workoutId"] = parsed.id;
-                String resp;
-                serializeJson(respDoc, resp);
-                request->send(200, "application/json", resp);
+                const bool saved = SettingsService::instance().commitUsersJson();
+                if (saved) {
+                    JsonDocument respDoc;
+                    respDoc["status"] = "saved";
+                    respDoc["workoutId"] = parsed.id;
+                    String resp;
+                    serializeJson(respDoc, resp);
+                    request->send(200, "application/json", resp);
+                } else {
+                    request->send(500, "application/json", "{\"error\":\"failed_to_persist_json\"}");
+                }
             } else {
                 JsonDocument respDoc;
                 respDoc["error"] = errBuf[0] ? errBuf : "Validation or persistence failed";
@@ -855,12 +857,12 @@ void WebServerManager::registerRoutes() {
                 serializeJson(respDoc, resp);
                 request->send(400, "application/json", resp);
             }
-        },
-        nullptr,
-        [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-            handleRequestBodyChunk(request, data, len, index, total, 4096, "{\"error\":\"Payload too large\"}");
-        }
-    );
+    };
+    auto workoutBodyBuffer = [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+        handleRequestBodyChunk(request, data, len, index, total, 4096, "{\"error\":\"Payload too large\"}");
+    };
+    server_.on("/api/v1/settings/workout", HTTP_POST, workoutSaveHandler, nullptr, workoutBodyBuffer);
+    server_.on("/api/v1/workouts/save", HTTP_POST, workoutSaveHandler, nullptr, workoutBodyBuffer);
 
     auto setGuiModeHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {

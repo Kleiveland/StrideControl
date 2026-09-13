@@ -990,13 +990,13 @@ bool SettingsService::loadFactorySeedFromUsersJson(SystemSettings& target) {
         }
 
         JsonArrayConst wArr = uObj["workouts"].as<JsonArrayConst>();
-        if (wArr.isNull() || wArr.size() != 3) {
-            Serial.println("[SettingsService] Seed error: user must contain exactly 3 workouts.");
+        if (wArr.isNull() || wArr.size() == 0 || wArr.size() > MAX_WORKOUTS_PER_USER) {
+            Serial.println("[SettingsService] Seed error: user workouts array missing or exceeds MAX_WORKOUTS_PER_USER.");
             return false;
         }
-        u.workoutCount = 3;
+        u.workoutCount = static_cast<uint8_t>(wArr.size());
 
-        for (size_t wIdx = 0; wIdx < 3; ++wIdx) {
+        for (size_t wIdx = 0; wIdx < u.workoutCount; ++wIdx) {
             JsonObjectConst wObj = wArr[wIdx];
             if (wObj.isNull()) return false;
 
@@ -1082,7 +1082,7 @@ bool SettingsService::loadFactorySeedFromUsersJson(SystemSettings& target) {
 
         if (!uObj["active_workout_idx"].is<int>()) return false;
         int activeIdx = uObj["active_workout_idx"].as<int>();
-        if (activeIdx < 0 || activeIdx >= 3) {
+        if (activeIdx < 0 || activeIdx >= static_cast<int>(u.workoutCount)) {
             Serial.println("[SettingsService] Seed error: active_workout_idx out of range.");
             return false;
         }
@@ -1216,6 +1216,113 @@ bool SettingsService::updateSystemSettings(const SystemSettings& candidate, char
         xSemaphoreGive(mutex_);
     }
     return ok;
+}
+
+bool SettingsService::commitUsersJson() {
+    if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        return false;
+    }
+
+    if (!activeSettings_) {
+        xSemaphoreGive(mutex_);
+        return false;
+    }
+
+    JsonDocument doc;
+    JsonArray usersArray = doc["users"].to<JsonArray>();
+
+    for (size_t u = 0; u < MAX_USERS; ++u) {
+        const UserProfile& user = activeSettings_->users[u];
+        if (user.name[0] == '\0') {
+            continue;
+        }
+
+        JsonObject userObj = usersArray.add<JsonObject>();
+        userObj["name"] = user.name;
+
+        JsonObject presets = userObj["presets"].to<JsonObject>();
+        presets["hvile"] = user.hvileSpeedKmh;
+        presets["drag"] = user.dragSpeedKmh;
+
+        JsonObject quickKeys = userObj["quick_keys"].to<JsonObject>();
+        JsonArray qkSpeed = quickKeys["speed"].to<JsonArray>();
+        for (size_t i = 0; i < 8; ++i) {
+            qkSpeed.add(user.speedQuickKeys[i]);
+        }
+        JsonArray qkIncline = quickKeys["incline"].to<JsonArray>();
+        for (size_t i = 0; i < 8; ++i) {
+            qkIncline.add(user.inclineQuickKeys[i]);
+        }
+
+        int activeWorkoutIdx = 0;
+        for (size_t w = 0; w < user.workoutCount && w < MAX_WORKOUTS_PER_USER; ++w) {
+            if (user.workouts[w].id == user.selectedWorkoutId) {
+                activeWorkoutIdx = static_cast<int>(w);
+                break;
+            }
+        }
+        userObj["active_workout_idx"] = activeWorkoutIdx;
+
+        JsonArray workoutsArray = userObj["workouts"].to<JsonArray>();
+        for (size_t w = 0; w < user.workoutCount && w < MAX_WORKOUTS_PER_USER; ++w) {
+            const WorkoutDefinition& wDef = user.workouts[w];
+            JsonObject wObj = workoutsArray.add<JsonObject>();
+            wObj["name"] = wDef.name;
+
+            float warmup_m = 0.0f;
+            float work_m = 0.0f;
+            float rest_m = 0.0f;
+            uint16_t reps = 1;
+            float cooldown_m = 0.0f;
+
+            for (size_t s = 0; s < wDef.segmentCount && s < MAX_SEGMENTS_PER_WORKOUT; ++s) {
+                const auto& seg = wDef.segments[s];
+                if (seg.type == SegmentType::REPEATING_GROUP) {
+                    reps = seg.repetitions;
+                }
+                for (size_t st = 0; st < seg.stepCount && st < MAX_STEPS_PER_GROUP; ++st) {
+                    const auto& step = seg.steps[st];
+                    const float minutes = (step.durationType == DurationType::TIME_SECONDS)
+                        ? (static_cast<float>(step.durationValue) / 60.0f)
+                        : 0.0f;
+                    if (step.role == StepRole::WARMUP) {
+                        warmup_m += minutes;
+                    } else if (step.role == StepRole::WORK) {
+                        if (work_m == 0.0f) work_m = minutes;
+                    } else if (step.role == StepRole::REST) {
+                        if (rest_m == 0.0f) rest_m = minutes;
+                    } else if (step.role == StepRole::COOLDOWN) {
+                        cooldown_m += minutes;
+                    }
+                }
+            }
+
+            wObj["warmup_m"] = warmup_m;
+            wObj["work_m"] = work_m;
+            wObj["rest_m"] = rest_m;
+            wObj["reps"] = reps;
+            wObj["cooldown_m"] = cooldown_m;
+        }
+
+        userObj["history"].to<JsonArray>();
+    }
+
+    if (!LittleFS.exists(kConfigDir)) {
+        LittleFS.mkdir(kConfigDir);
+    }
+
+    File file = LittleFS.open(kUsersSeedFile, "w");
+    if (!file) {
+        xSemaphoreGive(mutex_);
+        return false;
+    }
+
+    size_t bytesWritten = serializeJsonPretty(doc, file);
+    file.flush();
+    file.close();
+
+    xSemaphoreGive(mutex_);
+    return bytesWritten > 0;
 }
 
 const char* SettingsService::version() {
