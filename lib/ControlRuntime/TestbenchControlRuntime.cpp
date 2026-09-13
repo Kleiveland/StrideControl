@@ -436,7 +436,7 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 session_.rejectSpeedAdjustmentShift();
                 break;
             case ControlCommandType::SetGuiMode:
-                session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual);
+                session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual, cmdNowMs);
                 break;
             case ControlCommandType::None:
             default:

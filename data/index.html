@@ -1437,6 +1437,10 @@
                             }
                         })
                         .catch(err => console.error('[Control] SetGuiMode failed:', err));
+
+                        if (isManualTarget === false && target === 'view-interval-pre' && model && typeof model.numericId === 'number') {
+                            armWorkoutSelection(model.numericId);
+                        }
                     }
                 }
 
@@ -2841,9 +2845,6 @@
                 }
                 model = selectedWk;
                 initIntervalViewSlots();
-                if (selectedWk && typeof selectedWk.numericId === 'number') {
-                    armWorkoutSelection(selectedWk.numericId);
-                }
             }
         }
 

@@ -36,7 +36,7 @@ public:
      */
     bool armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, uint8_t userId = 0);
     bool startFreeRun(uint32_t nowMs, uint8_t userId);
-    void setDesiredGuiMode(uint8_t userId, bool isManual);
+    void setDesiredGuiMode(uint8_t userId, bool isManual, uint32_t nowMs);
 
     void update(
         const ApplicationSnapshot& applicationSnapshot,

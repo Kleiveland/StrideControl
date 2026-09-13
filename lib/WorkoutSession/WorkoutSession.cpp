@@ -269,9 +269,17 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
     return true;
 }
 
-void WorkoutSession::setDesiredGuiMode(uint8_t userId, bool isManual) {
+void WorkoutSession::setDesiredGuiMode(uint8_t userId, bool isManual, uint32_t nowMs) {
     desiredGuiUserId_ = userId;
     desiredGuiIsManual_ = isManual;
+
+    // If the user explicitly chose Manual mode while a structured workout is Armed (but
+    // never actually started), cancel it - otherwise the Armed state persists and the view
+    // sync logic keeps forcing the user back to the interval screen. Falls through to the
+    // existing Aborted -> Idle reset immediately below.
+    if (isManual && snapshot_.state == WorkoutSessionState::Armed) {
+        abortSession(nowMs);
+    }
 
     // A terminal session (Completed/Aborted) never transitions itself back to Idle - without
     // this, no belt-start can ever be recognized again until a structured workout is
