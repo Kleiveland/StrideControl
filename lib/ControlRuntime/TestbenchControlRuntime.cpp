@@ -2,6 +2,7 @@
 
 #if defined(STRIDECONTROL_TESTBENCH)
 
+#include <cmath>
 #include <Arduino.h>
 #include "../SettingsService/SettingsService.h"
 #include "../DiagnosticsLog/DiagnosticsLog.h"
@@ -291,6 +292,27 @@ void TestbenchControlRuntime::runTaskLoop() {
         // 3. Obtain authoritative ApplicationSnapshot representing resulting state
         ApplicationSnapshot snapshot = orchestrator_.getSnapshot();
 
+        if (rampTestActive_ && !rampTestComplete_) {
+            const uint32_t elapsedMs = nowMs - rampTestStartMs_;
+            const float currentSpeed = snapshot.speed.speedKmh;
+            const float movedFromStart = std::abs(currentSpeed - rampTestStartSpeedKmh_);
+            const float distFromTarget = std::abs(currentSpeed - rampTestTargetSpeedKmh_);
+
+            if (rampTestDeadTimeMs_ == 0 && movedFromStart >= kRampTestMoveThresholdKmh) {
+                rampTestDeadTimeMs_ = elapsedMs;
+            }
+            if (distFromTarget <= kRampTestArrivalToleranceKmh) {
+                rampTestTotalMs_ = elapsedMs;
+                rampTestComplete_ = true;
+                rampTestActive_ = false;
+            } else if (elapsedMs >= kRampTestTimeoutMs) {
+                rampTestTotalMs_ = elapsedMs;
+                rampTestTimedOut_ = true;
+                rampTestComplete_ = true;
+                rampTestActive_ = false;
+            }
+        }
+
         if (simHeartRateFromSpeedEnabled_) {
             float bpm = 80.0f + (snapshot.speed.speedKmh - 1.0f) * 6.36f;
             if (bpm < 70.0f) bpm = 70.0f;
@@ -434,6 +456,18 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             case ControlCommandType::RejectSpeedShift:
                 session_.rejectSpeedAdjustmentShift();
+                break;
+            case ControlCommandType::StartRampCalibrationTest:
+                rampTestActive_ = true;
+                rampTestStartMs_ = cmdNowMs;
+                rampTestStartSpeedKmh_ = cmd.data.rampTest.startSpeedKmh;
+                rampTestTargetSpeedKmh_ = cmd.data.rampTest.targetSpeedKmh;
+                rampTestDeadTimeMs_ = 0;
+                rampTestTotalMs_ = 0;
+                rampTestComplete_ = false;
+                rampTestTimedOut_ = false;
+                composite_.stageSpeedTarget(cmd.data.rampTest.targetSpeedKmh, cmdNowMs);
+                dispatcher_.stageSpeedTarget(cmd.data.rampTest.targetSpeedKmh);
                 break;
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual, cmdNowMs);

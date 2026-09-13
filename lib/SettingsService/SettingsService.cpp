@@ -248,6 +248,49 @@ bool SettingsService::saveMaintenanceConfig(const MaintenanceConfig& config) {
     return ok;
 }
 
+RampCalibrationConfig SettingsService::getRampCalibrationConfig() {
+    RampCalibrationConfig cfg{};
+    if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        Preferences prefs;
+        if (prefs.begin(kNvsNamespace, true)) {
+            cfg.deadTimeMs = prefs.getUInt("ramp_dead", cfg.deadTimeMs);
+            cfg.accelMsPerKmh[0] = prefs.getFloat("ramp_a0", cfg.accelMsPerKmh[0]);
+            cfg.accelMsPerKmh[1] = prefs.getFloat("ramp_a1", cfg.accelMsPerKmh[1]);
+            cfg.accelMsPerKmh[2] = prefs.getFloat("ramp_a2", cfg.accelMsPerKmh[2]);
+            cfg.decelMsPerKmh[0] = prefs.getFloat("ramp_d0", cfg.decelMsPerKmh[0]);
+            cfg.decelMsPerKmh[1] = prefs.getFloat("ramp_d1", cfg.decelMsPerKmh[1]);
+            cfg.decelMsPerKmh[2] = prefs.getFloat("ramp_d2", cfg.decelMsPerKmh[2]);
+            cfg.loadMultiplier = prefs.getFloat("ramp_load", cfg.loadMultiplier);
+            cfg.calibrated = prefs.getBool("ramp_cal", false);
+            prefs.end();
+        }
+        xSemaphoreGive(mutex_);
+    }
+    return cfg;
+}
+
+bool SettingsService::saveRampCalibrationConfig(const RampCalibrationConfig& config) {
+    bool ok = false;
+    if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        Preferences prefs;
+        if (prefs.begin(kNvsNamespace, false)) {
+            prefs.putUInt("ramp_dead", config.deadTimeMs);
+            prefs.putFloat("ramp_a0", config.accelMsPerKmh[0]);
+            prefs.putFloat("ramp_a1", config.accelMsPerKmh[1]);
+            prefs.putFloat("ramp_a2", config.accelMsPerKmh[2]);
+            prefs.putFloat("ramp_d0", config.decelMsPerKmh[0]);
+            prefs.putFloat("ramp_d1", config.decelMsPerKmh[1]);
+            prefs.putFloat("ramp_d2", config.decelMsPerKmh[2]);
+            prefs.putFloat("ramp_load", config.loadMultiplier);
+            prefs.putBool("ramp_cal", config.calibrated);
+            prefs.end();
+            ok = true;
+        }
+        xSemaphoreGive(mutex_);
+    }
+    return ok;
+}
+
 bool SettingsService::getBleStackEnabled() {
     bool enabled = true;
     if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {

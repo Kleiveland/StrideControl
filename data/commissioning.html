@@ -35,6 +35,10 @@
         button { cursor: pointer; border: none; border-radius: 6px; font-weight: 600; font-size: 0.9rem; padding: 10px 16px; transition: all 0.15s ease; color: #fff; background-color: var(--card-bg); border: 1px solid var(--surface-border); }
         button:hover { background-color: #30363d; border-color: #8b949e; }
         button:active { transform: scale(0.98); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        .stop-btn { background-color: var(--red); color: #fff; width: 100%; font-size: 1.1rem; padding: 12px; margin-bottom: 16px; border: 1px solid var(--red-hover); border-radius: 6px; font-weight: bold; letter-spacing: 0.05em; }
+        .stop-btn:hover { background-color: var(--red-hover); border-color: #ff7b72; }
 
         .control-group { margin-bottom: 16px; }
         .checkbox-group { display: flex; align-items: center; gap: 10px; background: var(--card-bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--surface-border); cursor: pointer; }
@@ -81,6 +85,23 @@
             </div>
             <button onclick="refreshLog()" style="margin-bottom:10px;">Oppdater</button>
             <pre id="diag-log-output" style="max-height:400px; overflow-y:auto; background:#0a0a0a; padding:12px; border-radius:8px; font-size:0.8rem; white-space:pre-wrap;"></pre>
+        </div>
+
+        <div class="panel" style="grid-column: 1 / -1;">
+            <div class="panel-title">
+                <span>Ramp-kalibrering</span>
+                <span style="font-size:0.75rem; color:var(--text-dim)">POST /api/v1/commissioning/ramptest/*</span>
+            </div>
+            <button class="stop-btn" onclick="handleEmergencyStop()">STOPP</button>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; margin-bottom: 16px;">
+                <button class="ramp-test-btn" onclick="startZoneTest(0, 'accel', 0.8, 6.0)">Sone 1: 0,8 &rarr; 6,0 km/t (opp)</button>
+                <button class="ramp-test-btn" onclick="startZoneTest(0, 'decel', 6.0, 0.8)">Sone 1: 6,0 &rarr; 0,8 km/t (ned)</button>
+                <button class="ramp-test-btn" onclick="startZoneTest(1, 'accel', 6.0, 14.0)">Sone 2: 6,0 &rarr; 14,0 km/t (opp)</button>
+                <button class="ramp-test-btn" onclick="startZoneTest(1, 'decel', 14.0, 6.0)">Sone 2: 14,0 &rarr; 6,0 km/t (ned)</button>
+                <button class="ramp-test-btn" onclick="startZoneTest(2, 'accel', 14.0, 20.0)">Sone 3: 14,0 &rarr; 20,0 km/t (opp)</button>
+                <button class="ramp-test-btn" onclick="startZoneTest(2, 'decel', 20.0, 14.0)">Sone 3: 20,0 &rarr; 14,0 km/t (ned)</button>
+            </div>
+            <div id="ramp-test-status" style="background: var(--card-bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--surface-border); font-size: 0.85rem; min-height: 42px; display: flex; align-items: center;">Klar for måling. Sørg for at ingen står på beltet før start.</div>
         </div>
     </div>
 
@@ -136,6 +157,160 @@
             document.getElementById('diag-log-output').textContent = text || '(empty)';
         } catch (e) {
             setStatus(`Failed to load log: ${e.message}`, 'error');
+        }
+    }
+
+    let activeTestAborted = false;
+    let testInProgress = false;
+
+    function setRampTestButtonsDisabled(disabled) {
+        document.querySelectorAll('.ramp-test-btn').forEach(btn => btn.disabled = disabled);
+    }
+
+    function setRampStatus(msg, type = '') {
+        const el = document.getElementById('ramp-test-status');
+        if (el) {
+            el.innerText = msg;
+            el.className = type === 'success' ? 'status-success' : (type === 'error' ? 'status-error' : '');
+        }
+        setStatus(msg, type);
+    }
+
+    async function handleEmergencyStop() {
+        activeTestAborted = true;
+        testInProgress = false;
+        setRampTestButtonsDisabled(false);
+        try {
+            await fetch('/api/v1/control/stop', { method: 'POST' });
+            setRampStatus('STOPP aktivert! Test avbrutt og beltet stoppes.', 'error');
+        } catch (e) {
+            setRampStatus(`Feil ved stopp-kommando: ${e.message}`, 'error');
+        }
+    }
+
+    async function fetchTelemetrySpeed() {
+        const res = await fetch('/api/v1/telemetry', { cache: 'no-cache' });
+        if (!res.ok) throw new Error('Kunne ikke hente telemetri');
+        const data = await res.json();
+        return typeof data.actualSpeedKmh === 'number' ? data.actualSpeedKmh : 0.0;
+    }
+
+    async function startZoneTest(zone, direction, startSpeedKmh, targetSpeedKmh) {
+        if (testInProgress) return;
+
+        const confirmed = confirm("Sørg for at ingen står på beltet. Fortsette?");
+        if (!confirmed) return;
+
+        activeTestAborted = false;
+        testInProgress = true;
+        setRampTestButtonsDisabled(true);
+
+        try {
+            setRampStatus(`Sjekker starthastighet (${startSpeedKmh.toFixed(1)} km/t)...`);
+            let currentSpeed = await fetchTelemetrySpeed();
+
+            // Sjekk om beltet allerede er innenfor ±0.5 km/t av startfart
+            if (Math.abs(currentSpeed - startSpeedKmh) > 0.5) {
+                setRampStatus(`Stabiliserer på startfart (${startSpeedKmh.toFixed(1)} km/t)... Nå: ${currentSpeed.toFixed(1)} km/t`);
+
+                const speedRes = await fetch('/api/v1/control/speed', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ speed: startSpeedKmh })
+                });
+                if (!speedRes.ok) {
+                    throw new Error('Kunne ikke sette startfart');
+                }
+
+                // Poll inntil innenfor ±0.5 km/t eller timeout (20s = 40 * 500ms)
+                let stabilized = false;
+                const maxAttempts = 40;
+                for (let i = 0; i < maxAttempts; i++) {
+                    if (activeTestAborted) return;
+                    await new Promise(r => setTimeout(r, 500));
+                    if (activeTestAborted) return;
+
+                    currentSpeed = await fetchTelemetrySpeed();
+                    setRampStatus(`Stabiliserer på startfart (${startSpeedKmh.toFixed(1)} km/t)... Nå: ${currentSpeed.toFixed(1)} km/t (${Math.round((maxAttempts - i) * 0.5)}s)`);
+
+                    if (Math.abs(currentSpeed - startSpeedKmh) <= 0.5) {
+                        stabilized = true;
+                        break;
+                    }
+                }
+
+                if (!stabilized) {
+                    throw new Error('Tidsavbrudd: Beltet stabiliserte seg ikke på startfart innen 20s');
+                }
+            }
+
+            if (activeTestAborted) return;
+
+            setRampStatus(`Starter tidsmålt test: ${startSpeedKmh.toFixed(1)} -> ${targetSpeedKmh.toFixed(1)} km/t...`);
+            const startRes = await fetch('/api/v1/commissioning/ramptest/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ startSpeedKmh, targetSpeedKmh })
+            });
+            if (!startRes.ok) {
+                throw new Error('Kunne ikke starte ramptest på enheten');
+            }
+
+            // Poll status hver 500ms inntil complete
+            let testResult = null;
+            while (!activeTestAborted) {
+                await new Promise(r => setTimeout(r, 500));
+                if (activeTestAborted) return;
+
+                const statusRes = await fetch('/api/v1/commissioning/ramptest/status', { cache: 'no-cache' });
+                if (!statusRes.ok) throw new Error('Kunne ikke lese teststatus');
+                const status = await statusRes.json();
+
+                if (status.complete) {
+                    testResult = status;
+                    break;
+                } else if (status.active) {
+                    setRampStatus(`Måler ramp... Tid: ${status.totalMs || 0} ms, Dødtid: ${status.deadTimeMs || 0} ms`);
+                }
+            }
+
+            if (activeTestAborted) return;
+
+            if (testResult.timedOut) {
+                setRampStatus('Test tidsavbrudd (timeout på 30s nådd). Ingen data lagret.', 'error');
+                return;
+            }
+
+            const zoneSpanKmh = Math.abs(targetSpeedKmh - startSpeedKmh);
+            const netMs = Math.max(1, testResult.totalMs - testResult.deadTimeMs);
+            const rampMsPerKmh = netMs / zoneSpanKmh;
+
+            setRampStatus(`Beregnet: dødtid=${testResult.deadTimeMs}ms, rate=${rampMsPerKmh.toFixed(1)} ms/(km/t). Lagrer...`);
+
+            const saveRes = await fetch('/api/v1/commissioning/ramptest/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    zone,
+                    direction,
+                    rampMsPerKmh,
+                    deadTimeMs: testResult.deadTimeMs
+                })
+            });
+
+            if (saveRes.ok) {
+                setRampStatus(`Test fullført og lagret! Dødtid: ${testResult.deadTimeMs} ms, Rate: ${rampMsPerKmh.toFixed(1)} ms/(km/t) (Total: ${testResult.totalMs} ms)`, 'success');
+            } else {
+                const errData = await saveRes.json().catch(() => ({}));
+                setRampStatus(`Test fullført, men lagring feilet: ${errData.error || saveRes.statusText}`, 'error');
+            }
+        } catch (err) {
+            if (!activeTestAborted) {
+                setRampStatus(`Feil: ${err.message}`, 'error');
+            }
+        } finally {
+            testInProgress = false;
+            setRampTestButtonsDisabled(false);
         }
     }
 

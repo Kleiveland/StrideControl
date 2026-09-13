@@ -78,6 +78,12 @@ public:
     uint32_t getDeadlineMissCount() const;
     uint32_t getOverrunCount() const;
 
+    bool isRampTestActive() const override { return rampTestActive_; }
+    bool isRampTestComplete() const override { return rampTestComplete_; }
+    bool didRampTestTimeOut() const override { return rampTestTimedOut_; }
+    uint32_t getRampTestDeadTimeMs() const override { return rampTestDeadTimeMs_; }
+    uint32_t getRampTestTotalMs() const override { return rampTestTotalMs_; }
+
     static const char* version();
 
     // Command Staging Producer Interface
@@ -109,6 +115,18 @@ private:
     WorkoutEngine workoutEngine_;
     WorkoutDispatcher dispatcher_;
     ControlCoordinator coordinator_;
+
+    volatile bool rampTestActive_ = false;
+    volatile bool rampTestComplete_ = false;
+    volatile bool rampTestTimedOut_ = false;
+    uint32_t rampTestStartMs_ = 0;
+    float rampTestStartSpeedKmh_ = 0.0f;
+    float rampTestTargetSpeedKmh_ = 0.0f;
+    uint32_t rampTestDeadTimeMs_ = 0;
+    uint32_t rampTestTotalMs_ = 0;
+    static constexpr uint32_t kRampTestTimeoutMs = 30000;
+    static constexpr float kRampTestMoveThresholdKmh = 0.1f;
+    static constexpr float kRampTestArrivalToleranceKmh = 0.3f;
 
     bool initialized_ = false;
     uint32_t lastAuthoritativeTimestampMs_ = 0;

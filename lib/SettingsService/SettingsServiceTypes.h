@@ -1,4 +1,6 @@
 #pragma once
+#ifndef STRIDECONTROL_SETTINGSSERVICETYPES_H
+#define STRIDECONTROL_SETTINGSSERVICETYPES_H
 
 #include <cstdint>
 #include <cstddef>
@@ -47,6 +49,17 @@ struct MaintenanceConfig {
 };
 
 /**
+ * @brief Belt acceleration and deceleration ramp calibration configuration.
+ */
+struct RampCalibrationConfig {
+    uint32_t deadTimeMs = 500;
+    float accelMsPerKmh[3] = {2000.0f, 800.0f, 1200.0f};
+    float decelMsPerKmh[3] = {1500.0f, 700.0f, 1000.0f};
+    float loadMultiplier = 1.15f;
+    bool calibrated = false;
+};
+
+/**
  * @brief Persistent Bluetooth subsystem configuration.
  */
 struct BleConfig {
@@ -70,3 +83,5 @@ struct SystemConfig {
 };
 
 } // namespace stridecontrol
+
+#endif // STRIDECONTROL_SETTINGSSERVICETYPES_H

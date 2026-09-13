@@ -1070,6 +1070,137 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/v1/config/ble", HTTP_POST, bleConfigPostHandler, nullptr, commandBodyBuffer);
 
+    // POST /api/v1/commissioning/ramptest/start
+    auto rampTestStartHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+
+        if (commandStager_ == nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+            return;
+        }
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received != buffer->capacity) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+            return;
+        }
+
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+
+        if (err || !doc.containsKey("startSpeedKmh") || !doc.containsKey("targetSpeedKmh")) {
+            request->send(400, "application/json", "{\"error\":\"Invalid or missing startSpeedKmh or targetSpeedKmh\"}");
+            return;
+        }
+
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::StartRampCalibrationTest;
+        cmd.timestampMs = millis();
+        cmd.data.rampTest.startSpeedKmh = doc["startSpeedKmh"].as<float>();
+        cmd.data.rampTest.targetSpeedKmh = doc["targetSpeedKmh"].as<float>();
+
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/v1/commissioning/ramptest/start", HTTP_POST, rampTestStartHandler, nullptr, commandBodyBuffer);
+
+    // GET /api/v1/commissioning/ramptest/status
+    server_.on("/api/v1/commissioning/ramptest/status", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        stream->addHeader("Cache-Control", "no-cache");
+        JsonDocument doc;
+        doc["active"] = commandStager_->isRampTestActive();
+        doc["complete"] = commandStager_->isRampTestComplete();
+        doc["timedOut"] = commandStager_->didRampTestTimeOut();
+        doc["deadTimeMs"] = commandStager_->getRampTestDeadTimeMs();
+        doc["totalMs"] = commandStager_->getRampTestTotalMs();
+        serializeJson(doc, *stream);
+        request->send(stream);
+    });
+
+    // POST /api/v1/commissioning/ramptest/save
+    auto rampTestSaveHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+            return;
+        }
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received != buffer->capacity) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+            return;
+        }
+
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+
+        if (err || !doc.containsKey("zone") || !doc.containsKey("direction") ||
+            !doc.containsKey("rampMsPerKmh") || !doc.containsKey("deadTimeMs")) {
+            request->send(400, "application/json", "{\"error\":\"Invalid or missing parameters\"}");
+            return;
+        }
+
+        const int zone = doc["zone"].as<int>();
+        const char* direction = doc["direction"] | "";
+        const float rampMsPerKmh = doc["rampMsPerKmh"].as<float>();
+        const uint32_t deadTimeMs = doc["deadTimeMs"].as<uint32_t>();
+
+        if (zone < 0 || zone > 2 || (strcmp(direction, "accel") != 0 && strcmp(direction, "decel") != 0)) {
+            request->send(400, "application/json", "{\"error\":\"Invalid zone or direction\"}");
+            return;
+        }
+
+        RampCalibrationConfig cfg = SettingsService::instance().getRampCalibrationConfig();
+        if (strcmp(direction, "accel") == 0) {
+            cfg.accelMsPerKmh[zone] = rampMsPerKmh;
+        } else {
+            cfg.decelMsPerKmh[zone] = rampMsPerKmh;
+        }
+        cfg.deadTimeMs = deadTimeMs;
+        cfg.calibrated = true;
+
+        const bool ok = SettingsService::instance().saveRampCalibrationConfig(cfg);
+        request->send(ok ? 200 : 500, "application/json", ok ? "{\"status\":\"saved\"}" : "{\"error\":\"save_failed\"}");
+    };
+    server_.on("/api/v1/commissioning/ramptest/save", HTTP_POST, rampTestSaveHandler, nullptr, commandBodyBuffer);
+
 #if defined(STRIDECONTROL_TESTBENCH)
     // GET /simulator.html (Testbench active universe UI)
     server_.on("/simulator.html", HTTP_GET, [](AsyncWebServerRequest* request) {

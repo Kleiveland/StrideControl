@@ -23,6 +23,7 @@ enum class ControlCommandType : uint8_t {
     ExtendRest,
     AcceptSpeedShift,
     RejectSpeedShift,
+    StartRampCalibrationTest,
     SetGuiMode
 };
 
@@ -48,6 +49,10 @@ struct ControlCommand {
             uint8_t userId;
             bool isManual;
         } guiMode;
+        struct {
+            float startSpeedKmh;
+            float targetSpeedKmh;
+        } rampTest;
     } data{};
 };
 
@@ -55,6 +60,11 @@ class IControlCommandStager {
 public:
     virtual ~IControlCommandStager() = default;
     virtual bool stageCommand(const ControlCommand& cmd) = 0;
+    virtual bool isRampTestActive() const { return false; }
+    virtual bool isRampTestComplete() const { return false; }
+    virtual bool didRampTestTimeOut() const { return false; }
+    virtual uint32_t getRampTestDeadTimeMs() const { return 0; }
+    virtual uint32_t getRampTestTotalMs() const { return 0; }
 };
 
 } // namespace stridecontrol

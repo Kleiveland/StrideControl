@@ -144,6 +144,27 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
     // 1. Always update the physical controller so active hardware execution can complete or report failure
     controller_.update(nowMs);
 
+    if (rampTestActive_ && !rampTestComplete_) {
+        const uint32_t elapsedMs = nowMs - rampTestStartMs_;
+        const float currentSpeed = snapshot.speed.speedKmh;
+        const float movedFromStart = std::abs(currentSpeed - rampTestStartSpeedKmh_);
+        const float distFromTarget = std::abs(currentSpeed - rampTestTargetSpeedKmh_);
+
+        if (rampTestDeadTimeMs_ == 0 && movedFromStart >= kRampTestMoveThresholdKmh) {
+            rampTestDeadTimeMs_ = elapsedMs;
+        }
+        if (distFromTarget <= kRampTestArrivalToleranceKmh) {
+            rampTestTotalMs_ = elapsedMs;
+            rampTestComplete_ = true;
+            rampTestActive_ = false;
+        } else if (elapsedMs >= kRampTestTimeoutMs) {
+            rampTestTotalMs_ = elapsedMs;
+            rampTestTimedOut_ = true;
+            rampTestComplete_ = true;
+            rampTestActive_ = false;
+        }
+    }
+
     const bool authoritative = isSnapshotAuthoritative(snapshot, nowMs);
 
     if (authoritative) {
@@ -389,6 +410,17 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             case ControlCommandType::RejectSpeedShift:
                 session_.rejectSpeedAdjustmentShift();
+                break;
+            case ControlCommandType::StartRampCalibrationTest:
+                rampTestActive_ = true;
+                rampTestStartMs_ = cmdNowMs;
+                rampTestStartSpeedKmh_ = cmd.data.rampTest.startSpeedKmh;
+                rampTestTargetSpeedKmh_ = cmd.data.rampTest.targetSpeedKmh;
+                rampTestDeadTimeMs_ = 0;
+                rampTestTotalMs_ = 0;
+                rampTestComplete_ = false;
+                rampTestTimedOut_ = false;
+                dispatcher_.stageSpeedTarget(cmd.data.rampTest.targetSpeedKmh);
                 break;
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual, cmdNowMs);

@@ -1,4 +1,6 @@
 #pragma once
+#ifndef STRIDECONTROL_SETTINGSSERVICE_H
+#define STRIDECONTROL_SETTINGSSERVICE_H
 
 #include <cstddef>
 #include <cstdint>
@@ -38,9 +40,11 @@ public:
     InclineConfig getInclineConfig();
     SpeedConfig getSpeedConfig();
     MaintenanceConfig getMaintenanceConfig();
+    RampCalibrationConfig getRampCalibrationConfig();
     bool saveInclineConfig(const InclineConfig& config);
     bool saveSpeedConfig(const SpeedConfig& config);
     bool saveMaintenanceConfig(const MaintenanceConfig& config);
+    bool saveRampCalibrationConfig(const RampCalibrationConfig& config);
     bool getBleStackEnabled();
     bool saveBleStackEnabled(bool enabled);
     void factoryReset();
@@ -80,3 +84,5 @@ private:
 };
 
 } // namespace stridecontrol
+
+#endif // STRIDECONTROL_SETTINGSSERVICE_H
