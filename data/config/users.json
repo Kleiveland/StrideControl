@@ -202,12 +202,12 @@
       "active_workout_idx": 0,
       "workouts": [
         {
-          "name": "Kortintervall (45/15)",
-          "warmup_m": 8,
+          "name": "20 x 45/15",
+          "warmup_m": 15,
           "work_m": 0.75,
           "rest_m": 0.25,
-          "reps": 10,
-          "cooldown_m": 5
+          "reps": 20,
+          "cooldown_m": 10
         },
         {
           "name": "Terskel 4x4",
