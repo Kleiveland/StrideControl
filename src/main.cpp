@@ -51,6 +51,7 @@ public:
         report.sessionState = stridecontrol::workoutSessionStateName(telem.sessionSnapshot.state);
         report.stepIndex = telem.sessionSnapshot.currentStepIndex;
         report.stepRemainingMs = telem.sessionSnapshot.stepRemainingMs;
+        report.stepElapsedMs = telem.sessionSnapshot.stepElapsedMs;
         report.targetSpeedKmh = telem.simTargetSpeedKmh;
         report.targetInclinePct = telem.simTargetInclinePct;
         report.runnerSpeedKmh = telem.snapshot.runner.runnerSpeedKmh;
@@ -134,6 +135,7 @@ public:
         report.sessionState = stridecontrol::workoutSessionStateName(sessSnap.state);
         report.stepIndex = sessSnap.currentStepIndex;
         report.stepRemainingMs = sessSnap.stepRemainingMs;
+        report.stepElapsedMs = sessSnap.stepElapsedMs;
         report.targetSpeedKmh = sessSnap.hasSpeedTarget ? sessSnap.targetSpeedKmh : staged.speedKmh;
         report.targetInclinePct = sessSnap.hasInclineTarget ? static_cast<float>(sessSnap.targetInclinePct) : staged.inclinePct;
         report.runnerSpeedKmh = snap.runner.runnerSpeedKmh;

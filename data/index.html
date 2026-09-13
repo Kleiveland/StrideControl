@@ -2022,7 +2022,7 @@
         // ===================================================================
         // DYNAMISK TIDSLINJE-GENERERING
         // ===================================================================
-        function renderTimelines(wkModel = model, isFreeRun = false, actualDurationsMs = []) {
+        function renderTimelines(wkModel = model, isFreeRun = false, actualDurationsMs = [], liveCurrentStep = null) {
             if (isFreeRun) {
                 const freeRunHTML = `<div class="t-block-mass" style="width: 100%;"><div class="t-fill-mass" style="height: 60%; background: var(--phase-work);"></div></div>`;
                 if (dom.runTrack) dom.runTrack.innerHTML = freeRunHTML;
@@ -2038,14 +2038,28 @@
             seq.forEach((s, idx) => {
                 const plannedDurSec = s.mode === 'time' ? s.amount : 60;
                 const actualDurMs = actualDurationsMs[idx];
-                const dur = (typeof actualDurMs === 'number' && actualDurMs > 0) ? (actualDurMs / 1000) : plannedDurSec;
+                let dur;
+                if (liveCurrentStep && liveCurrentStep.index === idx && liveCurrentStep.durationMs > 0) {
+                    dur = liveCurrentStep.durationMs / 1000;
+                } else if (typeof actualDurMs === 'number' && actualDurMs > 0) {
+                    dur = actualDurMs / 1000;
+                } else {
+                    dur = plannedDurSec;
+                }
                 totalTime += dur;
             });
 
             const blocksHTML = seq.map((s, idx) => {
                 const plannedDurSec = s.mode === 'time' ? s.amount : 60;
                 const actualDurMs = actualDurationsMs[idx];
-                const dur = (typeof actualDurMs === 'number' && actualDurMs > 0) ? (actualDurMs / 1000) : plannedDurSec;
+                let dur;
+                if (liveCurrentStep && liveCurrentStep.index === idx && liveCurrentStep.durationMs > 0) {
+                    dur = liveCurrentStep.durationMs / 1000;
+                } else if (typeof actualDurMs === 'number' && actualDurMs > 0) {
+                    dur = actualDurMs / 1000;
+                } else {
+                    dur = plannedDurSec;
+                }
                 const pct = Math.max(1, (dur / totalTime) * 100);
                 let color = 'var(--phase-work)';
                 let hPct = 85;
@@ -3088,7 +3102,6 @@
         let lastTelemetryTimestampMs = 0;
         let lastAuthoritativeUpdateTime = 0;
         let lastAuthoritativeTelemetry = null;
-        let telemetryPollTimeoutId = null;
         let lastRenderedSessionState = null;
 
         // Manual Mode Elapsed Time State
@@ -3402,11 +3415,14 @@
             } else if (typeof telem.session?.workoutId === 'number') {
                 const activeWorkout = workoutLibrary.find(w => w.numericId === telem.session.workoutId);
                 if (activeWorkout) {
-                    renderTimelines(activeWorkout, false, telem.session.actualStepDurationsMs ?? []);
+                    const currentIdx = telem.session.stepIndex ?? 0;
+                    const liveCurrentStep = (typeof telem.session.stepElapsedMs === 'number' && typeof telem.session.stepRemainingMs === 'number')
+                        ? { index: currentIdx, durationMs: telem.session.stepElapsedMs + telem.session.stepRemainingMs }
+                        : null;
+                    renderTimelines(activeWorkout, false, telem.session.actualStepDurationsMs ?? [], liveCurrentStep);
                     applyLiveTimelineProgress(telem.session.stepIndex ?? 0, telem.session.stepProgressFraction ?? 0);
 
                     const seq = buildExecutionSequence(activeWorkout);
-                    const currentIdx = telem.session.stepIndex ?? 0;
                     const currentStep = seq[currentIdx];
                     const isDragStep = currentStep && currentStep.role === 'drag';
                     const canStartDragNow = currentStep && currentStep.role !== 'drag' &&
@@ -3677,7 +3693,12 @@
             }
         }
 
+        let telemetryPollInFlight = false;
+
         async function pollTelemetry() {
+            if (telemetryPollInFlight) return; // Skip this tick if the previous request is still in flight
+            telemetryPollInFlight = true;
+
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), TELEMETRY_TIMEOUT_MS);
 
@@ -3699,7 +3720,7 @@
                 checkTelemetryLiveness();
             } finally {
                 checkTelemetryLiveness();
-                telemetryPollTimeoutId = setTimeout(pollTelemetry, TELEMETRY_POLL_INTERVAL_MS);
+                telemetryPollInFlight = false;
             }
         }
 
@@ -3757,6 +3778,7 @@
             initSettingsAndHotkeysUI();
             fetchSystemSettings();
             pollTelemetry();
+            setInterval(pollTelemetry, TELEMETRY_POLL_INTERVAL_MS);
         }
 
         initIntervalViewSlots();

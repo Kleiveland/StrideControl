@@ -17,6 +17,7 @@ struct TelemetryReport {
     const char* sessionState = "Idle";
     uint8_t stepIndex = 0;
     uint32_t stepRemainingMs = 0;
+    uint32_t stepElapsedMs = 0;
     float targetSpeedKmh = 0.0f;
     float targetInclinePct = 0.0f;
     float runnerSpeedKmh = 0.0f;

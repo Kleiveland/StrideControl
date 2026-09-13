@@ -199,6 +199,7 @@ void WebServerManager::registerRoutes() {
         session["state"] = report.sessionState;
         session["stepIndex"] = report.stepIndex;
         session["stepRemainingMs"] = report.stepRemainingMs;
+        session["stepElapsedMs"] = report.stepElapsedMs;
         session["elapsedTimeMs"] = report.totalElapsedTimeMs;
         session["totalElevationMeters"] = report.totalElevationMeters;
         session["avgHeartRateBpm"] = report.avgHeartRateBpm;
