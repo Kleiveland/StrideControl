@@ -6,6 +6,7 @@
 #include "../DiagnosticsLog/DiagnosticsLog.h"
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 
 #if defined(STRIDECONTROL_TESTBENCH)
 #include "TestbenchControlRuntime.h"
@@ -727,6 +728,138 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/control/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
     server_.on("/api/v1/control/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
+
+    server_.on(
+        "/api/v1/settings/workout",
+        HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (request->getResponse() != nullptr) {
+                if (request->_tempObject) { free(request->_tempObject); request->_tempObject = nullptr; }
+                return;
+            }
+            if (!request->_tempObject) {
+                request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+                return;
+            }
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received != buffer->capacity) {
+                free(buffer);
+                request->_tempObject = nullptr;
+                request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+                return;
+            }
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+            free(buffer);
+            request->_tempObject = nullptr;
+
+            if (err || !doc.containsKey("userId") || !doc.containsKey("workout")) {
+                request->send(400, "application/json", "{\"error\":\"Invalid or missing userId/workout\"}");
+                return;
+            }
+
+            const uint8_t userId = doc["userId"].as<uint8_t>();
+            JsonObjectConst wObj = doc["workout"].as<JsonObjectConst>();
+
+            const SystemSettings* current = SettingsService::instance().getActiveSettings();
+            if (current == nullptr) {
+                request->send(500, "application/json", "{\"error\":\"Settings unavailable\"}");
+                return;
+            }
+            SystemSettingsPtr candidate = makeSystemSettings();
+            if (!candidate) {
+                request->send(500, "application/json", "{\"error\":\"Memory allocation failed\"}");
+                return;
+            }
+            *candidate = *current;
+
+            // Find the target user by id
+            int userIdx = -1;
+            for (size_t i = 0; i < MAX_USERS; ++i) {
+                if (candidate->users[i].id == userId) { userIdx = static_cast<int>(i); break; }
+            }
+            if (userIdx < 0) {
+                request->send(404, "application/json", "{\"error\":\"User not found\"}");
+                return;
+            }
+            UserProfile& user = candidate->users[userIdx];
+
+            // Parse the incoming workout JSON into a WorkoutDefinition
+            WorkoutDefinition parsed{};
+            const uint16_t incomingId = wObj["id"] | static_cast<uint16_t>(0);
+            const char* wName = wObj["name"] | "";
+            strncpy(parsed.name, wName, sizeof(parsed.name) - 1);
+            parsed.name[sizeof(parsed.name) - 1] = '\0';
+            parsed.lastUsedTimestamp = millis();
+
+            JsonArrayConst segArr = wObj["segments"].as<JsonArrayConst>();
+            parsed.segmentCount = std::min(segArr.size(), MAX_SEGMENTS_PER_WORKOUT);
+            for (size_t sIdx = 0; sIdx < parsed.segmentCount; ++sIdx) {
+                JsonObjectConst segObj = segArr[sIdx];
+                WorkoutSegment& seg = parsed.segments[sIdx];
+                seg.id = segObj["id"] | static_cast<uint16_t>(sIdx + 1);
+                seg.type = parseSegmentType(segObj["type"] | "SINGLE_STEP");
+                seg.repetitions = segObj["repetitions"] | 1;
+                seg.startSpeedKmh = segObj["startSpeedKmh"] | 0.0f;
+                seg.speedProgressionPerRepKmh = segObj["speedProgressionPerRepKmh"] | 0.0f;
+
+                JsonArrayConst stArr = segObj["steps"].as<JsonArrayConst>();
+                seg.stepCount = std::min(stArr.size(), MAX_STEPS_PER_GROUP);
+                for (size_t stIdx = 0; stIdx < seg.stepCount; ++stIdx) {
+                    JsonObjectConst stObj = stArr[stIdx];
+                    WorkoutStep& st = seg.steps[stIdx];
+                    st.id = stObj["id"] | static_cast<uint16_t>(stIdx + 1);
+                    st.role = parseStepRole(stObj["role"] | "WORK");
+                    st.durationType = parseDurationType(stObj["durationType"] | "TIME_SECONDS");
+                    st.durationValue = stObj["durationValue"] | 0;
+                    st.speedMode = parseSpeedMode(stObj["speedMode"] | "FIXED");
+                    st.targetSpeedKmh = stObj["targetSpeedKmh"] | 0.0f;
+                    st.targetInclinePct = stObj["targetInclinePct"] | 0;
+                    st.setIncline = stObj["setIncline"] | false;
+                }
+            }
+
+            // Find-or-append by id; assign a new id if this is a brand-new workout
+            int targetSlot = -1;
+            uint16_t maxExistingId = 0;
+            for (size_t i = 0; i < user.workoutCount; ++i) {
+                if (incomingId != 0 && user.workouts[i].id == incomingId) { targetSlot = static_cast<int>(i); }
+                if (user.workouts[i].id > maxExistingId) { maxExistingId = user.workouts[i].id; }
+            }
+            if (targetSlot < 0) {
+                if (user.workoutCount >= MAX_WORKOUTS_PER_USER) {
+                    request->send(409, "application/json", "{\"error\":\"Workout limit reached\"}");
+                    return;
+                }
+                targetSlot = static_cast<int>(user.workoutCount);
+                user.workoutCount++;
+                parsed.id = (incomingId != 0) ? incomingId : (maxExistingId + 1);
+            } else {
+                parsed.id = incomingId;
+            }
+            user.workouts[targetSlot] = parsed;
+
+            char errBuf[128] = {};
+            if (SettingsService::instance().updateSystemSettings(*candidate, errBuf, sizeof(errBuf))) {
+                JsonDocument respDoc;
+                respDoc["status"] = "saved";
+                respDoc["workoutId"] = parsed.id;
+                String resp;
+                serializeJson(respDoc, resp);
+                request->send(200, "application/json", resp);
+            } else {
+                JsonDocument respDoc;
+                respDoc["error"] = errBuf[0] ? errBuf : "Validation or persistence failed";
+                String resp;
+                serializeJson(respDoc, resp);
+                request->send(400, "application/json", resp);
+            }
+        },
+        nullptr,
+        [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+            handleRequestBodyChunk(request, data, len, index, total, 4096, "{\"error\":\"Payload too large\"}");
+        }
+    );
 
     auto setGuiModeHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {

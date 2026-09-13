@@ -2665,6 +2665,94 @@
             };
         }
 
+        function convertModelToBackendWorkout(m) {
+            const roleToBackend = { warm: 'WARMUP', drag: 'WORK', rest: 'REST', cool: 'COOLDOWN' };
+            const segments = m.items.map((item, segIdx) => {
+                if (item.type === 'interval') {
+                    return {
+                        id: segIdx + 1,
+                        type: 'REPEATING_GROUP',
+                        repetitions: item.reps || 1,
+                        startSpeedKmh: (item.steps.find(s => s.role === 'drag') || {}).speed || 0,
+                        speedProgressionPerRepKmh: (item.steps.find(s => s.role === 'drag') || {}).progress || 0,
+                        steps: item.steps.map((s, stIdx) => ({
+                            id: stIdx + 1,
+                            role: roleToBackend[s.role] || 'WORK',
+                            durationType: s.mode === 'time' ? 'TIME_SECONDS' : 'METERS',
+                            durationValue: s.amount,
+                            speedMode: s.setSpeed ? 'FIXED' : 'FREE',
+                            targetSpeedKmh: s.speed || 0,
+                            targetInclinePct: 0,
+                            setIncline: false
+                        }))
+                    };
+                } else {
+                    return {
+                        id: segIdx + 1,
+                        type: 'SINGLE_STEP',
+                        repetitions: 1,
+                        startSpeedKmh: 0,
+                        speedProgressionPerRepKmh: 0,
+                        steps: [{
+                            id: 1,
+                            role: roleToBackend[item.role] || 'WORK',
+                            durationType: item.mode === 'time' ? 'TIME_SECONDS' : 'METERS',
+                            durationValue: item.amount,
+                            speedMode: item.setSpeed ? 'FIXED' : 'FREE',
+                            targetSpeedKmh: item.speed || 0,
+                            targetInclinePct: 0,
+                            setIncline: false
+                        }]
+                    };
+                }
+            });
+            return {
+                id: m.numericId || 0,
+                name: m.name || 'ØKT',
+                segments: segments
+            };
+        }
+
+        document.getElementById('saveEditor')?.addEventListener('click', () => {
+            if (!activeUserProfile || typeof activeUserProfile.id !== 'number') {
+                console.error('[Editor] Cannot save - no active user profile');
+                return;
+            }
+            const payload = { userId: activeUserProfile.id, workout: convertModelToBackendWorkout(model) };
+            fetch('/api/v1/settings/workout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(res => res.json().then(data => ({ ok: res.ok, data })))
+            .then(({ ok, data }) => {
+                if (ok) {
+                    if (typeof data.workoutId === 'number') {
+                        model.numericId = data.workoutId;
+                        model.id = 'w_' + data.workoutId;
+                    }
+                    if (Array.isArray(activeUserProfile.workouts)) {
+                        const existingIdx = activeUserProfile.workouts.findIndex(w => w.id === model.numericId);
+                        const backendWorkout = { ...payload.workout, id: model.numericId };
+                        if (existingIdx >= 0) {
+                            activeUserProfile.workouts[existingIdx] = backendWorkout;
+                        } else {
+                            activeUserProfile.workouts.push(backendWorkout);
+                        }
+                    }
+                    console.log('[Editor] Workout saved:', data);
+                    showGlobalToast('ØKT LAGRET');
+                } else {
+                    console.error('[Editor] Save rejected:', data.error);
+                    showGlobalToast('KUNNE IKKE LAGRE ØKT');
+                }
+            })
+            .catch(err => {
+                console.error('[Editor] Save failed:', err);
+                showGlobalToast('FEIL VED LAGRING');
+            });
+        });
+
         function applyUserProfile(user) {
             if (!user) return;
             activeUserProfile = user;
