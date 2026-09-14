@@ -81,6 +81,9 @@ public:
         report.speedAdjustmentPromptActive = telem.sessionSnapshot.speedAdjustmentPromptActive;
         report.suggestedSpeedDeltaKmh = telem.sessionSnapshot.suggestedSpeedDeltaKmh;
         report.speedAdjustmentPromptExpiresMs = telem.sessionSnapshot.speedAdjustmentPromptExpiresMs;
+        report.rampPreFireActive = telem.sessionSnapshot.rampPreFireActive;
+        report.rampPreFireSpeedChanging = telem.sessionSnapshot.rampPreFireSpeedChanging;
+        report.rampPreFireInclineChanging = telem.sessionSnapshot.rampPreFireInclineChanging;
         memcpy(report.actualStepDurationsMs, telem.sessionSnapshot.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
         return true;
     }
@@ -155,6 +158,9 @@ public:
         report.speedAdjustmentPromptActive = sessSnap.speedAdjustmentPromptActive;
         report.suggestedSpeedDeltaKmh = sessSnap.suggestedSpeedDeltaKmh;
         report.speedAdjustmentPromptExpiresMs = sessSnap.speedAdjustmentPromptExpiresMs;
+        report.rampPreFireActive = sessSnap.rampPreFireActive;
+        report.rampPreFireSpeedChanging = sessSnap.rampPreFireSpeedChanging;
+        report.rampPreFireInclineChanging = sessSnap.rampPreFireInclineChanging;
         memcpy(report.actualStepDurationsMs, sessSnap.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
         return true;
     }

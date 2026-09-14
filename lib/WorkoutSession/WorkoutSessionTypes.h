@@ -104,6 +104,8 @@ struct WorkoutSessionSnapshot {
     // Remaining-drag speed adjustment
     bool speedAdjustmentPromptActive = false;
     bool rampPreFireActive = false;
+    bool rampPreFireSpeedChanging = false;
+    bool rampPreFireInclineChanging = false;
     float suggestedSpeedDeltaKmh = 0.0f;
     float appliedWorkSpeedShiftKmh = 0.0f;
     uint32_t speedAdjustmentPromptExpiresMs = 0;

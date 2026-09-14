@@ -3104,6 +3104,7 @@
         let lastAuthoritativeUpdateTime = 0;
         let lastAuthoritativeTelemetry = null;
         let lastRenderedSessionState = null;
+        let rampPreFireToastShown = false;
 
         // Manual Mode Elapsed Time State
         let manualElapsedMs = 0;
@@ -3467,6 +3468,23 @@
                     document.querySelectorAll('.view, .view-grid, .view-flex').forEach(v => v.classList.remove('active'));
                     p2El.classList.add('active');
                 }
+            }
+
+            if (telem.session?.rampPreFireActive === true) {
+                if (!rampPreFireToastShown) {
+                    const speedChanging = telem.session.rampPreFireSpeedChanging === true;
+                    const inclineChanging = telem.session.rampPreFireInclineChanging === true;
+                    let msg = 'Justerer fart...';
+                    if (speedChanging && inclineChanging) {
+                        msg = 'Justerer fart og stigning...';
+                    } else if (inclineChanging && !speedChanging) {
+                        msg = 'Justerer stigning...';
+                    }
+                    showGlobalToast(msg);
+                    rampPreFireToastShown = true;
+                }
+            } else {
+                rampPreFireToastShown = false;
             }
 
             const hrStr = (telem.heartRate && telem.heartRate.valid && telem.heartRate.bpm > 0) ? String(telem.heartRate.bpm) : '--';

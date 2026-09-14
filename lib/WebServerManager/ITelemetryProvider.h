@@ -37,6 +37,9 @@ struct TelemetryReport {
     bool speedAdjustmentPromptActive = false;
     float suggestedSpeedDeltaKmh = 0.0f;
     uint32_t speedAdjustmentPromptExpiresMs = 0;
+    bool rampPreFireActive = false;
+    bool rampPreFireSpeedChanging = false;
+    bool rampPreFireInclineChanging = false;
     uint32_t actualStepDurationsMs[MAX_EXPANDED_WORKOUT_STEPS] = {};
 };
 

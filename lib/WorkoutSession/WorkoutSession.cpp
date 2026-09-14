@@ -351,6 +351,8 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
     }
     preFireSent_ = false;
     snapshot_.rampPreFireActive = false;
+    snapshot_.rampPreFireSpeedChanging = false;
+    snapshot_.rampPreFireInclineChanging = false;
     preFireLeadMs_ = 0;
     if ((workout_->steps[stepIndex].role == StepRole::REST ||
          workout_->steps[stepIndex].role == StepRole::WARMUP) &&
@@ -368,8 +370,12 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
             inclineRampMs = static_cast<uint32_t>(inclineDelta * kInclineMsPerPct);
         }
         preFireLeadMs_ = std::max(speedRampMs, inclineRampMs);
+        snapshot_.rampPreFireSpeedChanging = (speedRampMs > 0);
+        snapshot_.rampPreFireInclineChanging = (inclineRampMs > 0);
     } else {
         preFireTargetStepIndex_ = UINT8_MAX;
+        snapshot_.rampPreFireSpeedChanging = false;
+        snapshot_.rampPreFireInclineChanging = false;
     }
     snapshot_.currentRole = workout_->steps[stepIndex].role;
     snapshot_.currentRep = workout_->steps[stepIndex].repNumber;

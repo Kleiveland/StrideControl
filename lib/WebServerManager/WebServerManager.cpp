@@ -211,6 +211,9 @@ void WebServerManager::registerRoutes() {
         session["speedAdjustmentPromptActive"] = report.speedAdjustmentPromptActive;
         session["suggestedSpeedDeltaKmh"] = report.suggestedSpeedDeltaKmh;
         session["speedAdjustmentPromptExpiresMs"] = report.speedAdjustmentPromptExpiresMs;
+        session["rampPreFireActive"] = report.rampPreFireActive;
+        session["rampPreFireSpeedChanging"] = report.rampPreFireSpeedChanging;
+        session["rampPreFireInclineChanging"] = report.rampPreFireInclineChanging;
         JsonArray actualDurations = session["actualStepDurationsMs"].to<JsonArray>();
         for (uint8_t i = 0; i < report.stepIndex && i < MAX_EXPANDED_WORKOUT_STEPS; ++i) {
             actualDurations.add(report.actualStepDurationsMs[i]);
