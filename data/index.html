@@ -198,6 +198,7 @@
         .tele-val.active-spd { color: var(--danger); }
         .tele-lbl.active-inc { color: var(--accent); }
         .tele-val.active-inc { color: var(--accent); }
+        .ramp-adjust-sub { font-size: 0.85em; margin-top: 2px; }
 
         .screen-manual { padding: 40px; grid-template-rows: 140px 1fr auto 1fr 140px; row-gap: 0; }
         .manual-util-bar { position: absolute; top: 200px; left: 40px; right: 40px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; z-index: 10; height: 70px; }
@@ -821,6 +822,7 @@
                     <div class="tele-content">
                         <div class="tele-lbl" id="man-inc-lbl">Stigning</div>
                         <div class="tele-val" id="man-inc-val">0.0</div>
+                        <div class="tele-lbl ramp-adjust-sub" id="man-inc-sub" style="display:none;"></div>
                     </div>
                 </div>
                 <div class="tele-col" id="col-klatret" style="display:none;">
@@ -845,6 +847,7 @@
                     <div class="tele-content">
                         <div class="tele-lbl" id="man-spd-lbl">Fart</div>
                         <div class="tele-val" id="man-spd-val">0.0</div>
+                        <div class="tele-lbl ramp-adjust-sub" id="man-spd-sub" style="display:none;"></div>
                     </div>
                 </div>
             </div>
@@ -897,10 +900,10 @@
 
                 <div class="telemetry-interval-grid">
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Totaltid</div><div class="tele-val">00:00</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div></div></div>
+                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div><div class="tele-lbl ramp-adjust-sub" id="pre-inc-sub" style="display:none;"></div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Distanse</div><div class="tele-val">0.00</div></div></div>
                     <div class="tele-col" id="int-pre-puls"><div class="tele-content"><div class="tele-lbl">Puls</div><div class="tele-val">--</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div></div></div>
+                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div><div class="tele-lbl ramp-adjust-sub" id="pre-spd-sub" style="display:none;"></div></div></div>
                 </div>
             </div>
 
@@ -939,11 +942,11 @@
 
                 <div class="telemetry-interval-grid">
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Totaltid</div><div class="tele-val">00:00</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div></div></div>
+                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div><div class="tele-lbl ramp-adjust-sub" id="run-inc-sub" style="display:none;"></div></div></div>
                     <div class="tele-col" id="int-run-klatret"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Distanse</div><div class="tele-val">0.00</div></div></div>
                     <div class="tele-col" id="int-run-puls"><div class="tele-content"><div class="tele-lbl">Puls</div><div class="tele-val">--</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div></div></div>
+                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div><div class="tele-lbl ramp-adjust-sub" id="run-spd-sub" style="display:none;"></div></div></div>
                 </div>
             </div>
 
@@ -976,11 +979,11 @@
 
                 <div class="telemetry-interval-grid">
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Totaltid</div><div class="tele-val">00:00</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div></div></div>
+                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div><div class="tele-lbl ramp-adjust-sub" id="p1-inc-sub" style="display:none;"></div></div></div>
                     <div class="tele-col" id="int-p1-klatret"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Distanse</div><div class="tele-val">0.00</div></div></div>
                     <div class="tele-col" id="int-p1-puls"><div class="tele-content"><div class="tele-lbl">Puls</div><div class="tele-val">--</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div></div></div>
+                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div><div class="tele-lbl ramp-adjust-sub" id="p1-spd-sub" style="display:none;"></div></div></div>
                 </div>
             </div>
 
@@ -1022,7 +1025,7 @@
 
                 <div class="telemetry-interval-grid">
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Totaltid</div><div class="tele-val" id="p2-tele-totaltid">00:00</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div></div></div>
+                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div><div class="tele-lbl ramp-adjust-sub" id="p2-inc-sub" style="display:none;"></div></div></div>
                     <div class="tele-col" id="int-p2-klatret"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Distanse</div><div class="tele-val">0.00</div></div></div>
                     <div class="tele-col" id="int-p2-puls"><div class="tele-content"><div class="tele-lbl">Puls</div><div class="tele-val">--</div></div></div>
@@ -1030,6 +1033,7 @@
                         <div class="tele-content">
                             <div class="tele-lbl" id="p2-spd-lbl">Fart</div>
                             <div class="tele-val" id="p2-spd-val">0.0</div>
+                            <div class="tele-lbl ramp-adjust-sub" id="p2-spd-sub" style="display:none;"></div>
                         </div>
                     </div>
                 </div>
@@ -1062,11 +1066,11 @@
 
                 <div class="telemetry-interval-grid">
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Totaltid</div><div class="tele-val">00:00</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div></div></div>
+                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Stigning</div><div class="tele-val">0.0</div><div class="tele-lbl ramp-adjust-sub" id="stop-inc-sub" style="display:none;"></div></div></div>
                     <div class="tele-col" id="int-stop-klatret"><div class="tele-content"><div class="tele-lbl">Klatret</div><div class="tele-val">--</div></div></div>
                     <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Distanse</div><div class="tele-val">0.00</div></div></div>
                     <div class="tele-col" id="int-stop-puls"><div class="tele-content"><div class="tele-lbl">Puls</div><div class="tele-val">--</div></div></div>
-                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div></div></div>
+                    <div class="tele-col"><div class="tele-content"><div class="tele-lbl">Fart</div><div class="tele-val">0.0</div><div class="tele-lbl ramp-adjust-sub" id="stop-spd-sub" style="display:none;"></div></div></div>
                 </div>
             </div>
 
@@ -1567,7 +1571,6 @@
             const lbl = document.getElementById('man-spd-lbl');
             const val = document.getElementById('man-spd-val');
             if (lbl && val) {
-                lbl.innerText = formatTargetLabel('MÅL', targetSpd, false);
                 lbl.classList.add('active-spd');
                 val.classList.add('active-spd');
             }
@@ -1602,7 +1605,6 @@
             const lbl = document.getElementById('man-inc-lbl');
             const val = document.getElementById('man-inc-val');
             if (lbl && val) {
-                lbl.innerText = formatTargetLabel('MÅL', targetInc, true);
                 lbl.classList.add('active-inc');
                 val.classList.add('active-inc');
             }
@@ -3358,36 +3360,46 @@
 
             const manSpdVal = document.getElementById('man-spd-val');
             const manSpdLbl = document.getElementById('man-spd-lbl');
+            const manSpdSub = document.getElementById('man-spd-sub');
             if (manSpdVal && manSpdLbl) {
                 manSpdVal.innerText = spdStr;
-                if (typeof telem.targetSpeedKmh === 'number' && typeof spd === 'number') {
-                    if (Math.abs(telem.targetSpeedKmh - spd) > 0.05) {
-                        manSpdLbl.innerText = formatTargetLabel('MÅL', telem.targetSpeedKmh, false);
-                        manSpdLbl.classList.add('active-spd');
-                        manSpdVal.classList.add('active-spd');
-                    } else {
-                        manSpdLbl.innerText = 'Fart';
-                        manSpdLbl.classList.remove('active-spd');
-                        manSpdVal.classList.remove('active-spd');
+                const isRunning = telem.session?.state === 'Running';
+                if (isRunning && typeof telem.targetSpeedKmh === 'number' && typeof spd === 'number' &&
+                    Math.abs(telem.targetSpeedKmh - spd) > 0.2) {
+                    manSpdLbl.classList.add('active-spd');
+                    manSpdVal.classList.add('active-spd');
+                    if (manSpdSub) {
+                        manSpdSub.innerText = `Justerer til ${telem.targetSpeedKmh.toFixed(1).replace('.', ',')} km/t`;
+                        manSpdSub.style.display = 'block';
+                        manSpdSub.classList.add('active-spd');
                     }
+                } else {
+                    manSpdLbl.classList.remove('active-spd');
+                    manSpdVal.classList.remove('active-spd');
+                    if (manSpdSub) { manSpdSub.style.display = 'none'; manSpdSub.classList.remove('active-spd'); }
                 }
             }
 
             const manIncVal = document.getElementById('man-inc-val');
             const manIncLbl = document.getElementById('man-inc-lbl');
+            const manIncSub = document.getElementById('man-inc-sub');
             const klatret = document.getElementById('col-klatret');
             if (manIncVal && manIncLbl) {
                 manIncVal.innerText = incStr;
-                if (typeof telem.targetInclinePct === 'number' && typeof inc === 'number') {
-                    if (Math.abs(telem.targetInclinePct - inc) > 0.05) {
-                        manIncLbl.innerText = formatTargetLabel('MÅL', telem.targetInclinePct, true);
-                        manIncLbl.classList.add('active-inc');
-                        manIncVal.classList.add('active-inc');
-                    } else {
-                        manIncLbl.innerText = 'Stigning';
-                        manIncLbl.classList.remove('active-inc');
-                        manIncVal.classList.remove('active-inc');
+                const isRunning = telem.session?.state === 'Running';
+                if (isRunning && typeof telem.targetInclinePct === 'number' && typeof inc === 'number' &&
+                    Math.abs(telem.targetInclinePct - inc) > 0.2) {
+                    manIncLbl.classList.add('active-inc');
+                    manIncVal.classList.add('active-inc');
+                    if (manIncSub) {
+                        manIncSub.innerText = `Justerer til ${telem.targetInclinePct.toFixed(0)}%`;
+                        manIncSub.style.display = 'block';
+                        manIncSub.classList.add('active-inc');
                     }
+                } else {
+                    manIncLbl.classList.remove('active-inc');
+                    manIncVal.classList.remove('active-inc');
+                    if (manIncSub) { manIncSub.style.display = 'none'; manIncSub.classList.remove('active-inc'); }
                 }
             }
             const hasElevationData = typeof telem.session?.totalElevationMeters === 'number' && telem.session.totalElevationMeters > 0;
@@ -3519,10 +3531,41 @@
                 const val = col.querySelector('.tele-val');
                 if (!lbl || !val) return;
                 const txt = lbl.innerText.trim().toUpperCase();
+                const isRunning = telem.session?.state === 'Running';
                 if (txt === 'FART') {
                     val.innerText = spdStr;
+                    const sub = col.querySelector('.ramp-adjust-sub');
+                    if (isRunning && typeof telem.targetSpeedKmh === 'number' && typeof spd === 'number' &&
+                        Math.abs(telem.targetSpeedKmh - spd) > 0.2) {
+                        lbl.classList.add('active-spd');
+                        val.classList.add('active-spd');
+                        if (sub) {
+                            sub.innerText = `Justerer til ${telem.targetSpeedKmh.toFixed(1).replace('.', ',')} km/t`;
+                            sub.style.display = 'block';
+                            sub.classList.add('active-spd');
+                        }
+                    } else {
+                        lbl.classList.remove('active-spd');
+                        val.classList.remove('active-spd');
+                        if (sub) { sub.style.display = 'none'; sub.classList.remove('active-spd'); }
+                    }
                 } else if (txt === 'STIGNING') {
                     val.innerText = incStr;
+                    const sub = col.querySelector('.ramp-adjust-sub');
+                    if (isRunning && typeof telem.targetInclinePct === 'number' && typeof inc === 'number' &&
+                        Math.abs(telem.targetInclinePct - inc) > 0.2) {
+                        lbl.classList.add('active-inc');
+                        val.classList.add('active-inc');
+                        if (sub) {
+                            sub.innerText = `Justerer til ${telem.targetInclinePct.toFixed(0)}%`;
+                            sub.style.display = 'block';
+                            sub.classList.add('active-inc');
+                        }
+                    } else {
+                        lbl.classList.remove('active-inc');
+                        val.classList.remove('active-inc');
+                        if (sub) { sub.style.display = 'none'; sub.classList.remove('active-inc'); }
+                    }
                 } else if (txt === 'DISTANSE') {
                     val.innerText = distStr;
                 } else if (txt === 'PULS') {
@@ -3533,21 +3576,6 @@
                     val.innerText = climbStr;
                 }
             });
-
-            // Pause 2 target speed tracking
-            const p2SpdLbl = document.getElementById('p2-spd-lbl');
-            const p2SpdVal = document.getElementById('p2-spd-val');
-            if (p2SpdLbl && p2SpdVal && typeof telem.targetSpeedKmh === 'number' && typeof spd === 'number') {
-                if (Math.abs(telem.targetSpeedKmh - spd) > 0.05) {
-                    p2SpdLbl.innerText = formatTargetLabel('MÅL', telem.targetSpeedKmh, false);
-                    p2SpdLbl.classList.add('active-spd');
-                    p2SpdVal.classList.add('active-spd');
-                } else {
-                    p2SpdLbl.innerText = 'Fart';
-                    p2SpdLbl.classList.remove('active-spd');
-                    p2SpdVal.classList.remove('active-spd');
-                }
-            }
 
             // Step Remaining Countdown in Interval Views
             if (telem.session && typeof telem.session.stepRemainingMs === 'number') {
