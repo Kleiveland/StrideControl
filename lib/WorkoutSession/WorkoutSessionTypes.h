@@ -23,6 +23,20 @@ enum class WorkoutSessionState : uint8_t {
 };
 
 /**
+ * @brief Provenance and identity origin for physical targets.
+ */
+enum class TargetOrigin : uint8_t {
+    None = 0,
+    WorkoutGenerated = 1,
+    SessionManualAdjustment = 2,
+    StandaloneManual = 3,
+    Commissioning = 4,
+    // Aliases for compatibility
+    Workout = 1,
+    Manual = 3
+};
+
+/**
  * @brief Command intent emitted by WorkoutSession on step entries or state transitions.
  * Forwarded to TreadmillController by the owning application layer.
  *
@@ -33,6 +47,13 @@ struct WorkoutCommandIntent {
     float targetSpeedKmh = 0.0f;
     bool hasInclineTarget = false;
     uint8_t targetInclinePct = 0;
+
+    // Provenance & Identity
+    uint32_t sessionGeneration = 0;
+    uint32_t intentSequence = 0;
+    uint8_t stepIndex = 0;
+    bool isPreFire = false;
+    uint32_t timestampMs = 0;
 };
 
 /**
@@ -58,6 +79,7 @@ struct WorkoutSessionSnapshot {
     // Plan & Step progress
     uint16_t workoutId = 0;
     uint8_t armedUserId = 0;
+    uint32_t sessionGeneration = 0;
     uint8_t currentStepIndex = 0;
     uint8_t totalStepCount = 0;
 
@@ -104,6 +126,7 @@ struct WorkoutSessionSnapshot {
     // Remaining-drag speed adjustment
     bool speedAdjustmentPromptActive = false;
     bool rampPreFireActive = false;
+    uint8_t rampPreFireTargetStepIndex = UINT8_MAX;
     bool rampPreFireSpeedChanging = false;
     bool rampPreFireInclineChanging = false;
     float suggestedSpeedDeltaKmh = 0.0f;

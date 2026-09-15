@@ -12,6 +12,10 @@
 #include "TreadmillControllerAdapter.h"
 #include "ControlCoordinator.h"
 #include "ControlRuntime.h"
+#if defined(STRIDECONTROL_TESTBENCH)
+#include "TestbenchControlRuntime.h"
+#include "SettingsService.h"
+#endif
 #include "ConsoleInterface.h"
 #include "SpeedCalibration.h"
 #include "DiagnosticsService.h"
@@ -765,6 +769,211 @@ void test_control_command_resume_stages_speed_not_bypass_session() {
     runtime.end();
 }
 
+// 23. Valid retained target delivers after authority recovery
+void test_authority_recovery_delivers_valid_retained_target() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+
+    // Valid tick stages targets and delivers incline first
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1000, 1.0f, 0.0);
+    runtime.update(snap, 1000);
+    TEST_ASSERT_TRUE(runtime.isSessionActive());
+    TEST_ASSERT_TRUE(runtime.getStagedTargets().pendingSpeed);
+
+    // Authority is lost for 100ms
+    ApplicationSnapshot badSnap{};
+    runtime.update(badSnap, 1020);
+    runtime.update(badSnap, 1040);
+    TEST_ASSERT_TRUE(runtime.getStagedTargets().pendingSpeed);
+
+    // Allow SoftwareSink command to complete and unbusy controller
+    delay(50);
+    runtime.update(badSnap, 1060);
+
+    // Authority recovers
+    ApplicationSnapshot recovSnap = makeAuthoritativeSnapshot(1080, 1.0f, 0.0);
+    runtime.update(recovSnap, 1080);
+
+    // Target was valid, session still active on step 0 -> delivered!
+    TEST_ASSERT_FALSE(runtime.getStagedTargets().pendingSpeed);
+
+    runtime.end();
+}
+
+// 24. Target from aborted session is discarded upon recovery
+void test_authority_recovery_discards_target_from_aborted_session() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+
+    // Valid tick stages targets
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1000, 1.0f, 0.0);
+    runtime.update(snap, 1000);
+    TEST_ASSERT_TRUE(runtime.getStagedTargets().pendingSpeed);
+
+    // Authority lost
+    ApplicationSnapshot badSnap{};
+    runtime.update(badSnap, 1020);
+
+    // Workout aborted
+    TEST_ASSERT_TRUE(runtime.abortWorkout(1040));
+    TEST_ASSERT_FALSE(runtime.isSessionActive());
+
+    // Authority recovers
+    ApplicationSnapshot recovSnap = makeAuthoritativeSnapshot(1060, 0.0f, 0.0);
+    runtime.update(recovSnap, 1060);
+
+    // Obsolete target must be discarded!
+    TEST_ASSERT_FALSE(runtime.getStagedTargets().pendingSpeed);
+    TEST_ASSERT_FALSE(runtime.getStagedTargets().pendingIncline);
+
+    runtime.end();
+}
+
+// 25. Target from finalized session is discarded upon recovery
+void test_authority_recovery_discards_target_from_finalized_session() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+
+    // Valid tick stages targets
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1000, 1.0f, 0.0);
+    runtime.update(snap, 1000);
+    TEST_ASSERT_TRUE(runtime.getStagedTargets().pendingSpeed);
+
+    // Authority lost
+    ApplicationSnapshot badSnap{};
+    runtime.update(badSnap, 1020);
+
+    // Workout finalized
+    TEST_ASSERT_TRUE(runtime.finalizeWorkout(1040));
+    TEST_ASSERT_FALSE(runtime.isSessionActive());
+
+    // Authority recovers
+    ApplicationSnapshot recovSnap = makeAuthoritativeSnapshot(1060, 0.0f, 0.0);
+    runtime.update(recovSnap, 1060);
+
+    // Staged targets discarded!
+    TEST_ASSERT_FALSE(runtime.getStagedTargets().pendingSpeed);
+    TEST_ASSERT_FALSE(runtime.getStagedTargets().pendingIncline);
+
+    runtime.end();
+}
+
+// 26. Manual target staged via command queue is held in dispatcher during authority loss and delivered upon authority recovery
+void test_manual_target_not_delivered_during_authority_loss() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+
+    // Send SetSpeed command
+    ControlCommand cmd{};
+    cmd.type = ControlCommandType::SetSpeed;
+    cmd.timestampMs = 1000;
+    cmd.data.target.speedKmh = 11.0f;
+    TEST_ASSERT_TRUE(runtime.stageCommand(cmd));
+
+    // Update with unauthoritative snapshot (e.g. stale or empty)
+    ApplicationSnapshot badSnap{};
+    runtime.update(badSnap, 1000);
+
+    // Target must be staged in dispatcher, but NOT delivered to controller
+    TEST_ASSERT_TRUE(runtime.getStagedTargets().pendingSpeed);
+    TEST_ASSERT_EQUAL_FLOAT(11.0f, runtime.getStagedTargets().speedKmh);
+    TEST_ASSERT_FALSE(runtime.getControllerSnapshot().activeRequestValid);
+
+    // Recover authority
+    ApplicationSnapshot goodSnap = makeAuthoritativeSnapshot(1020, 0.0f, 0.0);
+    runtime.update(goodSnap, 1020);
+
+    // Now delivered through dispatcher to controller!
+    TEST_ASSERT_FALSE(runtime.getStagedTargets().pendingSpeed);
+
+    runtime.end();
+}
+
+// 27. Mutual exclusion: ArmWorkout blocked while RampCalibrationTest is active
+void test_arm_workout_blocked_while_ramp_calibration_test_active() {
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+
+    // Stage StartRampCalibrationTest command
+    ControlCommand rampCmd{};
+    rampCmd.type = ControlCommandType::StartRampCalibrationTest;
+    rampCmd.timestampMs = 1000;
+    rampCmd.data.rampTest.startSpeedKmh = 5.0f;
+    rampCmd.data.rampTest.targetSpeedKmh = 10.0f;
+    TEST_ASSERT_TRUE(runtime.stageCommand(rampCmd));
+
+    // Update to process queue
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1000, 5.0f, 0.0);
+    runtime.update(snap, 1000);
+    TEST_ASSERT_TRUE(runtime.isRampTestActive());
+
+    // Attempt to arm workout while ramp test is active -> must fail!
+    TEST_ASSERT_FALSE(runtime.armWorkout(&s_testWorkout, 1020));
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Idle, runtime.getSessionSnapshot().state);
+
+    runtime.end();
+}
+
+// 28. Mutual exclusion: StartRampCalibrationTest blocked while workout session is active
+void test_start_ramp_calibration_test_blocked_while_session_active() {
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+
+    // Arm and activate workout
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1000, 1.0f, 0.0);
+    runtime.update(snap, 1000);
+    TEST_ASSERT_TRUE(runtime.isSessionActive());
+
+    // Stage StartRampCalibrationTest command
+    ControlCommand rampCmd{};
+    rampCmd.type = ControlCommandType::StartRampCalibrationTest;
+    rampCmd.timestampMs = 1020;
+    rampCmd.data.rampTest.startSpeedKmh = 5.0f;
+    rampCmd.data.rampTest.targetSpeedKmh = 10.0f;
+    TEST_ASSERT_TRUE(runtime.stageCommand(rampCmd));
+
+    // Update to process queue
+    snap = makeAuthoritativeSnapshot(1020, 1.0f, 0.0);
+    runtime.update(snap, 1020);
+
+    // Ramp test must NOT have started
+    TEST_ASSERT_FALSE(runtime.isRampTestActive());
+
+    runtime.end();
+}
+
+#if defined(STRIDECONTROL_TESTBENCH)
+// 29. Testbench command path parity: commands route via WorkoutDispatcher without bypass staging
+void test_testbench_command_path_parity_no_bypass() {
+    SettingsService::instance().saveBleStackEnabled(false);
+    TestbenchControlRuntime tbRuntime;
+    WorkoutSessionConfig sCfg{};
+    BleConfig bCfg{};
+    TEST_ASSERT_TRUE(tbRuntime.begin(sCfg, bCfg));
+
+    // Stage a SetSpeed command into the runtime's commandQueue_
+    ControlCommand cmd{};
+    cmd.type = ControlCommandType::SetSpeed;
+    cmd.data.target.speedKmh = 12.5f;
+    cmd.timestampMs = 1000;
+    TEST_ASSERT_TRUE(tbRuntime.stageCommand(cmd));
+
+    // Target must NOT have bypassed dispatcher to VirtualTreadmill directly
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, tbRuntime.getComposite().getVirtualTreadmill().getTargetSpeedKmh());
+
+    tbRuntime.end();
+    TEST_ASSERT_FALSE(tbRuntime.getStagedTargets().pendingSpeed);
+}
+#endif
+
 void run_all_control_runtime_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_control_runtime_single_owner_path);
@@ -789,6 +998,15 @@ void run_all_control_runtime_tests() {
     RUN_TEST(test_csafe_initial_and_reconnection_baselining_no_spurious_stop);
     RUN_TEST(test_continuation_window_expires_after_30s);
     RUN_TEST(test_control_command_resume_stages_speed_not_bypass_session);
+    RUN_TEST(test_authority_recovery_delivers_valid_retained_target);
+    RUN_TEST(test_authority_recovery_discards_target_from_aborted_session);
+    RUN_TEST(test_authority_recovery_discards_target_from_finalized_session);
+    RUN_TEST(test_manual_target_not_delivered_during_authority_loss);
+    RUN_TEST(test_arm_workout_blocked_while_ramp_calibration_test_active);
+    RUN_TEST(test_start_ramp_calibration_test_blocked_while_session_active);
+#if defined(STRIDECONTROL_TESTBENCH)
+    RUN_TEST(test_testbench_command_path_parity_no_bypass);
+#endif
     UNITY_END();
 }
 

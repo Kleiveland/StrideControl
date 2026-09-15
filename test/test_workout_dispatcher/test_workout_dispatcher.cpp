@@ -8,6 +8,7 @@
 #include "WorkoutExpander.h"
 #include "WorkoutDispatcher.h"
 #include "TreadmillSimulator.h"
+#include "VirtualTreadmill.h"
 #include "IWorkoutTargetSink.h"
 
 using namespace stridecontrol;
@@ -90,9 +91,20 @@ static ExpandedWorkout createTestWorkout() {
 
 static ApplicationSnapshot makeAppSnapshot(float speedKmh, double distanceKm) {
     ApplicationSnapshot snap{};
+    snap.speed.initialized = true;
     snap.speed.speedKmh = speedKmh;
+    snap.speed.measurementValid = (speedKmh > 0.0f);
+    snap.speed.status = (speedKmh > 0.0f) ? SpeedSensorStatus::Measuring : SpeedSensorStatus::TimedOut;
     snap.runner.validatedDistanceKm = distanceKm;
     snap.runner.speedCreditEnabled = true;
+    snap.csafe.initialized = true;
+    snap.csafe.online = true;
+    snap.csafe.machineStateFresh = true;
+    snap.csafe.linkStatus = CsafeLinkStatus::Online;
+    snap.csafe.qualifiedState = (speedKmh > 0.0f) ? CsafeMachineState::InUse : CsafeMachineState::Ready;
+    snap.csafe.reportedState = snap.csafe.qualifiedState;
+    snap.csafe.rawStateByte = static_cast<uint8_t>(snap.csafe.qualifiedState);
+    snap.csafe.stateNibble = static_cast<uint8_t>(snap.csafe.qualifiedState) & 0x0F;
     return snap;
 }
 
@@ -447,6 +459,8 @@ void test_closed_loop_integration() {
         nowMs += 100;
         sim.update(nowMs);
         ApplicationSnapshot snap = sim.getSnapshot();
+        // TreadmillSimulator does not synthesize CSAFE state; populate using authoritative testbench helper
+        snap.csafe = makeAppSnapshot(snap.speed.speedKmh, snap.runner.validatedDistanceKm).csafe;
         session.update(snap, nowMs);
         dispatcher.update(session, sim, nowMs);
     }
@@ -466,6 +480,394 @@ void test_closed_loop_integration() {
     TEST_ASSERT_TRUE(sim.getCumulativeDistanceKm() > 0.0);
 }
 
+void test_dispatcher_aborted_session_target_discarded() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestWorkout();
+    session.armWorkout(&ew, 1000);
+    session.update(makeAppSnapshot(1.0f, 0.0), 1000);
+
+    MockTargetSink mock;
+    mock.busy = true;
+
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    // Stage targets while sink is busy
+    dispatcher.update(session, mock, 1000);
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_FLOAT(10.0f, dispatcher.getStagedTargets().speedKmh);
+
+    // Abort session
+    session.abortSession(1050);
+    TEST_ASSERT_FALSE(session.isActive());
+
+    // Unbusy sink and update
+    mock.busy = false;
+    dispatcher.update(session, mock, 1050);
+
+    // Targets must have been invalidated and NOT delivered!
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_UINT32(0, mock.inclineSubmitCount);
+    TEST_ASSERT_EQUAL_UINT32(0, mock.speedSubmitCount);
+}
+
+void test_dispatcher_finalized_session_target_discarded() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestWorkout();
+    session.armWorkout(&ew, 1000);
+    session.update(makeAppSnapshot(1.0f, 0.0), 1000);
+
+    MockTargetSink mock;
+    mock.busy = true;
+
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    dispatcher.update(session, mock, 1000);
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+
+    // Finalize session
+    session.finalizeSession(1050);
+    TEST_ASSERT_FALSE(session.isActive());
+
+    mock.busy = false;
+    dispatcher.update(session, mock, 1050);
+
+    // Targets must be discarded and NOT delivered
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_UINT32(0, mock.inclineSubmitCount);
+    TEST_ASSERT_EQUAL_UINT32(0, mock.speedSubmitCount);
+}
+
+void test_dispatcher_rearm_session_target_discarded() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestWorkout();
+    session.armWorkout(&ew, 1000);
+    session.update(makeAppSnapshot(1.0f, 0.0), 1000);
+    uint32_t gen1 = session.getSessionGeneration();
+
+    MockTargetSink mock;
+    mock.busy = true;
+
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    dispatcher.update(session, mock, 1000);
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_UINT32(gen1, dispatcher.getStagedTargets().speedSessionGeneration);
+
+    // Abort and rearm new workout -> increment generation
+    session.abortSession(1050);
+    session.armWorkout(&ew, 1100);
+    uint32_t gen2 = session.getSessionGeneration();
+    TEST_ASSERT_GREATER_THAN_UINT32(gen1, gen2);
+
+    mock.busy = false;
+    // Dispatcher updates before new session enters Running
+    dispatcher.update(session, mock, 1100);
+
+    // Staged targets from gen1 must have been discarded!
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_UINT32(0, mock.inclineSubmitCount);
+    TEST_ASSERT_EQUAL_UINT32(0, mock.speedSubmitCount);
+}
+
+void test_dispatcher_manual_target_retained_across_inactive_session() {
+    WorkoutSession session;
+    session.begin(); // Idle session
+
+    MockTargetSink mock;
+    mock.busy = true;
+
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    // User stages manual speed command
+    dispatcher.stageSpeedTarget(12.5f, 1000, TargetOrigin::StandaloneManual);
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL(TargetOrigin::StandaloneManual, dispatcher.getStagedTargets().speedOrigin);
+
+    // Dispatcher updates while session is inactive (Idle)
+    dispatcher.update(session, mock, 1000);
+    // Still pending because sink is busy, NOT discarded because origin is StandaloneManual and session is inactive
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+
+    // Unbusy sink
+    mock.busy = false;
+    dispatcher.update(session, mock, 1050);
+
+    // Manual target was delivered!
+    TEST_ASSERT_EQUAL_UINT32(1, mock.speedSubmitCount);
+    TEST_ASSERT_EQUAL_FLOAT(12.5f, mock.lastSpeedTarget);
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+}
+
+// 1. SessionManualAdjustment invalidated on abort and finalize
+void test_session_manual_adjustment_invalidated_on_abort_and_finalize() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestWorkout();
+    session.armWorkout(&ew, 1000);
+    session.update(makeAppSnapshot(1.0f, 0.0), 1000); // Running
+    TEST_ASSERT_TRUE(session.isActive());
+
+    MockTargetSink mock;
+    mock.busy = true;
+
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    // Stage SessionManualAdjustment
+    TargetContext ctx;
+    ctx.origin = TargetOrigin::SessionManualAdjustment;
+    ctx.sessionGeneration = session.getSessionGeneration();
+    ctx.stepIndex = session.getCurrentStepIndex();
+    ctx.timestampMs = 1000;
+    dispatcher.stageSpeedTarget(14.0f, ctx);
+    dispatcher.stageInclineTarget(3.0f, ctx);
+
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL(TargetOrigin::SessionManualAdjustment, dispatcher.getStagedTargets().speedOrigin);
+
+    // Abort session
+    session.abortSession(1020);
+    TEST_ASSERT_FALSE(session.isActive());
+
+    mock.busy = false;
+    dispatcher.update(session, mock, 1040);
+
+    // Targets must be discarded and NOT delivered
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_UINT32(0, mock.speedSubmitCount);
+    TEST_ASSERT_EQUAL_UINT32(0, mock.inclineSubmitCount);
+
+    // Test Finalize path
+    session.armWorkout(&ew, 2000);
+    session.update(makeAppSnapshot(1.0f, 0.0), 2000);
+    mock.busy = true;
+    ctx.sessionGeneration = session.getSessionGeneration();
+    ctx.stepIndex = session.getCurrentStepIndex();
+    dispatcher.stageSpeedTarget(15.0f, ctx);
+
+    session.finalizeSession(2020);
+    TEST_ASSERT_FALSE(session.isActive());
+
+    mock.busy = false;
+    dispatcher.update(session, mock, 2040);
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_UINT32(0, mock.speedSubmitCount);
+}
+
+// 2. StandaloneManual cleared when a new workout is successfully armed
+void test_standalone_manual_cleared_on_new_workout_arm() {
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    // Staged when no session is active
+    dispatcher.stageSpeedTarget(8.5f, 1000, TargetOrigin::StandaloneManual);
+    dispatcher.stageInclineTarget(2.0f, 1000, TargetOrigin::StandaloneManual);
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+
+    // Arming new session calls clearForNewSession
+    dispatcher.clearForNewSession();
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+}
+
+// 3. StandaloneManual preserved across non-authoritative tick if no session is armed
+void test_standalone_manual_preserved_across_unauthorized_tick_when_no_session() {
+    WorkoutSession session;
+    session.begin(); // Idle
+
+    MockTargetSink mock;
+    mock.busy = true;
+
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    dispatcher.stageSpeedTarget(7.5f, 1000, TargetOrigin::StandaloneManual);
+
+    // Dispatcher tick with busy sink
+    dispatcher.update(session, mock, 1000);
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+
+    // Another tick
+    dispatcher.update(session, mock, 1020);
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+
+    // Sink ready
+    mock.busy = false;
+    dispatcher.update(session, mock, 1040);
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_UINT32(1, mock.speedSubmitCount);
+    TEST_ASSERT_EQUAL_FLOAT(7.5f, mock.lastSpeedTarget);
+}
+
+// 4. Pre-fire target validation when stepIndex == 0 (no unsigned underflow)
+void test_prefire_target_validation_no_underflow_at_step_zero() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestWorkout();
+    session.armWorkout(&ew, 1000);
+    session.update(makeAppSnapshot(1.0f, 0.0), 1000); // Running, currentStepIndex = 0
+
+    MockTargetSink mock;
+    mock.busy = true;
+
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    // Stage a target marked as prefire with stepIndex = 0 (edge case)
+    TargetContext ctx;
+    ctx.origin = TargetOrigin::WorkoutGenerated;
+    ctx.sessionGeneration = session.getSessionGeneration();
+    ctx.stepIndex = 0;
+    ctx.timestampMs = 1000;
+    dispatcher.stageSpeedTarget(12.0f, ctx);
+
+    // Update with currentStep == 0 - must not crash or underflow
+    dispatcher.update(session, mock, 1000);
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+
+    mock.busy = false;
+    dispatcher.update(session, mock, 1020);
+    TEST_ASSERT_EQUAL_UINT32(1, mock.speedSubmitCount);
+}
+
+// 5. Pre-fire target rejected if pre-fire cancels or changes target step before delivery
+void test_prefire_target_rejected_if_prefire_cancels_or_changes() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestWorkout();
+    session.armWorkout(&ew, 1000);
+    session.update(makeAppSnapshot(1.0f, 0.0), 1000); // Running, step 0
+
+    MockTargetSink mock;
+    mock.busy = true;
+
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    // Manually stage a prefire target targeting step 2 while prefire is NOT active for step 2
+    TargetContext ctx;
+    ctx.origin = TargetOrigin::WorkoutGenerated;
+    ctx.sessionGeneration = session.getSessionGeneration();
+    ctx.stepIndex = 2; // Step 2 is not active and not prefire target
+    ctx.timestampMs = 1000;
+    dispatcher.stageSpeedTarget(16.0f, ctx);
+
+    // In update, validateRetainedTargets should see isPreFire (if marked) or mismatched stepIndex and discard
+    dispatcher.update(session, mock, 1000);
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_UINT32(0, mock.speedSubmitCount);
+}
+
+// 6. Arming failure preserves existing staged targets
+void test_arming_failure_preserves_staged_targets() {
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    dispatcher.stageSpeedTarget(9.0f, 1000, TargetOrigin::StandaloneManual);
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+
+    // Simulate arming failure: workout definition is invalid / null
+    const ExpandedWorkout* invalidWorkout = nullptr;
+    WorkoutSession session;
+    session.begin();
+    const bool armed = session.armWorkout(invalidWorkout, 1000);
+    TEST_ASSERT_FALSE(armed);
+
+    // Dispatcher targets must NOT have been cleared because arming failed
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_FLOAT(9.0f, dispatcher.getStagedTargets().speedKmh);
+}
+
+// 7. Verification that CSAFE state in TreadmillSimulator does not cast enum ordinals to raw bytes and conforms to VirtualTreadmill lifecycle
+void test_csafe_virtual_treadmill_lifecycle_and_raw_bytes() {
+    VirtualTreadmill vt;
+    vt.resetModel(1000);
+
+    // Ready: raw byte 0x01, nibble 0x01
+    TEST_ASSERT_EQUAL_HEX8(0x01, vt.getCsafeState().rawStateByte);
+    TEST_ASSERT_EQUAL_HEX8(0x01, vt.getCsafeState().stateNibble);
+    TEST_ASSERT_EQUAL(CsafeMachineState::Ready, vt.getCsafeState().qualifiedState);
+
+    // Start -> Starting (3-2-1 countdown): raw byte 0x08, nibble 0x08
+    vt.onConsoleQuickStart(5.0f, 0.0f);
+    TEST_ASSERT_EQUAL_HEX8(0x08, vt.getCsafeState().rawStateByte);
+    TEST_ASSERT_EQUAL_HEX8(0x08, vt.getCsafeState().stateNibble);
+    TEST_ASSERT_EQUAL(CsafeMachineState::Starting, vt.getCsafeState().qualifiedState);
+
+    // Advance 3000 ms to complete Starting countdown -> InUse: raw byte 0x85, nibble 0x05
+    SimulationTick tick(1ULL, 4000U, 3000U);
+    vt.tick(tick);
+    TEST_ASSERT_EQUAL_HEX8(0x85, vt.getCsafeState().rawStateByte);
+    TEST_ASSERT_EQUAL_HEX8(0x05, vt.getCsafeState().stateNibble);
+    TEST_ASSERT_EQUAL(CsafeMachineState::InUse, vt.getCsafeState().qualifiedState);
+
+    // 1st Stop -> Paused: raw byte 0x04, nibble 0x04
+    vt.onConsoleStop();
+    TEST_ASSERT_EQUAL_HEX8(0x04, vt.getCsafeState().rawStateByte);
+    TEST_ASSERT_EQUAL_HEX8(0x04, vt.getCsafeState().stateNibble);
+    TEST_ASSERT_EQUAL(CsafeMachineState::Paused, vt.getCsafeState().qualifiedState);
+
+    // 2nd Stop -> Ready: raw byte 0x01, nibble 0x01
+    vt.onConsoleStop();
+    TEST_ASSERT_EQUAL_HEX8(0x01, vt.getCsafeState().rawStateByte);
+    TEST_ASSERT_EQUAL_HEX8(0x01, vt.getCsafeState().stateNibble);
+    TEST_ASSERT_EQUAL(CsafeMachineState::Ready, vt.getCsafeState().qualifiedState);
+
+    // TreadmillSimulator check: does not synthesize CSAFE state, csafe.initialized is false
+    TreadmillSimulator sim;
+    sim.begin(1000);
+    ApplicationSnapshot snap = sim.getSnapshot();
+    TEST_ASSERT_FALSE(snap.csafe.initialized);
+}
+
+// 8. Commissioning target cleared when new workout session is armed
+void test_commissioning_target_cleared_on_new_workout_arm() {
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    TargetContext ctx;
+    ctx.origin = TargetOrigin::Commissioning;
+    ctx.timestampMs = 1000;
+    dispatcher.stageSpeedTarget(12.0f, ctx);
+    TEST_ASSERT_TRUE(dispatcher.hasPendingTargets());
+
+    // Arming new session calls clearForNewSession
+    dispatcher.clearForNewSession();
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+}
+
+// 9. Commissioning target discarded if workout session is active
+void test_commissioning_target_invalidated_when_session_active() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestWorkout();
+    session.armWorkout(&ew, 1000);
+    session.update(makeAppSnapshot(1.0f, 0.0), 1000); // Running
+    TEST_ASSERT_TRUE(session.isActive());
+
+    MockTargetSink mock;
+    mock.busy = true;
+
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    TargetContext ctx;
+    ctx.origin = TargetOrigin::Commissioning;
+    ctx.timestampMs = 1000;
+    dispatcher.stageSpeedTarget(15.0f, ctx);
+
+    // validateRetainedTargets should discard commissioning target because session is active
+    dispatcher.update(session, mock, 1020);
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_UINT32(0, mock.speedSubmitCount);
+}
+
 void run_all_workout_dispatcher_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_dispatcher_combined_incline_and_speed);
@@ -478,6 +880,19 @@ void run_all_workout_dispatcher_tests() {
     RUN_TEST(test_simulator_busy_duration_and_rollover);
     RUN_TEST(test_simulator_ramp_and_distance);
     RUN_TEST(test_closed_loop_integration);
+    RUN_TEST(test_dispatcher_aborted_session_target_discarded);
+    RUN_TEST(test_dispatcher_finalized_session_target_discarded);
+    RUN_TEST(test_dispatcher_rearm_session_target_discarded);
+    RUN_TEST(test_dispatcher_manual_target_retained_across_inactive_session);
+    RUN_TEST(test_session_manual_adjustment_invalidated_on_abort_and_finalize);
+    RUN_TEST(test_standalone_manual_cleared_on_new_workout_arm);
+    RUN_TEST(test_standalone_manual_preserved_across_unauthorized_tick_when_no_session);
+    RUN_TEST(test_prefire_target_validation_no_underflow_at_step_zero);
+    RUN_TEST(test_prefire_target_rejected_if_prefire_cancels_or_changes);
+    RUN_TEST(test_arming_failure_preserves_staged_targets);
+    RUN_TEST(test_csafe_virtual_treadmill_lifecycle_and_raw_bytes);
+    RUN_TEST(test_commissioning_target_cleared_on_new_workout_arm);
+    RUN_TEST(test_commissioning_target_invalidated_when_session_active);
     UNITY_END();
 }
 

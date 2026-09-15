@@ -14,6 +14,31 @@ struct StagedTargets {
     float speedKmh = 0.0f;
     bool pendingIncline = false;
     float inclinePct = 0.0f;
+
+    // Target identity & provenance
+    TargetOrigin speedOrigin = TargetOrigin::None;
+    uint32_t speedSessionGeneration = 0;
+    uint32_t speedIntentSequence = 0;
+    uint8_t speedStepIndex = 0;
+    bool speedIsPreFire = false;
+    uint32_t speedStagedTimestampMs = 0;
+
+    TargetOrigin inclineOrigin = TargetOrigin::None;
+    uint32_t inclineSessionGeneration = 0;
+    uint32_t inclineIntentSequence = 0;
+    uint8_t inclineStepIndex = 0;
+    bool inclineIsPreFire = false;
+    uint32_t inclineStagedTimestampMs = 0;
+};
+
+/**
+ * @brief Context used to stamp provenance and session identity onto direct physical targets.
+ */
+struct TargetContext {
+    TargetOrigin origin = TargetOrigin::StandaloneManual;
+    uint32_t sessionGeneration = 0;
+    uint8_t stepIndex = 0;
+    uint32_t timestampMs = 0;
 };
 
 /**
@@ -39,39 +64,29 @@ public:
 
     bool hasPendingTargets() const;
 
-    void stageSpeedTarget(float speedKmh) {
-        staged_.pendingSpeed = true;
-        staged_.speedKmh = speedKmh;
-    }
+    void clearSpeedTarget();
+    void clearInclineTarget();
+    void clearWorkoutTargets();
+    void clearForNewSession();
+    void clearAllTargets();
 
-    void stageInclineTarget(float inclinePct) {
-        staged_.pendingIncline = true;
-        staged_.inclinePct = inclinePct;
-    }
+    void stageSpeedTarget(float speedKmh, const TargetContext& ctx);
+    void stageInclineTarget(float inclinePct, const TargetContext& ctx);
+    void stepSpeedTarget(float deltaKmh, float currentSpeedKmh, const TargetContext& ctx);
+    void stepInclineTarget(float deltaPct, float currentInclinePct, const TargetContext& ctx);
 
-    void stepSpeedTarget(float deltaKmh, float currentSpeedKmh = 0.0f) {
-        if (!staged_.pendingSpeed) {
-            staged_.speedKmh = currentSpeedKmh;
-        }
-        staged_.pendingSpeed = true;
-        staged_.speedKmh += deltaKmh;
-        if (staged_.speedKmh < 0.0f) staged_.speedKmh = 0.0f;
-    }
-
-    void stepInclineTarget(float deltaPct, float currentInclinePct = 0.0f) {
-        if (!staged_.pendingIncline) {
-            staged_.inclinePct = currentInclinePct;
-        }
-        staged_.pendingIncline = true;
-        staged_.inclinePct += deltaPct;
-        if (staged_.inclinePct < 0.0f) staged_.inclinePct = 0.0f;
-    }
+    void stageSpeedTarget(float speedKmh, uint32_t nowMs = 0, TargetOrigin origin = TargetOrigin::StandaloneManual);
+    void stageInclineTarget(float inclinePct, uint32_t nowMs = 0, TargetOrigin origin = TargetOrigin::StandaloneManual);
+    void stepSpeedTarget(float deltaKmh, float currentSpeedKmh = 0.0f, uint32_t nowMs = 0, TargetOrigin origin = TargetOrigin::StandaloneManual);
+    void stepInclineTarget(float deltaPct, float currentInclinePct = 0.0f, uint32_t nowMs = 0, TargetOrigin origin = TargetOrigin::StandaloneManual);
 
     StagedTargets getStagedTargets() const;
 
     static const char* version();
 
 private:
+    void validateRetainedTargets(const WorkoutSession& session, uint32_t nowMs);
+
     StagedTargets staged_{};
 };
 

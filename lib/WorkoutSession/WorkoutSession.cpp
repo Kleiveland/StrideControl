@@ -79,6 +79,8 @@ bool WorkoutSession::begin(const WorkoutSessionConfig& config) {
     beltHasStoppedSinceSuspend_ = false;
     desiredGuiUserId_ = 0;
     desiredGuiIsManual_ = false;
+    sessionGeneration_ = 0;
+    intentSequence_ = 0;
 
     // Populate persistent synthetic 1-step workout for Manual mode
     freeRunWorkout_ = ExpandedWorkout{};
@@ -129,6 +131,8 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, 
     snapshot_.completionPending = false;
     snapshot_.workoutId = workout->workoutId;
     snapshot_.armedUserId = userId;
+    snapshot_.sessionGeneration = ++sessionGeneration_;
+    intentSequence_ = 0;
     snapshot_.currentStepIndex = 0;
     snapshot_.totalStepCount = workout->totalSteps;
     snapshot_.currentStep = workout->steps[0];
@@ -222,6 +226,8 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
         // Fresh start (from Idle, or a different user than the one who paused) - full reset,
         // mirroring armWorkout()'s reset block exactly.
         snapshot_ = WorkoutSessionSnapshot{};
+        snapshot_.sessionGeneration = ++sessionGeneration_;
+        intentSequence_ = 0;
         totalElapsedTimeMs_ = 0;
         activeRunningTimeMs_ = 0;
         totalValidatedDistanceKm_ = 0.0;
@@ -261,6 +267,7 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
     beltHasStoppedSinceSuspend_ = false;
 
     snapshot_.armedUserId = userId;
+    snapshot_.sessionGeneration = sessionGeneration_;
     snapshot_.state = WorkoutSessionState::Running;
     snapshot_.initialized = true;
     snapshot_.active = true;
@@ -351,6 +358,7 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
     }
     preFireSent_ = false;
     snapshot_.rampPreFireActive = false;
+    snapshot_.rampPreFireTargetStepIndex = UINT8_MAX;
     snapshot_.rampPreFireSpeedChanging = false;
     snapshot_.rampPreFireInclineChanging = false;
     preFireLeadMs_ = 0;
@@ -377,6 +385,7 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
         snapshot_.rampPreFireSpeedChanging = false;
         snapshot_.rampPreFireInclineChanging = false;
     }
+    snapshot_.rampPreFireTargetStepIndex = preFireTargetStepIndex_;
     snapshot_.currentRole = workout_->steps[stepIndex].role;
     snapshot_.currentRep = workout_->steps[stepIndex].repNumber;
     snapshot_.totalRepsInGroup = workout_->steps[stepIndex].totalRepsInGroup;
@@ -483,6 +492,14 @@ void WorkoutSession::emitStepCommandIntent(const ExpandedStep& step, bool forceR
     snapshot_.targetSpeedKmh = shouldHaveSpeed ? effectiveSpeed : 0.0f;
     snapshot_.hasInclineTarget = shouldHaveIncline;
     snapshot_.targetInclinePct = effectiveIncline;
+
+    if (pendingIntent_.hasSpeedTarget || pendingIntent_.hasInclineTarget) {
+        pendingIntent_.sessionGeneration = sessionGeneration_;
+        pendingIntent_.intentSequence = ++intentSequence_;
+        pendingIntent_.stepIndex = step.stepIndex;
+        pendingIntent_.isPreFire = (preFireTargetStepIndex_ != UINT8_MAX && step.stepIndex == preFireTargetStepIndex_ && step.stepIndex != snapshot_.currentStepIndex);
+        pendingIntent_.timestampMs = lastUpdateTimestampMs_;
+    }
 }
 
 void WorkoutSession::advanceStep(uint32_t nowMs, double currentRunnerDistanceKm) {
@@ -776,6 +793,7 @@ void WorkoutSession::update(
                     snapshot_.stepRemainingMs <= preFireLeadMs_) {
                     emitStepCommandIntent(workout_->steps[preFireTargetStepIndex_], true);
                     snapshot_.rampPreFireActive = true;
+                    snapshot_.rampPreFireTargetStepIndex = preFireTargetStepIndex_;
                     preFireSent_ = true;
                 }
 

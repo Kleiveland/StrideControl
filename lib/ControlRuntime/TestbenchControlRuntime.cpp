@@ -101,6 +101,7 @@ void TestbenchControlRuntime::end() {
         orchestrator_.end();
         heartRateClient_.end();
         bleManager_.end();
+        dispatcher_.clearAllTargets();
         session_.end();
         workoutEngine_.reset();
         runnerDynamics_.end();
@@ -114,12 +115,13 @@ void TestbenchControlRuntime::end() {
 }
 
 bool TestbenchControlRuntime::armWorkout(const WorkoutDefinition& def, uint32_t nowMs) {
-    if (!initialized_) {
+    if (!initialized_ || session_.isActive() || rampTestActive_) {
         return false;
     }
     if (!workoutEngine_.loadWorkout(def)) {
         return false;
     }
+    dispatcher_.clearForNewSession();
     const bool armed = session_.armWorkout(&workoutEngine_.getExpandedWorkout(), nowMs);
     if (armed) {
         portENTER_CRITICAL(&snapshotMux_);
@@ -442,34 +444,71 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 composite_.stageQuickStart(cmdNowMs);
                 composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
                 break;
-            case ControlCommandType::SetSpeed:
-                composite_.stageSpeedTarget(cmd.data.target.speedKmh, cmdNowMs);
-                dispatcher_.stageSpeedTarget(cmd.data.target.speedKmh);
+            case ControlCommandType::SetSpeed: {
+                TargetContext ctx;
+                if (session_.isActive()) {
+                    ctx.origin = TargetOrigin::SessionManualAdjustment;
+                    ctx.sessionGeneration = session_.getSessionGeneration();
+                    ctx.stepIndex = session_.getCurrentStepIndex();
+                } else {
+                    ctx.origin = TargetOrigin::StandaloneManual;
+                }
+                ctx.timestampMs = cmdNowMs;
+                dispatcher_.stageSpeedTarget(cmd.data.target.speedKmh, ctx);
                 session_.reportWorkSpeedAdjustment(cmd.data.target.speedKmh);
                 break;
-            case ControlCommandType::SetIncline:
-                composite_.stageInclineTarget(cmd.data.target.inclinePct, cmdNowMs);
-                dispatcher_.stageInclineTarget(cmd.data.target.inclinePct);
+            }
+            case ControlCommandType::SetIncline: {
+                TargetContext ctx;
+                if (session_.isActive()) {
+                    ctx.origin = TargetOrigin::SessionManualAdjustment;
+                    ctx.sessionGeneration = session_.getSessionGeneration();
+                    ctx.stepIndex = session_.getCurrentStepIndex();
+                } else {
+                    ctx.origin = TargetOrigin::StandaloneManual;
+                }
+                ctx.timestampMs = cmdNowMs;
+                dispatcher_.stageInclineTarget(cmd.data.target.inclinePct, ctx);
                 break;
+            }
             case ControlCommandType::StepSpeed: {
-                const bool positive = (cmd.data.stepSpeed.deltaSpeedKmh > 0.0f);
-                composite_.stageSpeedStep(positive, cmdNowMs);
                 const float currentSimSpd = composite_.getVirtualTreadmill().getTargetSpeedKmh();
-                dispatcher_.stepSpeedTarget(cmd.data.stepSpeed.deltaSpeedKmh, currentSimSpd);
+                TargetContext ctx;
+                if (session_.isActive()) {
+                    ctx.origin = TargetOrigin::SessionManualAdjustment;
+                    ctx.sessionGeneration = session_.getSessionGeneration();
+                    ctx.stepIndex = session_.getCurrentStepIndex();
+                } else {
+                    ctx.origin = TargetOrigin::StandaloneManual;
+                }
+                ctx.timestampMs = cmdNowMs;
+                dispatcher_.stepSpeedTarget(cmd.data.stepSpeed.deltaSpeedKmh, currentSimSpd, ctx);
                 session_.reportWorkSpeedAdjustment(currentSimSpd + cmd.data.stepSpeed.deltaSpeedKmh);
                 break;
             }
             case ControlCommandType::StepIncline: {
-                const bool positive = (cmd.data.stepIncline.deltaInclinePct > 0.0f);
-                composite_.stageInclineStep(positive, cmdNowMs);
                 const float currentSimInc = composite_.getVirtualTreadmill().getTargetInclinePct();
-                dispatcher_.stepInclineTarget(cmd.data.stepIncline.deltaInclinePct, currentSimInc);
+                TargetContext ctx;
+                if (session_.isActive()) {
+                    ctx.origin = TargetOrigin::SessionManualAdjustment;
+                    ctx.sessionGeneration = session_.getSessionGeneration();
+                    ctx.stepIndex = session_.getCurrentStepIndex();
+                } else {
+                    ctx.origin = TargetOrigin::StandaloneManual;
+                }
+                ctx.timestampMs = cmdNowMs;
+                dispatcher_.stepInclineTarget(cmd.data.stepIncline.deltaInclinePct, currentSimInc, ctx);
                 break;
             }
             case ControlCommandType::ArmWorkout: {
+                if (session_.isActive() || rampTestActive_) {
+                    Serial.println("[TestbenchControlRuntime] Cannot arm workout: session or ramp test already active");
+                    break;
+                }
                 const WorkoutDefinition* def = SettingsService::instance().findWorkout(
                     cmd.data.arm.userId, cmd.data.arm.workoutId);
                 if (def != nullptr && workoutEngine_.loadWorkout(*def)) {
+                    dispatcher_.clearForNewSession();
                     session_.armWorkout(&workoutEngine_.getExpandedWorkout(), cmdNowMs, cmd.data.arm.userId);
                     Serial.printf("[TestbenchControlRuntime] Armed workout id=%u for user=%u\n", cmd.data.arm.workoutId, cmd.data.arm.userId);
                 } else {
@@ -478,9 +517,11 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             }
             case ControlCommandType::CancelWorkout:
+                dispatcher_.clearWorkoutTargets();
                 session_.abortSession(cmdNowMs);
                 break;
             case ControlCommandType::FinalizeWorkout:
+                dispatcher_.clearWorkoutTargets();
                 session_.finalizeSession(cmdNowMs);
                 break;
             case ControlCommandType::CutDrag:
@@ -499,6 +540,10 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 session_.rejectSpeedAdjustmentShift();
                 break;
             case ControlCommandType::StartRampCalibrationTest:
+                if (session_.isActive()) {
+                    Serial.println("[TestbenchControlRuntime] Cannot start ramp test: session already active");
+                    break;
+                }
                 rampTestActive_ = true;
                 rampTestStartMs_ = cmdNowMs;
                 rampTestStartSpeedKmh_ = cmd.data.rampTest.startSpeedKmh;
@@ -507,8 +552,12 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 rampTestTotalMs_ = 0;
                 rampTestComplete_ = false;
                 rampTestTimedOut_ = false;
-                composite_.stageSpeedTarget(cmd.data.rampTest.targetSpeedKmh, cmdNowMs);
-                dispatcher_.stageSpeedTarget(cmd.data.rampTest.targetSpeedKmh);
+                {
+                    TargetContext ctx;
+                    ctx.origin = TargetOrigin::Commissioning;
+                    ctx.timestampMs = cmdNowMs;
+                    dispatcher_.stageSpeedTarget(cmd.data.rampTest.targetSpeedKmh, ctx);
+                }
                 break;
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual, cmdNowMs);

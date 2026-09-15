@@ -70,6 +70,10 @@ public:
 
     bool isActive() const;
     bool isSuspended() const;
+    uint32_t getSessionGeneration() const { return sessionGeneration_; }
+    uint8_t getPreFireTargetStepIndex() const { return preFireTargetStepIndex_; }
+    bool isPreFireActive() const { return snapshot_.rampPreFireActive; }
+    uint8_t getCurrentStepIndex() const { return snapshot_.currentStepIndex; }
 
     static const char* version();
 
@@ -84,6 +88,8 @@ private:
     WorkoutCommandIntent pendingIntent_{};
 
     bool initialized_ = false;
+    uint32_t sessionGeneration_ = 0;
+    uint32_t intentSequence_ = 0;
     uint32_t lastUpdateTimestampMs_ = 0;
 
     // Step state tracking

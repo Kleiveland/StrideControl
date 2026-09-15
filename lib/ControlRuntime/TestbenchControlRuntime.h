@@ -73,6 +73,7 @@ public:
 
     ApplicationSnapshot getSnapshot() const;
     WorkoutSessionSnapshot getSessionSnapshot() const;
+    StagedTargets getStagedTargets() const { return dispatcher_.getStagedTargets(); }
     TestbenchTelemetry getTelemetry(uint32_t nowMs) const;
 
     uint32_t getLostAuthorityCount() const;
