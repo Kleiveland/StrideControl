@@ -884,7 +884,7 @@
             </div>
 
             <div class="interval-main-workspace">
-                <div style="font-size: 38px; font-weight: 800; color: var(--success); text-transform: uppercase; letter-spacing: 3px;">
+                <div id="pre-start-header-text" style="font-size: 38px; font-weight: 800; color: var(--success); text-transform: uppercase; letter-spacing: 3px;">
                     Quick Start starter økt
                 </div>
                 <div class="hero-lbl-scaled" style="margin-bottom: -10px;">VARIGHET</div>
@@ -1055,8 +1055,8 @@
             </div>
 
             <div class="interval-main-workspace">
-                <div style="font-size: 76px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 3px; margin-bottom: 5px;">Pause</div>
-                <div class="hero-lbl-scaled">TID IGJEN</div>
+                <div id="stop-view-title" style="font-size: 76px; font-weight: 800; color: var(--accent); text-transform: uppercase; letter-spacing: 3px; margin-bottom: 5px;">Pause</div>
+                <div class="hero-lbl-scaled" id="stop-hero-lbl">TID IGJEN</div>
                 <div class="hero-time-interval">02:14</div>
                 
                 <div class="timeline-box-massive">
@@ -1076,10 +1076,14 @@
 
             <div class="interval-action-zone">
                 <div class="embedded-bottom-dialog">
-                    <div class="dialog-txt-wrap"><div class="dialog-main-title">Start møllen for å fortsette, eller velg:</div></div>
-                    <div class="dialog-btn-group">
+                    <div class="dialog-txt-wrap"><div class="dialog-main-title" id="stop-dialog-title">Start møllen for å fortsette, eller velg:</div></div>
+                    <div class="dialog-btn-group" id="stop-dialog-buttons-normal">
                         <button class="btn-dialog-act sec clickable nav-btn" data-target="view-manual">Bytt til manuell</button>
                         <button class="btn-dialog-act prim clickable" id="btn-finalize-session">Avslutt økt</button>
+                    </div>
+                    <div class="dialog-btn-group" id="stop-dialog-buttons-continuation" style="display: none;">
+                        <button class="btn-dialog-act prim clickable" id="btn-resume-continuation" style="background: var(--success, #00E676); color: #000; font-weight: 800;">Fortsett</button>
+                        <button class="btn-dialog-act sec clickable" id="btn-finalize-continuation" style="background: var(--danger, #FF3D00); color: #fff; font-weight: 800;">Avslutt økt</button>
                     </div>
                 </div>
             </div>
@@ -1505,6 +1509,40 @@
         const btnFinalizeSession = document.getElementById('btn-finalize-session');
         if (btnFinalizeSession) {
             btnFinalizeSession.addEventListener('click', () => {
+                fetch('/api/v1/control/workout/finalize', { method: 'POST' })
+                .then(res => {
+                    if (!res.ok) {
+                        console.error('[Control] Finalize session rejected:', res.status);
+                        showGlobalToast('KOMMANDO AVVIST AV MØLLEN');
+                    }
+                })
+                .catch(err => {
+                    console.error('[Control] Finalize session failed:', err);
+                    showGlobalToast('INGEN FORBINDELSE TIL MØLLEN');
+                });
+            });
+        }
+
+        const btnResumeContinuation = document.getElementById('btn-resume-continuation');
+        if (btnResumeContinuation) {
+            btnResumeContinuation.addEventListener('click', () => {
+                fetch('/api/v1/control/quickstart', { method: 'POST' })
+                .then(res => {
+                    if (!res.ok) {
+                        console.error('[Control] Resume continuation rejected:', res.status);
+                        showGlobalToast('KOMMANDO AVVIST AV MØLLEN');
+                    }
+                })
+                .catch(err => {
+                    console.error('[Control] Resume continuation failed:', err);
+                    showGlobalToast('INGEN FORBINDELSE TIL MØLLEN');
+                });
+            });
+        }
+
+        const btnFinalizeContinuation = document.getElementById('btn-finalize-continuation');
+        if (btnFinalizeContinuation) {
+            btnFinalizeContinuation.addEventListener('click', () => {
                 fetch('/api/v1/control/workout/finalize', { method: 'POST' })
                 .then(res => {
                     if (!res.ok) {
@@ -3580,6 +3618,52 @@
 
                 const stopHero = document.querySelector('#view-interval-stop .hero-time-interval');
                 if (stopHero) stopHero.innerText = timeStr;
+            }
+
+            // Pre-start view Starting status
+            const preHeaderEl = document.getElementById('pre-start-header-text');
+            if (preHeaderEl) {
+                if (telem.csafe?.machineState === 'Starting') {
+                    preHeaderEl.innerText = 'MØLLEN STARTER... (3-2-1)';
+                    preHeaderEl.style.color = 'var(--accent)';
+                } else {
+                    preHeaderEl.innerText = 'Quick Start starter økt';
+                    preHeaderEl.style.color = 'var(--success)';
+                }
+            }
+
+            // Stop View Continuation Window Decision State & Starting Status
+            const isContinuationActive = telem.session?.continuationWindowActive === true;
+            const contRemainingMs = telem.session?.continuationWindowRemainingMs || 0;
+            const contSecs = Math.max(0, Math.ceil(contRemainingMs / 1000));
+            const contTimeStr = `00:${contSecs.toString().padStart(2, '0')}`;
+
+            const stopTitleEl = document.getElementById('stop-view-title');
+            const stopHeroLbl = document.getElementById('stop-hero-lbl');
+            const stopDialogTitle = document.getElementById('stop-dialog-title');
+            const stopButtonsNormal = document.getElementById('stop-dialog-buttons-normal');
+            const stopButtonsCont = document.getElementById('stop-dialog-buttons-continuation');
+            const stopHeroEl = document.querySelector('#view-interval-stop .hero-time-interval');
+
+            if (telem.session?.state === 'Suspended' && telem.csafe?.machineState === 'Starting') {
+                if (stopTitleEl) stopTitleEl.innerText = 'MØLLEN STARTER PÅ NYTT...';
+                if (stopHeroLbl) stopHeroLbl.innerText = 'PAUSE';
+                if (stopDialogTitle) stopDialogTitle.innerText = 'Møllen teller ned (3-2-1)...';
+                if (stopButtonsNormal) stopButtonsNormal.style.display = 'none';
+                if (stopButtonsCont) stopButtonsCont.style.display = 'none';
+            } else if (isContinuationActive) {
+                if (stopTitleEl) stopTitleEl.innerText = 'AVSLUTTE ØKTEN?';
+                if (stopHeroLbl) stopHeroLbl.innerText = 'VALG UTLØPER OM';
+                if (stopHeroEl) stopHeroEl.innerText = contTimeStr;
+                if (stopDialogTitle) stopDialogTitle.innerText = `Økten avsluttes automatisk om ${contSecs} sekunder:`;
+                if (stopButtonsNormal) stopButtonsNormal.style.display = 'none';
+                if (stopButtonsCont) stopButtonsCont.style.display = 'flex';
+            } else {
+                if (stopTitleEl) stopTitleEl.innerText = 'Pause';
+                if (stopHeroLbl) stopHeroLbl.innerText = 'TID IGJEN';
+                if (stopDialogTitle) stopDialogTitle.innerText = 'Start møllen for å fortsette, eller velg:';
+                if (stopButtonsNormal) stopButtonsNormal.style.display = 'flex';
+                if (stopButtonsCont) stopButtonsCont.style.display = 'none';
             }
 
             // GUI-006: Hotkey dimming based on belt running state

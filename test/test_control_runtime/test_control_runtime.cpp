@@ -82,6 +82,17 @@ void tearDown() {
     s_console.end();
 }
 
+static void setCsafeSnapshotState(ApplicationSnapshot& snap, CsafeMachineState state, bool online = true, bool fresh = true) {
+    snap.csafe.initialized = true;
+    snap.csafe.online = online;
+    snap.csafe.linkStatus = online ? CsafeLinkStatus::Online : CsafeLinkStatus::TimedOut;
+    snap.csafe.qualifiedState = state;
+    snap.csafe.reportedState = state;
+    snap.csafe.machineStateFresh = fresh;
+    snap.csafe.rawStateByte = static_cast<uint8_t>(state);
+    snap.csafe.stateNibble = static_cast<uint8_t>(state) & 0x0F;
+}
+
 static ApplicationSnapshot makeAuthoritativeSnapshot(uint32_t nowMs, float speedKmh, double distanceKm) {
     ApplicationSnapshot snap{};
     snap.timestampMs = nowMs;
@@ -112,6 +123,12 @@ static ApplicationSnapshot makeAuthoritativeSnapshot(uint32_t nowMs, float speed
 
     snap.health.isHealthy = true;
     snap.health.highestSeverity = FaultSeverity::None;
+
+    if (speedKmh > 0.1f) {
+        setCsafeSnapshotState(snap, CsafeMachineState::InUse, true, true);
+    } else {
+        setCsafeSnapshotState(snap, CsafeMachineState::Ready, true, true);
+    }
 
     return snap;
 }
@@ -509,6 +526,245 @@ void test_control_task_orchestrator_snapshot_ingestion() {
     runtime.end();
 }
 
+// CSAFE Stop Hierarchy Test 1: InUse -> Paused triggers 1st physical stop (session suspended)
+void test_csafe_first_stop_inuse_to_paused_suspends_session() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+
+    // First snapshot: Moving belt, InUse state -> session transitions to Running
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1020, 10.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::InUse);
+    runtime.update(snap, 1020);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, runtime.getSessionSnapshot().state);
+    TEST_ASSERT_EQUAL(0, runtime.getSessionSnapshot().physicalStopCount);
+
+    // Stop 1 transition: CSAFE InUse -> Paused, belt decelerates
+    snap = makeAuthoritativeSnapshot(1040, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Paused);
+    runtime.update(snap, 1040);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, runtime.getSessionSnapshot().state);
+    TEST_ASSERT_EQUAL(1, runtime.getSessionSnapshot().physicalStopCount);
+    TEST_ASSERT_FALSE(runtime.getSessionSnapshot().continuationWindowActive);
+
+    runtime.end();
+}
+
+// CSAFE Stop Hierarchy Test 2: Paused -> Ready triggers 2nd physical stop (continuation window active, 30s)
+void test_csafe_second_stop_paused_to_ready_enters_continuation() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+
+    // Move belt -> Running
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1020, 10.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::InUse);
+    runtime.update(snap, 1020);
+
+    // 1st stop: InUse -> Paused
+    snap = makeAuthoritativeSnapshot(1040, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Paused);
+    runtime.update(snap, 1040);
+    TEST_ASSERT_EQUAL(1, runtime.getSessionSnapshot().physicalStopCount);
+
+    // 2nd stop: Paused -> Ready
+    snap = makeAuthoritativeSnapshot(1060, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Ready);
+    runtime.update(snap, 1060);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, runtime.getSessionSnapshot().state);
+    TEST_ASSERT_EQUAL(2, runtime.getSessionSnapshot().physicalStopCount);
+    TEST_ASSERT_TRUE(runtime.getSessionSnapshot().continuationWindowActive);
+    TEST_ASSERT_EQUAL_UINT32(30000, runtime.getSessionSnapshot().continuationWindowRemainingMs);
+
+    runtime.end();
+}
+
+// CSAFE Stop Hierarchy Test 3: 3rd stop button press when in continuation and CSAFE Ready finalizes session
+void test_third_stop_physical_button_event_finalizes_session() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+
+    // Run -> Stop 1 -> Stop 2
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1020, 10.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::InUse);
+    runtime.update(snap, 1020);
+
+    snap = makeAuthoritativeSnapshot(1040, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Paused);
+    runtime.update(snap, 1040);
+
+    snap = makeAuthoritativeSnapshot(1060, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Ready);
+    runtime.update(snap, 1060);
+    TEST_ASSERT_TRUE(runtime.getSessionSnapshot().continuationWindowActive);
+
+    // Inject 3rd physical stop button press into console
+    PhysicalButtonEvent stopEv{ButtonId::Stop, PhysicalButtonAction::Pressed, 1080, 0, 0xFF, 0xFF};
+    TEST_ASSERT_TRUE(s_console.injectPhysicalButtonEvent(stopEv));
+
+    // Update with CSAFE still Ready
+    snap = makeAuthoritativeSnapshot(1080, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Ready);
+    runtime.update(snap, 1080);
+
+    TEST_ASSERT_EQUAL(3, runtime.getSessionSnapshot().physicalStopCount);
+    TEST_ASSERT_TRUE(runtime.getSessionSnapshot().state == WorkoutSessionState::Completed ||
+                     runtime.getSessionSnapshot().state == WorkoutSessionState::Aborted);
+
+    runtime.end();
+}
+
+// CSAFE Stop Hierarchy Test 4: Generic API stop does NOT increment physicalStopCount or register physical stop
+void test_generic_api_stop_does_not_call_register_physical_stop() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+
+    // Running state
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1020, 10.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::InUse);
+    runtime.update(snap, 1020);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, runtime.getSessionSnapshot().state);
+
+    // Stage generic API stop command
+    ControlCommand stopCmd{};
+    stopCmd.type = ControlCommandType::Stop;
+    stopCmd.timestampMs = 1040;
+    TEST_ASSERT_TRUE(runtime.stageCommand(stopCmd));
+
+    // When the control task drains the command while CSAFE is still InUse (before hardware decels),
+    // session must NOT register a physical stop
+    runtime.update(snap, 1040);
+    TEST_ASSERT_EQUAL(0, runtime.getSessionSnapshot().physicalStopCount);
+
+    runtime.end();
+}
+
+// CSAFE Stop Hierarchy Test 5: Initial connection and reconnection baselining doesn't cause spurious transitions
+void test_csafe_initial_and_reconnection_baselining_no_spurious_stop() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+
+    // Initial snapshot: Ready state (fresh connection baseline, no transition)
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1020, 0.0f, 0.0);
+    setCsafeSnapshotState(snap, CsafeMachineState::Ready);
+    runtime.update(snap, 1020);
+    TEST_ASSERT_EQUAL(0, runtime.getSessionSnapshot().physicalStopCount);
+
+    // Move to InUse
+    snap = makeAuthoritativeSnapshot(1040, 10.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::InUse);
+    runtime.update(snap, 1040);
+    TEST_ASSERT_EQUAL(0, runtime.getSessionSnapshot().physicalStopCount);
+
+    // Drop connection (safety key pull or UART silence: online = false)
+    snap = makeAuthoritativeSnapshot(1060, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Unknown, false, false);
+    runtime.update(snap, 1060);
+    TEST_ASSERT_EQUAL(0, runtime.getSessionSnapshot().physicalStopCount);
+
+    // Reconnect in Ready state -> must re-baseline, NOT trigger Paused->Ready transition
+    snap = makeAuthoritativeSnapshot(1080, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Ready, true, true);
+    runtime.update(snap, 1080);
+    TEST_ASSERT_EQUAL(0, runtime.getSessionSnapshot().physicalStopCount);
+
+    runtime.end();
+}
+
+// CSAFE Stop Hierarchy Test 6: Continuation window countdown and expiration after 30 seconds
+void test_continuation_window_expires_after_30s() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+
+    // Run -> Stop 1 -> Stop 2
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1020, 10.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::InUse);
+    runtime.update(snap, 1020);
+
+    snap = makeAuthoritativeSnapshot(1040, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Paused);
+    runtime.update(snap, 1040);
+
+    snap = makeAuthoritativeSnapshot(1060, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Ready);
+    runtime.update(snap, 1060);
+    TEST_ASSERT_TRUE(runtime.getSessionSnapshot().continuationWindowActive);
+    TEST_ASSERT_EQUAL_UINT32(30000, runtime.getSessionSnapshot().continuationWindowRemainingMs);
+
+    // Advance 15 seconds: continuation window still active with ~15000ms remaining
+    snap = makeAuthoritativeSnapshot(16060, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Ready);
+    runtime.update(snap, 16060);
+    TEST_ASSERT_TRUE(runtime.getSessionSnapshot().continuationWindowActive);
+    TEST_ASSERT_EQUAL_UINT32(15000, runtime.getSessionSnapshot().continuationWindowRemainingMs);
+
+    // Advance past 30 seconds total (30001 ms elapsed): continuation window expires
+    snap = makeAuthoritativeSnapshot(31061, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Ready);
+    runtime.update(snap, 31061);
+    TEST_ASSERT_FALSE(runtime.getSessionSnapshot().continuationWindowActive);
+    TEST_ASSERT_EQUAL_UINT32(0, runtime.getSessionSnapshot().continuationWindowRemainingMs);
+
+    runtime.end();
+}
+
+// 22. ControlCommandType::Resume stages physical speed target and does NOT bypass WorkoutSession confirmation
+void test_control_command_resume_stages_speed_not_bypass_session() {
+    s_console.begin(ConsoleExecutionMode::SoftwareSink);
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+    TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
+
+    // First snapshot: Moving belt, InUse state -> session transitions to Running
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1020, 10.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::InUse);
+    runtime.update(snap, 1020);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, runtime.getSessionSnapshot().state);
+
+    // Stop 1: InUse -> Paused -> Suspended
+    snap = makeAuthoritativeSnapshot(1040, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Paused);
+    runtime.update(snap, 1040);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, runtime.getSessionSnapshot().state);
+
+    // Issue Resume API command
+    ControlCommand resumeCmd{};
+    resumeCmd.type = ControlCommandType::Resume;
+    resumeCmd.timestampMs = 1060;
+    TEST_ASSERT_TRUE(runtime.stageCommand(resumeCmd));
+
+    // Update with CSAFE Starting, belt 0.0 km/h (audible countdown phase)
+    snap = makeAuthoritativeSnapshot(1060, 0.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::Starting);
+    runtime.update(snap, 1060);
+
+    // Session MUST remain Suspended - resume command must not bypass confirmation!
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, runtime.getSessionSnapshot().state);
+
+    // Treadmill finishes countdown: transitions to InUse with moving belt
+    snap = makeAuthoritativeSnapshot(1100, 5.0f, 0.05);
+    setCsafeSnapshotState(snap, CsafeMachineState::InUse);
+    runtime.update(snap, 1100);
+
+    // Now session confirms resume and enters Running
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, runtime.getSessionSnapshot().state);
+
+    runtime.end();
+}
+
 void run_all_control_runtime_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_control_runtime_single_owner_path);
@@ -526,6 +782,13 @@ void run_all_control_runtime_tests() {
     RUN_TEST(test_real_controller_ready_delivery_path);
     RUN_TEST(test_control_task_freertos_lifecycle_core0);
     RUN_TEST(test_control_task_orchestrator_snapshot_ingestion);
+    RUN_TEST(test_csafe_first_stop_inuse_to_paused_suspends_session);
+    RUN_TEST(test_csafe_second_stop_paused_to_ready_enters_continuation);
+    RUN_TEST(test_third_stop_physical_button_event_finalizes_session);
+    RUN_TEST(test_generic_api_stop_does_not_call_register_physical_stop);
+    RUN_TEST(test_csafe_initial_and_reconnection_baselining_no_spurious_stop);
+    RUN_TEST(test_continuation_window_expires_after_30s);
+    RUN_TEST(test_control_command_resume_stages_speed_not_bypass_session);
     UNITY_END();
 }
 

@@ -4,6 +4,7 @@
 #include <cstddef>
 
 #include "../InclineSensor/InclineSensorTypes.h"
+#include "../CsafeInterface/CsafeTypes.h"
 
 namespace stridecontrol {
 
@@ -146,6 +147,9 @@ struct VirtualTreadmillConfig {
     // Pulse calibrations (Provisional defaults)
     double tachoPulsesPerKm = 3600.0 / 1.1148;  // T610 default calibration: ~3229.28 pulses/km (1.1148 km/h/Hz)
     double inclinePulsesPerPct = 3086.0;        // T610 default calibration: 3086 pulses/%
+
+    // CSAFE audible countdown duration (Physical T610 3-2-1 countdown)
+    uint32_t startingCountdownMs = 3000;
 };
 
 // =============================================================================
@@ -186,6 +190,12 @@ public:
     const InclineFeedbackOutput& getInclineOutput() const { return inclineOutput_; }
     const ConsoleOutput& getConsoleOutput() const { return consoleOutput_; }
     const BiometricOutput& getBiometricOutput() const { return biometricOutput_; }
+    const CsafeState& getCsafeState() const { return csafeState_; }
+    CsafeState& getCsafeState() { return csafeState_; }
+
+    // Console Action Handlers (Driving physical & CSAFE state transitions)
+    void onConsoleQuickStart(float resumeSpeedKmh = 1.0f, float resumeInclinePct = 0.0f);
+    void onConsoleStop();
 
     // Physical state inspectors
     float getActualSpeedKmh() const { return actualSpeedKmh_; }
@@ -245,6 +255,13 @@ private:
     static constexpr size_t kEventQueueCapacity = 8;
     VirtualButtonEvent eventQueue_[kEventQueueCapacity]{};
     uint8_t eventQueueCount_ = 0;
+
+    // CSAFE state tracking
+    CsafeState csafeState_{};
+    uint32_t startingCountdownRemainingMs_ = 0;
+    float pendingStartSpeedKmh_ = 1.0f;
+    float pendingStartInclinePct_ = 0.0f;
+    uint8_t consecutiveStopCount_ = 0;
 
     // Output DTOs
     TachoOutput tachoOutput_{};

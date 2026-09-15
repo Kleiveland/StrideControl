@@ -43,6 +43,22 @@ void VirtualTreadmill::resetModelUs(uint64_t initialTimeUs) {
         eventQueue_[i] = VirtualButtonEvent{};
     }
 
+    csafeState_ = CsafeState{};
+    csafeState_.initialized = true;
+    csafeState_.online = true;
+    csafeState_.machineStateFresh = true;
+    csafeState_.linkStatus = CsafeLinkStatus::Online;
+    csafeState_.reportedState = CsafeMachineState::Ready;
+    csafeState_.qualifiedState = CsafeMachineState::Ready;
+    csafeState_.rawStateByte = 0x01;
+    csafeState_.stateNibble = 0x01;
+    csafeState_.snapshotTimestampMs = static_cast<uint32_t>(initialTimeUs / 1000ULL);
+
+    startingCountdownRemainingMs_ = 0;
+    pendingStartSpeedKmh_ = 1.0f;
+    pendingStartInclinePct_ = 0.0f;
+    consecutiveStopCount_ = 0;
+
     tachoOutput_ = TachoOutput{};
     inclineOutput_ = InclineFeedbackOutput{};
     consoleOutput_ = ConsoleOutput{};
@@ -76,6 +92,33 @@ bool VirtualTreadmill::tick(const SimulationTick& tick) {
     // Check E-Stop stuck fault
     if (isFaultActive(VirtualTreadmillFault::EStopStuckActive)) {
         eStopActive_ = true;
+    }
+
+    // Update CSAFE simulation state
+    csafeState_.snapshotTimestampMs = static_cast<uint32_t>(scenarioTimeUs / 1000ULL);
+    if (eStopActive_) {
+        csafeState_.linkStatus = CsafeLinkStatus::TimedOut;
+        csafeState_.online = false;
+        csafeState_.machineStateFresh = false;
+    } else {
+        csafeState_.linkStatus = CsafeLinkStatus::Online;
+        csafeState_.online = true;
+        csafeState_.machineStateFresh = true;
+
+        if (csafeState_.qualifiedState == CsafeMachineState::Starting) {
+            if (deltaMs >= startingCountdownRemainingMs_) {
+                startingCountdownRemainingMs_ = 0;
+                csafeState_.qualifiedState = CsafeMachineState::InUse;
+                csafeState_.reportedState = CsafeMachineState::InUse;
+                csafeState_.rawStateByte = 0x85;
+                csafeState_.stateNibble = 0x05;
+                targetSpeedKmh_ = pendingStartSpeedKmh_;
+                targetInclinePct_ = pendingStartInclinePct_;
+            } else {
+                startingCountdownRemainingMs_ -= deltaMs;
+                targetSpeedKmh_ = 0.0f;
+            }
+        }
     }
 
     const float prevSpeed = actualSpeedKmh_;
@@ -340,6 +383,16 @@ void VirtualTreadmill::setTargetSpeedKmh(float speedKmh) {
     } else {
         targetSpeedKmh_ = speedKmh;
     }
+
+    if (targetSpeedKmh_ > 0.0f) {
+        if (csafeState_.qualifiedState == CsafeMachineState::Ready ||
+            csafeState_.qualifiedState == CsafeMachineState::Unknown) {
+            csafeState_.qualifiedState = CsafeMachineState::InUse;
+            csafeState_.reportedState = CsafeMachineState::InUse;
+            csafeState_.rawStateByte = 0x85;
+            csafeState_.stateNibble = 0x05;
+        }
+    }
 }
 
 void VirtualTreadmill::setTargetInclinePct(float inclinePct) {
@@ -354,6 +407,83 @@ void VirtualTreadmill::setTargetInclinePct(float inclinePct) {
 
 void VirtualTreadmill::setEmergencyStop(bool active) {
     eStopActive_ = active;
+    if (active) {
+        csafeState_.online = false;
+        csafeState_.machineStateFresh = false;
+        csafeState_.linkStatus = CsafeLinkStatus::TimedOut;
+    } else {
+        csafeState_.online = true;
+        csafeState_.machineStateFresh = true;
+        csafeState_.linkStatus = CsafeLinkStatus::Online;
+        csafeState_.qualifiedState = CsafeMachineState::Ready;
+        csafeState_.reportedState = CsafeMachineState::Ready;
+        csafeState_.rawStateByte = 0x01;
+        csafeState_.stateNibble = 0x01;
+    }
+}
+
+void VirtualTreadmill::onConsoleQuickStart(float resumeSpeedKmh, float resumeInclinePct) {
+    consecutiveStopCount_ = 0;
+    eStopActive_ = false;
+    csafeState_.online = true;
+    csafeState_.machineStateFresh = true;
+    csafeState_.linkStatus = CsafeLinkStatus::Online;
+
+    pendingStartSpeedKmh_ = resumeSpeedKmh > 0.0f ? resumeSpeedKmh : 1.0f;
+    pendingStartInclinePct_ = resumeInclinePct;
+
+    if (config_.startingCountdownMs > 0) {
+        startingCountdownRemainingMs_ = config_.startingCountdownMs;
+        csafeState_.qualifiedState = CsafeMachineState::Starting;
+        csafeState_.reportedState = CsafeMachineState::Starting;
+        csafeState_.rawStateByte = 0x08;
+        csafeState_.stateNibble = 0x08;
+        targetSpeedKmh_ = 0.0f; // Held stationary during 3-2-1 countdown
+    } else {
+        startingCountdownRemainingMs_ = 0;
+        csafeState_.qualifiedState = CsafeMachineState::InUse;
+        csafeState_.reportedState = CsafeMachineState::InUse;
+        csafeState_.rawStateByte = 0x85;
+        csafeState_.stateNibble = 0x05;
+        targetSpeedKmh_ = pendingStartSpeedKmh_;
+        targetInclinePct_ = pendingStartInclinePct_;
+    }
+}
+
+void VirtualTreadmill::onConsoleStop() {
+    if (csafeState_.qualifiedState == CsafeMachineState::InUse ||
+        csafeState_.qualifiedState == CsafeMachineState::Starting) {
+        // 1st stop press while running/starting: transition to Paused (0x04)
+        consecutiveStopCount_ = 1;
+        startingCountdownRemainingMs_ = 0;
+        if (targetSpeedKmh_ > 0.0f) {
+            pendingStartSpeedKmh_ = targetSpeedKmh_;
+            pendingStartInclinePct_ = targetInclinePct_;
+        }
+        targetSpeedKmh_ = 0.0f; // Decelerate to 0.0 km/h
+        csafeState_.qualifiedState = CsafeMachineState::Paused;
+        csafeState_.reportedState = CsafeMachineState::Paused;
+        csafeState_.rawStateByte = 0x04;
+        csafeState_.stateNibble = 0x04;
+    } else if (csafeState_.qualifiedState == CsafeMachineState::Paused) {
+        // 2nd stop press while paused: transition to Ready (0x01), reset targets
+        consecutiveStopCount_ = 2;
+        targetSpeedKmh_ = 0.0f;
+        targetInclinePct_ = 0.0f;
+        pendingStartSpeedKmh_ = 1.0f;
+        pendingStartInclinePct_ = 0.0f;
+        csafeState_.qualifiedState = CsafeMachineState::Ready;
+        csafeState_.reportedState = CsafeMachineState::Ready;
+        csafeState_.rawStateByte = 0x01;
+        csafeState_.stateNibble = 0x01;
+    } else {
+        // 3rd or subsequent stop press while Ready: remain Ready (0x01)
+        consecutiveStopCount_++;
+        csafeState_.qualifiedState = CsafeMachineState::Ready;
+        csafeState_.reportedState = CsafeMachineState::Ready;
+        csafeState_.rawStateByte = 0x01;
+        csafeState_.stateNibble = 0x01;
+    }
 }
 
 void VirtualTreadmill::setRunnerLocation(VirtualRunnerLocation location) {

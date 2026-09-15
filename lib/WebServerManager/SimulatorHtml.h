@@ -132,6 +132,11 @@ static const char kSimulatorHtml[] PROGMEM = R"rawliteral(
             <div class="telem-val" style="font-size: 1.1rem;" id="t-dropped">0 <span style="font-size:0.8rem">dropped</span></div>
             <div class="telem-sub">Auth: <span id="t-authority" style="color:var(--green-hover)">YES</span></div>
         </div>
+        <div class="telem-card">
+            <div class="telem-label">CSAFE Machine State</div>
+            <div class="telem-val" style="font-size: 1.1rem; color: var(--accent)" id="t-csafe-state">READY</div>
+            <div class="telem-sub">Link: <span id="t-csafe-link">ONLINE (0x01)</span></div>
+        </div>
     </div>
 
     <!-- MAIN CONTROLS GRID -->
@@ -411,6 +416,30 @@ static const char kSimulatorHtml[] PROGMEM = R"rawliteral(
             const authEl = document.getElementById('t-authority');
             authEl.innerText = data.authority ? 'YES' : 'NO';
             authEl.style.color = data.authority ? '#3fb950' : '#f85149';
+        }
+        if (data.csafe) {
+            const stateEl = document.getElementById('t-csafe-state');
+            if (stateEl) {
+                const st = data.csafe.machineState || '--';
+                stateEl.innerText = st;
+                if (st === 'IN_USE') {
+                    stateEl.style.color = 'var(--green-hover)';
+                } else if (st === 'STARTING') {
+                    stateEl.style.color = '#e3b341';
+                } else if (st === 'PAUSED') {
+                    stateEl.style.color = '#f0883e';
+                } else {
+                    stateEl.style.color = 'var(--accent)';
+                }
+            }
+            const linkEl = document.getElementById('t-csafe-link');
+            if (linkEl) {
+                const rawHex = typeof data.csafe.rawStateByte === 'number'
+                    ? '0x' + data.csafe.rawStateByte.toString(16).toUpperCase().padStart(2, '0')
+                    : '--';
+                linkEl.innerText = `${data.csafe.linkStatus || '--'} (${rawHex})`;
+                linkEl.style.color = data.csafe.online && data.csafe.fresh ? '#3fb950' : '#f85149';
+            }
         }
     }
 

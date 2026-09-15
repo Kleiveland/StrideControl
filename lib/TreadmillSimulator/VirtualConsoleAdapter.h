@@ -32,16 +32,15 @@ public:
         // If E-Stop is active, only QuickStart or E-Stop release can clear/override
         if (treadmill_.isEStopActive()) {
             if (cmd.type == CommandType::PressButton && cmd.button == ButtonId::QuickStart) {
-                treadmill_.setEmergencyStop(false);
-                treadmill_.setTargetSpeedKmh(1.0f);
-                treadmill_.setTargetInclinePct(0.0f);
                 resetResumeDefaults();
                 consecutiveStopPresses_ = 0;
                 quickStartCount_++;
+                treadmill_.onConsoleQuickStart(1.0f, 0.0f);
                 return true;
             }
             if (cmd.type == CommandType::PressButton && cmd.button == ButtonId::Stop) {
                 stopCount_++;
+                treadmill_.onConsoleStop();
                 return true;
             }
             // All other commands rejected while E-Stop is engaged
@@ -91,9 +90,7 @@ public:
                     case ButtonId::QuickStart: {
                         quickStartCount_++;
                         consecutiveStopPresses_ = 0;
-                        treadmill_.setEmergencyStop(false);
-                        treadmill_.setTargetSpeedKmh(preStopTargetSpeedKmh_);
-                        treadmill_.setTargetInclinePct(preStopTargetInclinePct_);
+                        treadmill_.onConsoleQuickStart(preStopTargetSpeedKmh_, preStopTargetInclinePct_);
                         return true;
                     }
 
@@ -109,7 +106,7 @@ public:
                         } else {
                             resetResumeDefaults();
                         }
-                        treadmill_.setTargetSpeedKmh(0.0f);
+                        treadmill_.onConsoleStop();
                         return true;
                     }
 

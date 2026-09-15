@@ -619,7 +619,20 @@ void WorkoutSession::update(
     snapshot_.snapshotTimestampMs = nowMs;
     snapshot_.snapshotSequence++;
 
-    const bool beltMoving = (applicationSnapshot.speed.speedKmh >= config_.beltMovingThresholdKmh);
+    const bool csafeValid = applicationSnapshot.csafe.initialized &&
+                            applicationSnapshot.csafe.online &&
+                            applicationSnapshot.csafe.machineStateFresh &&
+                            applicationSnapshot.csafe.qualifiedState != CsafeMachineState::Unknown;
+    const bool csafeInUse = csafeValid && (applicationSnapshot.csafe.qualifiedState == CsafeMachineState::InUse);
+
+    const bool speedValid = applicationSnapshot.speed.initialized &&
+                            applicationSnapshot.speed.measurementValid &&
+                            applicationSnapshot.speed.status != SpeedSensorStatus::HardwareError &&
+                            applicationSnapshot.speed.status != SpeedSensorStatus::Uninitialized;
+    const bool beltMoving = speedValid && (applicationSnapshot.speed.speedKmh >= config_.beltMovingThresholdKmh);
+
+    const bool confirmedRunning = csafeInUse && beltMoving;
+
     const double currentRunnerDist = applicationSnapshot.runner.validatedDistanceKm;
     double distDelta = 0.0;
     if (lastRunnerDistanceKm_ >= 0.0) {
@@ -631,7 +644,7 @@ void WorkoutSession::update(
 
     // 0. Idle state -> Auto-start free run if belt begins moving in manual mode
     if (snapshot_.state == WorkoutSessionState::Idle) {
-        if (beltMoving && desiredGuiIsManual_) {
+        if (confirmedRunning && desiredGuiIsManual_) {
             startFreeRun(nowMs, desiredGuiUserId_);
         }
         return;
@@ -641,9 +654,9 @@ void WorkoutSession::update(
         return;
     }
 
-    // 1. Armed -> Transition to Running once belt movement begins
+    // 1. Armed -> Transition to Running once confirmed running (CSAFE InUse AND valid belt movement)
     if (snapshot_.state == WorkoutSessionState::Armed) {
-        if (beltMoving) {
+        if (confirmedRunning) {
             snapshot_.state = WorkoutSessionState::Running;
             snapshot_.suspended = false;
             startStep(0, nowMs, currentRunnerDist);
@@ -651,11 +664,11 @@ void WorkoutSession::update(
         return;
     }
 
-    // 2. Suspended state -> Check for automatic continuation after normal physical restart
+    // 2. Suspended state -> Check for automatic continuation after confirmed physical restart
     if (snapshot_.state == WorkoutSessionState::Suspended) {
         if (!beltMoving) {
             beltHasStoppedSinceSuspend_ = true;
-        } else if (beltHasStoppedSinceSuspend_ && !isEmergencyStopped_) {
+        } else if (confirmedRunning && beltHasStoppedSinceSuspend_ && !isEmergencyStopped_) {
             if (desiredGuiIsManual_) {
                 startFreeRun(nowMs, desiredGuiUserId_);
             } else {

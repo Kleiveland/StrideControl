@@ -107,6 +107,8 @@ private:
 
     QueueHandle_t commandQueue_ = nullptr;
 
+    ConsoleInterface& console_;
+
     // STRICT MEMBER DECLARATION ORDER:
     // controller_ MUST precede adapter_ so adapter_ never outlives controller_
     TreadmillController controller_;
@@ -115,6 +117,9 @@ private:
     WorkoutEngine workoutEngine_;
     WorkoutDispatcher dispatcher_;
     ControlCoordinator coordinator_;
+
+    CsafeMachineState previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
+    bool csafeStateInitialized_ = false;
 
     volatile bool rampTestActive_ = false;
     volatile bool rampTestComplete_ = false;

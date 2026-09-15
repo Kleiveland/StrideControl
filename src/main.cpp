@@ -47,6 +47,7 @@ public:
         report.authority = telem.authoritative;
         report.actualSpeedKmh = telem.snapshot.speed.speedKmh;
         report.actualInclinePct = telem.snapshot.incline.estimatedInclinePct;
+        report.csafe = telem.snapshot.csafe;
         report.runnerDistanceKm = telem.snapshot.runner.validatedDistanceKm;
         report.sessionState = stridecontrol::workoutSessionStateName(telem.sessionSnapshot.state);
         report.stepIndex = telem.sessionSnapshot.currentStepIndex;
@@ -84,6 +85,8 @@ public:
         report.rampPreFireActive = telem.sessionSnapshot.rampPreFireActive;
         report.rampPreFireSpeedChanging = telem.sessionSnapshot.rampPreFireSpeedChanging;
         report.rampPreFireInclineChanging = telem.sessionSnapshot.rampPreFireInclineChanging;
+        report.continuationWindowActive = telem.sessionSnapshot.continuationWindowActive;
+        report.continuationWindowRemainingMs = telem.sessionSnapshot.continuationWindowRemainingMs;
         memcpy(report.actualStepDurationsMs, telem.sessionSnapshot.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
         return true;
     }
@@ -134,6 +137,7 @@ public:
         report.authority = stridecontrol::ControlRuntime::isSnapshotAuthoritative(snap, nowMs);
         report.actualSpeedKmh = snap.speed.speedKmh;
         report.actualInclinePct = snap.incline.estimatedInclinePct;
+        report.csafe = snap.csafe;
         report.runnerDistanceKm = snap.runner.validatedDistanceKm;
         report.sessionState = stridecontrol::workoutSessionStateName(sessSnap.state);
         report.stepIndex = sessSnap.currentStepIndex;
@@ -161,6 +165,8 @@ public:
         report.rampPreFireActive = sessSnap.rampPreFireActive;
         report.rampPreFireSpeedChanging = sessSnap.rampPreFireSpeedChanging;
         report.rampPreFireInclineChanging = sessSnap.rampPreFireInclineChanging;
+        report.continuationWindowActive = sessSnap.continuationWindowActive;
+        report.continuationWindowRemainingMs = sessSnap.continuationWindowRemainingMs;
         memcpy(report.actualStepDurationsMs, sessSnap.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
         return true;
     }

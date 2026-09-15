@@ -20,6 +20,7 @@ class ConsoleInterface {
   bool submit(const TreadmillCommand& command, TickType_t waitTicks = 0);
   bool receiveCommandEvent(CommandEvent& event, TickType_t waitTicks = 0);
   bool receivePhysicalButtonEvent(PhysicalButtonEvent& event, TickType_t waitTicks = 0);
+  bool injectPhysicalButtonEvent(const PhysicalButtonEvent& event);
 
   bool isActive() const;
   bool isReady() const;

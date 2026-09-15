@@ -107,6 +107,8 @@ public:
     VirtualTreadmill& getVirtualTreadmill() { return treadmill_; }
     const VirtualRunnerAdapter& getRunnerAdapter() const { return runnerAdapter_; }
     VirtualRunnerAdapter& getRunnerAdapter() { return runnerAdapter_; }
+    const CsafeState& getCsafeState() const { return treadmill_.getCsafeState(); }
+    void setConsoleInterface(ConsoleInterface* console) { console_ = console; }
 
     static const char* version();
 
@@ -120,6 +122,7 @@ private:
     VirtualRunnerAdapter runnerAdapter_;
 
     StagedStimulusMailbox mailbox_;
+    ConsoleInterface* console_ = nullptr;
 };
 
 } // namespace stridecontrol

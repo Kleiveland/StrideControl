@@ -41,7 +41,7 @@ struct WorkoutCommandIntent {
 struct WorkoutSessionConfig {
     float beltMovingThresholdKmh = 0.5f;                 // Minimum speed to qualify belt motion
     uint32_t defaultRestExtensionSeconds = 30;          // Standard Hvile extension in seconds
-    uint32_t continuationWindowDurationMs = 10000;      // 10-second continuation window after 2x stop
+    uint32_t continuationWindowDurationMs = 30000;      // 30-second continuation window after 2x stop
     uint32_t speedAdjustmentPromptDurationMs = 15000;   // 15-second prompt duration during REST step
 };
 

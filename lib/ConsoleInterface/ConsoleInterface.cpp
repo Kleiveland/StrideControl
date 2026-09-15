@@ -809,6 +809,7 @@ bool ConsoleInterface::submit(const TreadmillCommand& c, TickType_t w) {
 
 bool ConsoleInterface::receiveCommandEvent(CommandEvent& e, TickType_t w) { return impl_->commandEventQueue && xQueueReceive(impl_->commandEventQueue, &e, w) == pdTRUE; }
 bool ConsoleInterface::receivePhysicalButtonEvent(PhysicalButtonEvent& e, TickType_t w) { return impl_->physicalEventQueue && xQueueReceive(impl_->physicalEventQueue, &e, w) == pdTRUE; }
+bool ConsoleInterface::injectPhysicalButtonEvent(const PhysicalButtonEvent& e) { return impl_->physicalEventQueue && xQueueSend(impl_->physicalEventQueue, &e, 0) == pdTRUE; }
 bool ConsoleInterface::isActive() const { return impl_ && impl_->active.load(); }
 bool ConsoleInterface::isReady() const { return impl_ && impl_->ready.load(); }
 void ConsoleInterface::abortActiveCommand() { if (impl_) impl_->abortRequested.store(true); }

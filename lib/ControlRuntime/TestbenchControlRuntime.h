@@ -151,6 +151,8 @@ private:
     volatile bool stopRequested_ = false;
 
     bool initialized_ = false;
+    CsafeMachineState previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
+    bool csafeStateInitialized_ = false;
     uint32_t lostAuthorityCount_ = 0;
     uint32_t authorityLostSinceMs_ = 0; // 0 means "not currently in a lost-authority streak"
     static constexpr uint32_t kAuthorityLossSuspendThresholdMs = 2000;

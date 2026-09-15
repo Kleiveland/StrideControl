@@ -8,6 +8,7 @@
 #include "../InclineVerifier/InclineVerifierTypes.h"
 #include "../DiagnosticsService/DiagnosticsServiceTypes.h"
 #include "../BluetoothTypes/BluetoothTypes.h"
+#include "../CsafeInterface/CsafeTypes.h"
 
 namespace stridecontrol {
 
@@ -24,6 +25,7 @@ struct ApplicationSnapshot {
 
     SpeedSensorState speed{};
     InclineState incline{};
+    CsafeState csafe{};
     ImuState imu{};
     RunnerDynamicsState runner{};
     InclineVerifierState inclineVerifier{};

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
+#include "../CsafeInterface/CsafeTypes.h"
 
 #if defined(STRIDECONTROL_TESTBENCH)
 #include "TestbenchControlRuntime.h"
@@ -214,6 +215,8 @@ void WebServerManager::registerRoutes() {
         session["rampPreFireActive"] = report.rampPreFireActive;
         session["rampPreFireSpeedChanging"] = report.rampPreFireSpeedChanging;
         session["rampPreFireInclineChanging"] = report.rampPreFireInclineChanging;
+        session["continuationWindowActive"] = report.continuationWindowActive;
+        session["continuationWindowRemainingMs"] = report.continuationWindowRemainingMs;
         JsonArray actualDurations = session["actualStepDurationsMs"].to<JsonArray>();
         for (uint8_t i = 0; i < report.stepIndex && i < MAX_EXPANDED_WORKOUT_STEPS; ++i) {
             actualDurations.add(report.actualStepDurationsMs[i]);
@@ -222,6 +225,13 @@ void WebServerManager::registerRoutes() {
         JsonObject hr = doc["heartRate"].to<JsonObject>();
         hr["bpm"] = report.heartRateBpm;
         hr["valid"] = report.heartRateValid;
+
+        JsonObject csafe = doc["csafe"].to<JsonObject>();
+        csafe["machineState"] = csafeMachineStateName(report.csafe.qualifiedState);
+        csafe["rawStateByte"] = report.csafe.rawStateByte;
+        csafe["online"] = report.csafe.online;
+        csafe["linkStatus"] = csafeLinkStatusName(report.csafe.linkStatus);
+        csafe["fresh"] = report.csafe.machineStateFresh;
 
         doc["elapsedTimeMs"] = report.totalElapsedTimeMs;
         doc["targetSpeedKmh"] = report.targetSpeedKmh;

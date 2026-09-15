@@ -80,11 +80,29 @@ static ExpandedWorkout createTestExpandedWorkout() {
     return ew;
 }
 
-static ApplicationSnapshot makeAppSnapshot(float beltSpeedKmh, double distanceKm, bool speedCredit = true) {
+static ApplicationSnapshot makeAppSnapshot(
+    float beltSpeedKmh,
+    double distanceKm,
+    bool speedCredit = true,
+    CsafeMachineState csafeState = CsafeMachineState::InUse,
+    bool csafeFresh = true,
+    bool csafeOnline = true,
+    bool speedValid = true) {
     ApplicationSnapshot snap{};
+    snap.speed.initialized = true;
     snap.speed.speedKmh = beltSpeedKmh;
+    snap.speed.measurementValid = speedValid && (beltSpeedKmh > 0.0f);
+    snap.speed.status = (snap.speed.measurementValid) ? SpeedSensorStatus::Measuring : SpeedSensorStatus::TimedOut;
     snap.runner.validatedDistanceKm = distanceKm;
     snap.runner.speedCreditEnabled = speedCredit;
+    snap.csafe.initialized = true;
+    snap.csafe.online = csafeOnline;
+    snap.csafe.machineStateFresh = csafeFresh;
+    snap.csafe.linkStatus = csafeOnline ? CsafeLinkStatus::Online : CsafeLinkStatus::TimedOut;
+    snap.csafe.qualifiedState = csafeState;
+    snap.csafe.reportedState = csafeState;
+    snap.csafe.rawStateByte = static_cast<uint8_t>(csafeState);
+    snap.csafe.stateNibble = static_cast<uint8_t>(csafeState) & 0x0F;
     return snap;
 }
 
@@ -1029,6 +1047,298 @@ void test_session_target_reissue_after_2x_stop_and_estop() {
     }
 }
 
+void test_armed_ready_speed0_remains_armed() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    ApplicationSnapshot snap = makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Ready);
+    session.update(snap, 1100);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, session.getSnapshot().state);
+    TEST_ASSERT_EQUAL_UINT32(0, session.getSnapshot().totalElapsedTimeMs);
+}
+
+void test_armed_starting_speed0_remains_armed() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    ApplicationSnapshot snap = makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Starting);
+    session.update(snap, 1100);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, session.getSnapshot().state);
+    TEST_ASSERT_EQUAL_UINT32(0, session.getSnapshot().totalElapsedTimeMs);
+    TEST_ASSERT_TRUE(std::abs(session.getSnapshot().stepElapsedValidatedDistanceKm) < 0.001);
+}
+
+void test_armed_inuse_speed0_remains_armed() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    ApplicationSnapshot snap = makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::InUse);
+    session.update(snap, 1100);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, session.getSnapshot().state);
+    TEST_ASSERT_EQUAL_UINT32(0, session.getSnapshot().totalElapsedTimeMs);
+}
+
+void test_armed_inuse_invalidspeed_remains_armed() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    ApplicationSnapshot snap = makeAppSnapshot(10.0f, 0.0, true, CsafeMachineState::InUse, true, true, false);
+    session.update(snap, 1100);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, session.getSnapshot().state);
+    TEST_ASSERT_EQUAL_UINT32(0, session.getSnapshot().totalElapsedTimeMs);
+}
+
+void test_armed_inuse_validspeed_starts_running_once() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    ApplicationSnapshot snap = makeAppSnapshot(5.0f, 0.0, true, CsafeMachineState::InUse);
+    session.update(snap, 1100);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, session.getSnapshot().state);
+    WorkoutCommandIntent intent = session.getPendingCommandIntent();
+    TEST_ASSERT_TRUE(intent.hasSpeedTarget);
+    session.clearPendingCommandIntent();
+
+    // Next update advances elapsed time
+    session.update(snap, 1200);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, session.getSnapshot().state);
+    TEST_ASSERT_EQUAL_UINT32(100, session.getSnapshot().totalElapsedTimeMs);
+    // Did not re-latch initial step intent
+    TEST_ASSERT_FALSE(session.getPendingCommandIntent().hasSpeedTarget);
+}
+
+void test_suspended_paused_speed0_remains_suspended() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    session.update(makeAppSnapshot(10.0f, 0.0, true, CsafeMachineState::InUse), 1000);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, session.getSnapshot().state);
+
+    session.registerPhysicalStop(1500);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
+
+    ApplicationSnapshot snap = makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Paused);
+    session.update(snap, 1600);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
+}
+
+void test_suspended_starting_speed0_remains_suspended() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    session.update(makeAppSnapshot(10.0f, 0.0, true, CsafeMachineState::InUse), 1000);
+    session.registerPhysicalStop(1500);
+    uint32_t frozenTime = session.getSnapshot().totalElapsedTimeMs;
+
+    ApplicationSnapshot snap = makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Starting);
+    session.update(snap, 2000);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
+    TEST_ASSERT_EQUAL_UINT32(frozenTime, session.getSnapshot().totalElapsedTimeMs);
+}
+
+void test_suspended_inuse_speed0_remains_suspended() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    session.update(makeAppSnapshot(10.0f, 0.0, true, CsafeMachineState::InUse), 1000);
+    session.registerPhysicalStop(1500);
+
+    // Belt comes to stop first
+    session.update(makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Paused), 1600);
+
+    // Now CSAFE enters InUse but belt is still 0
+    ApplicationSnapshot snap = makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::InUse);
+    session.update(snap, 2000);
+
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
+}
+
+void test_suspended_inuse_validspeed_resumes_once() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    session.update(makeAppSnapshot(10.0f, 0.0, true, CsafeMachineState::InUse), 1000);
+    session.registerPhysicalStop(1500);
+
+    // Belt stops
+    session.update(makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Paused), 1600);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
+
+    // Treadmill starts: Starting with 0 speed
+    session.update(makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Starting), 2000);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
+
+    // InUse with valid speed > 0.5 km/h
+    session.update(makeAppSnapshot(5.0f, 0.0, true, CsafeMachineState::InUse), 2500);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, session.getSnapshot().state);
+}
+
+void test_normal_paused_resume_does_not_reissue_targets() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    session.update(makeAppSnapshot(9.0f, 0.0, true, CsafeMachineState::InUse), 1000);
+    session.clearPendingCommandIntent();
+
+    // 1st stop (Paused)
+    session.registerPhysicalStop(1500);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
+    TEST_ASSERT_EQUAL(1, session.getSnapshot().physicalStopCount);
+    TEST_ASSERT_FALSE(session.getSnapshot().continuationWindowActive);
+
+    // Belt stops
+    session.update(makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Paused), 1600);
+
+    // Clear any intent
+    session.clearPendingCommandIntent();
+
+    // Treadmill resumes: InUse + moving belt
+    session.update(makeAppSnapshot(9.0f, 0.0, true, CsafeMachineState::InUse), 2500);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, session.getSnapshot().state);
+
+    // Verify NO target reissue (physical treadmill preserved targets!)
+    WorkoutCommandIntent intent = session.getPendingCommandIntent();
+    TEST_ASSERT_FALSE(intent.hasSpeedTarget);
+    TEST_ASSERT_FALSE(intent.hasInclineTarget);
+}
+
+void test_continuation_resume_reissues_targets_once() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    session.update(makeAppSnapshot(9.0f, 0.0, true, CsafeMachineState::InUse), 1000);
+    session.clearPendingCommandIntent();
+
+    // 1st stop (Paused) -> 2nd stop (Ready)
+    session.registerPhysicalStop(1500);
+    session.registerPhysicalStop(1800);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
+    TEST_ASSERT_EQUAL(2, session.getSnapshot().physicalStopCount);
+    TEST_ASSERT_TRUE(session.getSnapshot().continuationWindowActive);
+
+    // Belt stops
+    session.update(makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Ready), 2000);
+    session.clearPendingCommandIntent();
+
+    // Starting phase (belt 0)
+    session.update(makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Starting), 2500);
+    TEST_ASSERT_FALSE(session.getPendingCommandIntent().hasSpeedTarget);
+
+    // Physical resume: InUse + moving belt
+    session.update(makeAppSnapshot(5.0f, 0.0, true, CsafeMachineState::InUse), 3000);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, session.getSnapshot().state);
+
+    // Verify target reissue happened exactly once
+    WorkoutCommandIntent reissued = session.getPendingCommandIntent();
+    TEST_ASSERT_TRUE(reissued.hasSpeedTarget);
+    TEST_ASSERT_TRUE(std::abs(reissued.targetSpeedKmh - 9.0f) < 0.01f);
+    TEST_ASSERT_TRUE(reissued.hasInclineTarget);
+    TEST_ASSERT_EQUAL_UINT8(1, reissued.targetInclinePct);
+
+    // Clear intent and update again - verify not reissued again
+    session.clearPendingCommandIntent();
+    session.update(makeAppSnapshot(9.0f, 0.0, true, CsafeMachineState::InUse), 3100);
+    TEST_ASSERT_FALSE(session.getPendingCommandIntent().hasSpeedTarget);
+    TEST_ASSERT_FALSE(session.getPendingCommandIntent().hasInclineTarget);
+}
+
+void test_csafe_timedout_prevents_start_and_resume() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    // Belt moving at 10 km/h, but CSAFE is offline
+    ApplicationSnapshot snap = makeAppSnapshot(10.0f, 0.0, true, CsafeMachineState::InUse, true, false);
+    session.update(snap, 1100);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, session.getSnapshot().state);
+
+    // Now CSAFE online but machineStateFresh = false
+    snap = makeAppSnapshot(10.0f, 0.0, true, CsafeMachineState::InUse, false, true);
+    session.update(snap, 1200);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, session.getSnapshot().state);
+
+    // Now properly online and fresh -> starts
+    snap = makeAppSnapshot(10.0f, 0.0, true, CsafeMachineState::InUse, true, true);
+    session.update(snap, 1300);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, session.getSnapshot().state);
+
+    // Suspend
+    session.registerPhysicalStop(1500);
+    session.update(makeAppSnapshot(0.0f, 0.0, true, CsafeMachineState::Paused), 1600);
+
+    // Resume attempt while CSAFE timed out -> rejected
+    snap = makeAppSnapshot(10.0f, 0.0, true, CsafeMachineState::InUse, true, false);
+    session.update(snap, 2000);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
+}
+
+void test_belt_movement_without_csafe_inuse_prevents_start() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    // Belt moved by hand (1.5 km/h) while CSAFE is Ready
+    ApplicationSnapshot snapReady = makeAppSnapshot(1.5f, 0.0, true, CsafeMachineState::Ready);
+    session.update(snapReady, 1100);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, session.getSnapshot().state);
+
+    // Belt moved during Starting
+    ApplicationSnapshot snapStarting = makeAppSnapshot(1.5f, 0.0, true, CsafeMachineState::Starting);
+    session.update(snapStarting, 1200);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, session.getSnapshot().state);
+}
+
+void test_repeated_inuse_snapshots_no_repeated_transition() {
+    WorkoutSession session;
+    session.begin();
+    ExpandedWorkout ew = createTestExpandedWorkout();
+    session.armWorkout(&ew, 1000);
+
+    ApplicationSnapshot snap = makeAppSnapshot(10.0f, 0.0, true, CsafeMachineState::InUse);
+    session.update(snap, 1000);
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Running, session.getSnapshot().state);
+    session.clearPendingCommandIntent();
+
+    // 10 continuous updates in InUse
+    for (uint32_t t = 1100; t <= 2000; t += 100) {
+        session.update(snap, t);
+        TEST_ASSERT_EQUAL(WorkoutSessionState::Running, session.getSnapshot().state);
+        TEST_ASSERT_FALSE(session.getPendingCommandIntent().hasSpeedTarget);
+    }
+    TEST_ASSERT_EQUAL_UINT32(1000, session.getSnapshot().totalElapsedTimeMs);
+}
+
 void run_all_workout_session_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_session_reject_null_or_empty);
@@ -1060,6 +1370,20 @@ void run_all_workout_session_tests() {
     RUN_TEST(test_session_motion_gating_jitter_debounce);
     RUN_TEST(test_session_multiple_speed_adjustments_net_delta);
     RUN_TEST(test_session_target_reissue_after_2x_stop_and_estop);
+    RUN_TEST(test_armed_ready_speed0_remains_armed);
+    RUN_TEST(test_armed_starting_speed0_remains_armed);
+    RUN_TEST(test_armed_inuse_speed0_remains_armed);
+    RUN_TEST(test_armed_inuse_invalidspeed_remains_armed);
+    RUN_TEST(test_armed_inuse_validspeed_starts_running_once);
+    RUN_TEST(test_suspended_paused_speed0_remains_suspended);
+    RUN_TEST(test_suspended_starting_speed0_remains_suspended);
+    RUN_TEST(test_suspended_inuse_speed0_remains_suspended);
+    RUN_TEST(test_suspended_inuse_validspeed_resumes_once);
+    RUN_TEST(test_normal_paused_resume_does_not_reissue_targets);
+    RUN_TEST(test_continuation_resume_reissues_targets_once);
+    RUN_TEST(test_csafe_timedout_prevents_start_and_resume);
+    RUN_TEST(test_belt_movement_without_csafe_inuse_prevents_start);
+    RUN_TEST(test_repeated_inuse_snapshots_no_repeated_transition);
     UNITY_END();
 }
 

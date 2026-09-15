@@ -55,6 +55,9 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     deps.hrClient = &heartRateClient_;
     orchestrator_.begin(deps, OrchestratorExecutionMode::ExternalStep);
 
+    console_.begin(ConsoleExecutionMode::SoftwareSink);
+    composite_.setConsoleInterface(&console_);
+
     // 3. Initialize Domain engines
     session_.begin(sessionConfig);
     dispatcher_.begin();
@@ -67,11 +70,14 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     }
 
     initialized_ = true;
+    previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
+    csafeStateInitialized_ = false;
     lostAuthorityCount_ = 0;
     minFreeStackBytes_ = 8192;
 
     portENTER_CRITICAL(&snapshotMux_);
     publishedSnapshot_ = orchestrator_.getSnapshot();
+    publishedSnapshot_.csafe = composite_.getCsafeState();
     publishedSessionSnapshot_ = session_.getSnapshot();
     publishedSimTargetSpeedKmh_ = composite_.getVirtualTreadmill().getTargetSpeedKmh();
     publishedSimTargetInclinePct_ = composite_.getVirtualTreadmill().getTargetInclinePct();
@@ -90,6 +96,8 @@ void TestbenchControlRuntime::end() {
     }
 
     if (initialized_) {
+        composite_.setConsoleInterface(nullptr);
+        console_.end();
         orchestrator_.end();
         heartRateClient_.end();
         bleManager_.end();
@@ -100,6 +108,8 @@ void TestbenchControlRuntime::end() {
         inclineSensor_.end();
         speedSensor_.end();
         initialized_ = false;
+        previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
+        csafeStateInitialized_ = false;
     }
 }
 
@@ -114,6 +124,7 @@ bool TestbenchControlRuntime::armWorkout(const WorkoutDefinition& def, uint32_t 
     if (armed) {
         portENTER_CRITICAL(&snapshotMux_);
         publishedSnapshot_ = orchestrator_.getSnapshot();
+        publishedSnapshot_.csafe = composite_.getCsafeState();
         publishedSessionSnapshot_ = session_.getSnapshot();
         publishedSimTargetSpeedKmh_ = composite_.getVirtualTreadmill().getTargetSpeedKmh();
         publishedSimTargetInclinePct_ = composite_.getVirtualTreadmill().getTargetInclinePct();
@@ -291,6 +302,7 @@ void TestbenchControlRuntime::runTaskLoop() {
 
         // 3. Obtain authoritative ApplicationSnapshot representing resulting state
         ApplicationSnapshot snapshot = orchestrator_.getSnapshot();
+        snapshot.csafe = composite_.getCsafeState();
 
         if (rampTestActive_ && !rampTestComplete_) {
             const uint32_t elapsedMs = nowMs - rampTestStartMs_;
@@ -322,6 +334,47 @@ void TestbenchControlRuntime::runTaskLoop() {
             snapshot.heartRate.heartRateBpm = static_cast<uint8_t>(bpm + 0.5f);
             snapshot.heartRate.dataAgeMs = 0;
             snapshot.heartRate.connectionState = HeartRateConnectionState::Connected;
+        }
+
+        // CSAFE Stop Hierarchy Detection
+        const bool csafeValid = snapshot.csafe.initialized &&
+                                snapshot.csafe.online &&
+                                snapshot.csafe.machineStateFresh &&
+                                snapshot.csafe.qualifiedState != CsafeMachineState::Unknown;
+        if (csafeValid) {
+            if (!csafeStateInitialized_) {
+                // Re-baseline without firing transitions (initial connect or reconnect)
+                previousCsafeQualifiedState_ = snapshot.csafe.qualifiedState;
+                csafeStateInitialized_ = true;
+            } else if (snapshot.csafe.qualifiedState != previousCsafeQualifiedState_) {
+                // Physical Stop 1: InUse -> Paused
+                if (previousCsafeQualifiedState_ == CsafeMachineState::InUse &&
+                    snapshot.csafe.qualifiedState == CsafeMachineState::Paused) {
+                    session_.registerPhysicalStop(nowMs);
+                }
+                // Physical Stop 2: Paused -> Ready
+                else if (previousCsafeQualifiedState_ == CsafeMachineState::Paused &&
+                         snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
+                    session_.registerPhysicalStop(nowMs);
+                }
+                previousCsafeQualifiedState_ = snapshot.csafe.qualifiedState;
+            }
+        } else {
+            // Communication loss or stale telemetry: mark uninitialized so reconnect re-baselines
+            csafeStateInitialized_ = false;
+        }
+
+        // 3rd Physical Stop Detection: Button press during continuation window when CSAFE is Ready
+        PhysicalButtonEvent btnEvent{};
+        while (console_.receivePhysicalButtonEvent(btnEvent)) {
+            if (btnEvent.button == ButtonId::Stop &&
+                btnEvent.action == PhysicalButtonAction::Pressed &&
+                session_.getSnapshot().continuationWindowActive &&
+                csafeValid &&
+                snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
+                const uint32_t stopTimestampMs = (btnEvent.timestampMs != 0) ? btnEvent.timestampMs : nowMs;
+                session_.registerPhysicalStop(stopTimestampMs);
+            }
         }
 
         // 4. Evaluate authority
@@ -381,13 +434,13 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             case ControlCommandType::Stop:
                 composite_.stageStop(cmdNowMs);
-                session_.registerPhysicalStop(cmdNowMs);
                 break;
             case ControlCommandType::Pause:
                 session_.suspend(cmdNowMs);
                 break;
             case ControlCommandType::Resume:
-                session_.resume(cmdNowMs);
+                composite_.stageQuickStart(cmdNowMs);
+                composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
                 break;
             case ControlCommandType::SetSpeed:
                 composite_.stageSpeedTarget(cmd.data.target.speedKmh, cmdNowMs);

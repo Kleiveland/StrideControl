@@ -418,6 +418,7 @@ bool ApplicationOrchestrator::executePipelineStep(const ApplicationTickContext& 
     stagingSnapshot_.speed = deps_.speedSensor ? deps_.speedSensor->getState() : SpeedSensorState{};
     stagingSnapshot_.incline = deps_.inclineSensor ? deps_.inclineSensor->getState() : InclineState{};
     CsafeState csafeState = deps_.csafeInterface ? deps_.csafeInterface->getState() : CsafeState{};
+    stagingSnapshot_.csafe = csafeState;
     stagingSnapshot_.imu = deps_.imuInterface ? deps_.imuInterface->getState() : ImuState{};
 
     // 4. Drain and Buffer IMU Samples using member buffer

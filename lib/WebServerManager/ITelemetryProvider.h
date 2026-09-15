@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "../WorkoutEngine/WorkoutExecutionTypes.h"
+#include "../CsafeInterface/CsafeTypes.h"
 
 namespace stridecontrol {
 
@@ -13,6 +14,7 @@ struct TelemetryReport {
     bool authority = false;
     float actualSpeedKmh = 0.0f;
     float actualInclinePct = 0.0f;
+    CsafeState csafe{};
     double runnerDistanceKm = 0.0;
     const char* sessionState = "Idle";
     uint8_t stepIndex = 0;
@@ -40,6 +42,8 @@ struct TelemetryReport {
     bool rampPreFireActive = false;
     bool rampPreFireSpeedChanging = false;
     bool rampPreFireInclineChanging = false;
+    bool continuationWindowActive = false;
+    uint32_t continuationWindowRemainingMs = 0;
     uint32_t actualStepDurationsMs[MAX_EXPANDED_WORKOUT_STEPS] = {};
 };
 

@@ -123,6 +123,14 @@ void TreadmillSimulatorComposite::applyDiscreteEvent(const StagedDiscreteEvent& 
             cmd.type = CommandType::PressButton;
             cmd.button = ButtonId::Stop;
             consoleAdapter_.onCommandIntent(cmd);
+            if (console_ != nullptr) {
+                console_->injectPhysicalButtonEvent(PhysicalButtonEvent{
+                    ButtonId::Stop,
+                    PhysicalButtonAction::Pressed,
+                    ev.timestampMs != 0 ? ev.timestampMs : 0,
+                    0, 0xFF, 0xFF
+                });
+            }
             break;
 
         case StagedDiscreteEvent::Type::EmergencyStop:
