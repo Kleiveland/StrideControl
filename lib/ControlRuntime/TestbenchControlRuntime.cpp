@@ -206,10 +206,8 @@ bool TestbenchControlRuntime::triggerStop(uint32_t nowMs) {
 }
 
 bool TestbenchControlRuntime::triggerEmergencyStop(uint32_t nowMs) {
-    ControlCommand cmd{};
-    cmd.type = ControlCommandType::Stop;
-    cmd.timestampMs = nowMs != 0 ? nowMs : millis();
-    return stageCommand(cmd);
+    const uint32_t ts = nowMs != 0 ? nowMs : millis();
+    return composite_.stageEmergencyStop(ts);
 }
 
 bool TestbenchControlRuntime::setSimSpeedTarget(float speedKmh, uint32_t nowMs) {
