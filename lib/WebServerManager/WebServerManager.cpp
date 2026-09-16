@@ -182,6 +182,7 @@ void WebServerManager::registerRoutes() {
         JsonDocument doc;
         doc["timestampMs"] = report.timestampMs;
         doc["authority"] = report.authority;
+        doc["connectionWarningActive"] = report.connectionWarningActive;
 
         JsonObject speed = doc["speed"].to<JsonObject>();
         speed["kmh"] = report.actualSpeedKmh;

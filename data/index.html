@@ -1492,6 +1492,25 @@
             }, 3000);
         }
 
+        function showPersistentToast(text) {
+            const toast = document.getElementById('global-toast');
+            const toastText = document.getElementById('global-toast-text');
+            if (!toast || !toastText) return;
+            if (toastTimer) {
+                clearTimeout(toastTimer);
+                toastTimer = null;
+            }
+            toastText.innerHTML = text;
+            toast.style.display = 'flex';
+        }
+
+        function hidePersistentToast() {
+            const toast = document.getElementById('global-toast');
+            if (toast && !toastTimer) {
+                toast.style.display = 'none';
+            }
+        }
+
         document.getElementById('btn-speed-plus-yes')?.addEventListener('click', () => {
             document.getElementById('view-interval-pause-1')?.classList.remove('active');
             document.getElementById('view-interval-pause-2')?.classList.add('active');
@@ -3788,6 +3807,12 @@
                     return; // Stale / out-of-order response
                 }
                 lastTelemetryTimestampMs = data.timestampMs;
+            }
+
+            if (data.connectionWarningActive === true) {
+                showPersistentToast('Mistet kontakt. Kobler til... Farten endres ikke.');
+            } else {
+                hidePersistentToast();
             }
 
             if (data.authority !== true) {

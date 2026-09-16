@@ -88,6 +88,8 @@ public:
     uint32_t getRampTestTotalMs() const override { return rampTestTracker_.totalTimeMs(); }
     RampTestPhase getRampTestPhase() const { return rampTestTracker_.phase(); }
 
+    bool isConnectionWarningActive() const { return connectionWarningActive_; }
+
     static const char* version();
 
     // Command Staging Producer Interface
@@ -134,9 +136,10 @@ private:
     bool initialized_ = false;
     uint32_t lastAuthoritativeTimestampMs_ = 0;
     uint32_t authorityLostSinceMs_ = 0; // 0 means "not currently in a lost-authority streak"
-    static constexpr uint32_t kAuthorityLossSuspendThresholdMs = 2000;
+    static constexpr uint32_t kAuthorityLossWarningThresholdMs = 5000;
     uint32_t lostAuthorityCount_ = 0;
     bool authorityLostReported_ = false;
+    bool connectionWarningActive_ = false;
 
     ApplicationOrchestrator* orchestrator_ = nullptr;
     TaskHandle_t taskHandle_ = nullptr;

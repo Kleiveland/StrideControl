@@ -45,6 +45,7 @@ public:
         const stridecontrol::TestbenchTelemetry telem = runtime_.getTelemetry(nowMs);
         report.timestampMs = telem.snapshot.timestampMs;
         report.authority = telem.authoritative;
+        report.connectionWarningActive = runtime_.isConnectionWarningActive();
         report.actualSpeedKmh = telem.snapshot.speed.speedKmh;
         report.actualInclinePct = telem.snapshot.incline.estimatedInclinePct;
         report.csafe = telem.snapshot.csafe;
@@ -143,6 +144,7 @@ public:
 
         report.timestampMs = snap.timestampMs;
         report.authority = stridecontrol::ControlRuntime::isSnapshotAuthoritative(snap, nowMs);
+        report.connectionWarningActive = systemManager_.getControlRuntime().isConnectionWarningActive();
         report.actualSpeedKmh = snap.speed.speedKmh;
         report.actualInclinePct = snap.incline.estimatedInclinePct;
         report.csafe = snap.csafe;

@@ -41,6 +41,7 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     lastAuthoritativeTimestampMs_ = 0;
     lostAuthorityCount_ = 0;
     authorityLostReported_ = false;
+    connectionWarningActive_ = false;
     previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
     csafeStateInitialized_ = false;
 
@@ -182,6 +183,7 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         lastAuthoritativeTimestampMs_ = nowMs;
         authorityLostReported_ = false;
         authorityLostSinceMs_ = 0; // Reset the loss streak - authority has recovered
+        connectionWarningActive_ = false;
 
         // CSAFE Stop Hierarchy Detection
         const bool csafeValid = snapshot.csafe.initialized &&
@@ -228,6 +230,17 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         coordinator_.tick(session_, dispatcher_, adapter_, snapshot, nowMs);
     } else {
         lostAuthorityCount_++;
+        if (authorityLostSinceMs_ == 0) {
+            authorityLostSinceMs_ = nowMs;
+        }
+        connectionWarningActive_ = (nowMs - authorityLostSinceMs_) >= kAuthorityLossWarningThresholdMs;
+        if (connectionWarningActive_ && !authorityLostReported_) {
+            DiagnosticsLog::instance().addEntryf(
+                "Authority lost for >= %lums, showing reconnect indicator",
+                static_cast<unsigned long>(nowMs - authorityLostSinceMs_));
+            authorityLostReported_ = true;
+        }
+
         csafeStateInitialized_ = false;
 
         // Unconditionally drain physical button queue even when authority is lost, but do not trigger Stop

@@ -119,6 +119,9 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
     csafeStateInitialized_ = false;
     lostAuthorityCount_ = 0;
+    authorityLostSinceMs_ = 0;
+    authorityLostReported_ = false;
+    connectionWarningActive_ = false;
     minFreeStackBytes_ = 8192;
 
     portENTER_CRITICAL(&snapshotMux_);
@@ -381,7 +384,9 @@ void TestbenchControlRuntime::runTaskLoop() {
         // 4. Evaluate authority
         const bool authoritative = ControlRuntime::isSnapshotAuthoritative(snapshot, nowMs);
         if (authoritative) {
+            authorityLostReported_ = false;
             authorityLostSinceMs_ = 0; // Reset the loss streak - authority has recovered
+            connectionWarningActive_ = false;
 
             // CSAFE Stop Hierarchy Detection
             const bool csafeValid = snapshot.csafe.initialized &&
@@ -428,6 +433,17 @@ void TestbenchControlRuntime::runTaskLoop() {
             coordinator_.tick(session_, dispatcher_, targetSink_, snapshot, nowMs);
         } else {
             lostAuthorityCount_++;
+            if (authorityLostSinceMs_ == 0) {
+                authorityLostSinceMs_ = nowMs;
+            }
+            connectionWarningActive_ = (nowMs - authorityLostSinceMs_) >= kAuthorityLossWarningThresholdMs;
+            if (connectionWarningActive_ && !authorityLostReported_) {
+                DiagnosticsLog::instance().addEntryf(
+                    "Authority lost for >= %lums, showing reconnect indicator",
+                    static_cast<unsigned long>(nowMs - authorityLostSinceMs_));
+                authorityLostReported_ = true;
+            }
+
             csafeStateInitialized_ = false;
 
             // Unconditionally drain physical button queue even when authority is lost, but do not trigger Stop

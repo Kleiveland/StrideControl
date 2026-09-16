@@ -89,6 +89,8 @@ public:
     uint32_t getRampTestTotalMs() const override { return rampTestTracker_.totalTimeMs(); }
     RampTestPhase getRampTestPhase() const { return rampTestTracker_.phase(); }
 
+    bool isConnectionWarningActive() const { return connectionWarningActive_; }
+
     TreadmillSimulatorComposite& getComposite() { return composite_; }
     const TreadmillSimulatorComposite& getComposite() const { return composite_; }
 
@@ -198,7 +200,9 @@ private:
     bool csafeStateInitialized_ = false;
     uint32_t lostAuthorityCount_ = 0;
     uint32_t authorityLostSinceMs_ = 0; // 0 means "not currently in a lost-authority streak"
-    static constexpr uint32_t kAuthorityLossSuspendThresholdMs = 2000;
+    static constexpr uint32_t kAuthorityLossWarningThresholdMs = 5000;
+    bool authorityLostReported_ = false;
+    bool connectionWarningActive_ = false;
     uint32_t minFreeStackBytes_ = 8192;
 
     static constexpr uint32_t kPeriodMs = 20; // 50 Hz
