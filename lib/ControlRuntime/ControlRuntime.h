@@ -87,6 +87,8 @@ public:
     uint32_t getDeadlineMissCount() const;
     uint32_t getOverrunCount() const;
     InclineVerificationCommandInput getInclineVerificationCommandInput() const;
+    CommandExecutionStatus getCommandExecutionStatus() const;
+    void publishCommandExecutionStatus();
 
     bool isRampTestActive() const override { return rampTestTracker_.active(); }
     bool isRampTestComplete() const override { return rampTestTracker_.complete(); }
@@ -121,6 +123,10 @@ private:
 
     mutable portMUX_TYPE inclineCommandContextMux_ = portMUX_INITIALIZER_UNLOCKED;
     InclineVerificationCommandInput publishedInclineCommandContext_{};
+
+    mutable portMUX_TYPE commandExecutionStatusMux_ = portMUX_INITIALIZER_UNLOCKED;
+    CommandExecutionStatus publishedCommandExecutionStatus_{};
+    uint32_t lastReportedAbortedRequestId_ = 0;
 
     QueueHandle_t commandQueue_ = nullptr;
 

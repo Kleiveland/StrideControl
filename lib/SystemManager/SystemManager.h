@@ -40,6 +40,7 @@ public:
     ControlRuntime& getControlRuntime() { return controlRuntime_; }
 
     InclineVerificationCommandInput getInclineVerificationCommandInput() const;
+    CommandExecutionStatus getCommandExecutionStatus() const;
 
     SystemState getState() const;
     bool isFaulted() const;

@@ -73,6 +73,7 @@ bool WorkoutSession::begin(const WorkoutSessionConfig& config) {
     acknowledgedHasIncline_ = false;
     acknowledgedInclineTargetPct_ = 0;
     restartReissuePending_ = false;
+    lastHandledAbortedRequestId_ = 0;
     lowSpeedDebounceActive_ = false;
     lowSpeedStartMs_ = 0;
     distanceOvershootCarryKm_ = 0.0;
@@ -176,6 +177,7 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, 
     acknowledgedHasIncline_ = false;
     acknowledgedInclineTargetPct_ = 0;
     restartReissuePending_ = false;
+    lastHandledAbortedRequestId_ = 0;
     preFireTargetStepIndex_ = UINT8_MAX;
     preFireSent_ = false;
     preFireLeadMs_ = 0;
@@ -263,6 +265,7 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
         acknowledgedHasIncline_ = false;
         acknowledgedInclineTargetPct_ = 0;
         restartReissuePending_ = false;
+        lastHandledAbortedRequestId_ = 0;
         preFireTargetStepIndex_ = UINT8_MAX;
         preFireSent_ = false;
         preFireLeadMs_ = 0;
@@ -621,6 +624,13 @@ void WorkoutSession::update(
 ) {
     if (!initialized_) {
         return;
+    }
+
+    if (applicationSnapshot.commandExecutionStatus.lastCommandAborted &&
+        applicationSnapshot.commandExecutionStatus.abortedRequestId != 0 &&
+        applicationSnapshot.commandExecutionStatus.abortedRequestId != lastHandledAbortedRequestId_) {
+        restartReissuePending_ = true;
+        lastHandledAbortedRequestId_ = applicationSnapshot.commandExecutionStatus.abortedRequestId;
     }
 
     // Check continuation-window timeout

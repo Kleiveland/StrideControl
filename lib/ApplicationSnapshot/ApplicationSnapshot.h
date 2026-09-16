@@ -13,6 +13,14 @@
 namespace stridecontrol {
 
 /**
+ * @brief Cross-core status of the most recent console command execution.
+ */
+struct CommandExecutionStatus {
+    bool lastCommandAborted = false;
+    uint32_t abortedRequestId = 0; // requestId of the aborted command, for de-duplication
+};
+
+/**
  * @brief Pure passive Data Transfer Object (DTO) capturing the physical
  *        hardware sensor state, verification state, system health, and BLE telemetry.
  *
@@ -33,6 +41,7 @@ struct ApplicationSnapshot {
 
     HeartRateState heartRate{};
     BleState ble{};
+    CommandExecutionStatus commandExecutionStatus{};
 };
 
 } // namespace stridecontrol

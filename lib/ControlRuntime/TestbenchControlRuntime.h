@@ -81,6 +81,8 @@ public:
     uint32_t getLostAuthorityCount() const;
     uint32_t getMinFreeStackBytes() const;
     InclineVerificationCommandInput getInclineVerificationCommandInput() const;
+    CommandExecutionStatus getCommandExecutionStatus() const;
+    void publishCommandExecutionStatus();
 
     bool isRampTestActive() const override { return rampTestTracker_.active(); }
     bool isRampTestComplete() const override { return rampTestTracker_.complete(); }
@@ -107,6 +109,7 @@ private:
     static void taskEntry(void* param);
     static CsafeState provideSimulatedCsafe(void* context);
     static InclineVerificationCommandInput provideSimulatedInclineCommandContext(void* context);
+    static CommandExecutionStatus provideSimulatedCommandExecutionStatus(void* context);
 
     class TargetSinkWrapper : public IWorkoutTargetSink {
     public:
@@ -157,6 +160,10 @@ private:
     mutable portMUX_TYPE snapshotMux_ = portMUX_INITIALIZER_UNLOCKED;
     mutable portMUX_TYPE inclineCommandContextMux_ = portMUX_INITIALIZER_UNLOCKED;
     InclineVerificationCommandInput publishedInclineCommandContext_{};
+
+    mutable portMUX_TYPE commandExecutionStatusMux_ = portMUX_INITIALIZER_UNLOCKED;
+    CommandExecutionStatus publishedCommandExecutionStatus_{};
+    uint32_t lastReportedAbortedRequestId_ = 0;
 
     // Production Sensor & Domain Drivers (SoftwareObservation Mode)
     SpeedSensor speedSensor_;

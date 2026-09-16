@@ -51,6 +51,34 @@ InclineVerificationCommandInput TestbenchControlRuntime::getInclineVerificationC
     return input;
 }
 
+CommandExecutionStatus TestbenchControlRuntime::provideSimulatedCommandExecutionStatus(
+    void* context
+) {
+    if (context == nullptr) {
+        return CommandExecutionStatus{};
+    }
+
+    auto* runtime =
+        static_cast<TestbenchControlRuntime*>(context);
+
+    return runtime->getCommandExecutionStatus();
+}
+
+CommandExecutionStatus TestbenchControlRuntime::getCommandExecutionStatus() const {
+    CommandExecutionStatus status{};
+    portENTER_CRITICAL(&commandExecutionStatusMux_);
+    status = publishedCommandExecutionStatus_;
+    portEXIT_CRITICAL(&commandExecutionStatusMux_);
+    return status;
+}
+
+void TestbenchControlRuntime::publishCommandExecutionStatus() {
+    CommandExecutionStatus status{};
+    portENTER_CRITICAL(&commandExecutionStatusMux_);
+    publishedCommandExecutionStatus_ = status;
+    portEXIT_CRITICAL(&commandExecutionStatusMux_);
+}
+
 bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, const BleConfig& bleConfig) {
     if (initialized_) {
         return true;
@@ -89,6 +117,8 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     deps.csafeStateProviderContext = this;
     deps.inclineCommandContextProvider = &TestbenchControlRuntime::provideSimulatedInclineCommandContext;
     deps.inclineCommandContextProviderContext = this;
+    deps.commandExecutionStatusProvider = &TestbenchControlRuntime::provideSimulatedCommandExecutionStatus;
+    deps.commandExecutionStatusProviderContext = this;
     deps.runnerDynamics = &runnerDynamics_;
     deps.inclineVerifier = &inclineVerifier_;
     deps.diagnosticsService = &diagService_;
@@ -107,6 +137,11 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     portENTER_CRITICAL(&inclineCommandContextMux_);
     publishedInclineCommandContext_ = InclineVerificationCommandInput{};
     portEXIT_CRITICAL(&inclineCommandContextMux_);
+
+    portENTER_CRITICAL(&commandExecutionStatusMux_);
+    publishedCommandExecutionStatus_ = CommandExecutionStatus{};
+    portEXIT_CRITICAL(&commandExecutionStatusMux_);
+    lastReportedAbortedRequestId_ = 0;
 
     composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 0, 0.0f, true);
     rampTestTracker_.reset();
@@ -455,7 +490,8 @@ void TestbenchControlRuntime::runTaskLoop() {
             // the athlete's workout session state while the belt moves.
         }
 
-        // 6. Publish snapshot copy for external consumers (cross-core spinlock protected)
+        // 6. Publish snapshot copy and command execution status for external consumers
+        publishCommandExecutionStatus();
         const WorkoutSessionSnapshot sessSnap = session_.getSnapshot();
         const float targetSpeed = composite_.getVirtualTreadmill().getTargetSpeedKmh();
         const float targetIncline = composite_.getVirtualTreadmill().getTargetInclinePct();

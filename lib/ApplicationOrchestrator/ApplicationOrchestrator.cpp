@@ -62,6 +62,16 @@ InclineVerificationCommandInput ApplicationOrchestrator::readInclineCommandConte
     return InclineVerificationCommandInput{};
 }
 
+CommandExecutionStatus ApplicationOrchestrator::readCommandExecutionStatus() const {
+    if (deps_.commandExecutionStatusProvider != nullptr) {
+        return deps_.commandExecutionStatusProvider(
+            deps_.commandExecutionStatusProviderContext
+        );
+    }
+
+    return CommandExecutionStatus{};
+}
+
 bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& deps,
                                    OrchestratorExecutionMode mode) {
     portENTER_CRITICAL(&metricsMux_);
@@ -466,6 +476,8 @@ bool ApplicationOrchestrator::executePipelineStep(const ApplicationTickContext& 
     } else {
         stagingSnapshot_.inclineVerifier = InclineVerifierState{};
     }
+
+    stagingSnapshot_.commandExecutionStatus = readCommandExecutionStatus();
 
     // 6. Update Maintenance Odometer (Wear-Leveled RAM Accumulation)
     if (deps_.maintenanceService != nullptr) {

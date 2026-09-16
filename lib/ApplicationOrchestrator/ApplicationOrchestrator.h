@@ -24,6 +24,7 @@ class HeartRateClient;
 
 using CsafeStateProvider = CsafeState (*)(void* context);
 using InclineCommandContextProvider = InclineVerificationCommandInput (*)(void* context);
+using CommandExecutionStatusProvider = CommandExecutionStatus (*)(void* context);
 
 /**
  * @brief Dependencies injected into ApplicationOrchestrator.
@@ -37,6 +38,8 @@ struct ApplicationOrchestratorDependencies {
     void* csafeStateProviderContext = nullptr;
     InclineCommandContextProvider inclineCommandContextProvider = nullptr;
     void* inclineCommandContextProviderContext = nullptr;
+    CommandExecutionStatusProvider commandExecutionStatusProvider = nullptr;
+    void* commandExecutionStatusProviderContext = nullptr;
     RunnerDynamics* runnerDynamics = nullptr;
     InclineVerifier* inclineVerifier = nullptr;
     DiagnosticsService* diagnosticsService = nullptr;
@@ -116,6 +119,7 @@ private:
     bool executePipelineStep(const ApplicationTickContext& context);
     CsafeState readCsafeState() const;
     InclineVerificationCommandInput readInclineCommandContext() const;
+    CommandExecutionStatus readCommandExecutionStatus() const;
 
     using SpeedUpdateStrategy = void (*)(SpeedSensor& sensor, const ApplicationTickContext& context);
     static void hardwareSpeedStrategy(SpeedSensor& sensor, const ApplicationTickContext& context);

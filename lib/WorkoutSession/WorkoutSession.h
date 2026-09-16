@@ -148,6 +148,7 @@ private:
     bool acknowledgedHasIncline_ = false;
     uint8_t acknowledgedInclineTargetPct_ = 0;
     bool restartReissuePending_ = false;
+    uint32_t lastHandledAbortedRequestId_ = 0;
 
     // Low-speed sensor debounce
     bool lowSpeedDebounceActive_ = false;

@@ -134,6 +134,10 @@ InclineVerificationCommandInput SystemManager::getInclineVerificationCommandInpu
     return controlRuntime_.getInclineVerificationCommandInput();
 }
 
+CommandExecutionStatus SystemManager::getCommandExecutionStatus() const {
+    return controlRuntime_.getCommandExecutionStatus();
+}
+
 const char* SystemManager::version() {
     return "1.0.0";
 }
