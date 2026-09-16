@@ -1,5 +1,6 @@
 #include "WorkoutSession.h"
 #include "../SettingsService/SettingsService.h"
+#include "../DiagnosticsLog/DiagnosticsLog.h"
 #include <cmath>
 #include <algorithm>
 #include <cstring>
@@ -175,6 +176,9 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, 
     acknowledgedHasIncline_ = false;
     acknowledgedInclineTargetPct_ = 0;
     restartReissuePending_ = false;
+    preFireTargetStepIndex_ = UINT8_MAX;
+    preFireSent_ = false;
+    preFireLeadMs_ = 0;
     lowSpeedDebounceActive_ = false;
     lowSpeedStartMs_ = 0;
     distanceOvershootCarryKm_ = 0.0;
@@ -259,6 +263,9 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
         acknowledgedHasIncline_ = false;
         acknowledgedInclineTargetPct_ = 0;
         restartReissuePending_ = false;
+        preFireTargetStepIndex_ = UINT8_MAX;
+        preFireSent_ = false;
+        preFireLeadMs_ = 0;
         lowSpeedDebounceActive_ = false;
         lowSpeedStartMs_ = 0;
         distanceOvershootCarryKm_ = 0.0;
@@ -812,6 +819,13 @@ void WorkoutSession::update(
                             if (inclineDelta > kArrivalInclineTolerancePct) {
                                 canAdvance = false;
                             }
+                        }
+                        if (!canAdvance && (stepElapsedMs_ - targetMs) >= kArrivalTimeoutMs) {
+                            DiagnosticsLog::instance().addEntryf(
+                                "ArrivalGate timeout: step %u never confirmed speed/incline arrival after %lums, proceeding anyway",
+                                static_cast<unsigned>(preFireTargetStepIndex_),
+                                static_cast<unsigned long>(stepElapsedMs_ - targetMs));
+                            canAdvance = true;
                         }
                     }
                     if (canAdvance) {
