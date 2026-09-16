@@ -378,56 +378,64 @@ void TestbenchControlRuntime::runTaskLoop() {
             snapshot.heartRate.connectionState = HeartRateConnectionState::Connected;
         }
 
-        // CSAFE Stop Hierarchy Detection
-        const bool csafeValid = snapshot.csafe.initialized &&
-                                snapshot.csafe.online &&
-                                snapshot.csafe.machineStateFresh &&
-                                snapshot.csafe.qualifiedState != CsafeMachineState::Unknown;
-        if (csafeValid) {
-            if (!csafeStateInitialized_) {
-                // Re-baseline without firing transitions (initial connect or reconnect)
-                previousCsafeQualifiedState_ = snapshot.csafe.qualifiedState;
-                csafeStateInitialized_ = true;
-            } else if (snapshot.csafe.qualifiedState != previousCsafeQualifiedState_) {
-                // Physical Stop 1: InUse -> Paused
-                if (previousCsafeQualifiedState_ == CsafeMachineState::InUse &&
-                    snapshot.csafe.qualifiedState == CsafeMachineState::Paused) {
-                    session_.registerPhysicalStop(nowMs);
-                }
-                // Physical Stop 2: Paused -> Ready
-                else if (previousCsafeQualifiedState_ == CsafeMachineState::Paused &&
-                         snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
-                    session_.registerPhysicalStop(nowMs);
-                }
-                previousCsafeQualifiedState_ = snapshot.csafe.qualifiedState;
-            }
-        } else {
-            // Communication loss or stale telemetry: mark uninitialized so reconnect re-baselines
-            csafeStateInitialized_ = false;
-        }
-
-        // 3rd Physical Stop Detection: Button press during continuation window when CSAFE is Ready
-        PhysicalButtonEvent btnEvent{};
-        while (console_.receivePhysicalButtonEvent(btnEvent)) {
-            if (btnEvent.button == ButtonId::Stop &&
-                btnEvent.action == PhysicalButtonAction::Pressed &&
-                session_.getSnapshot().continuationWindowActive &&
-                csafeValid &&
-                snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
-                const uint32_t stopTimestampMs = (btnEvent.timestampMs != 0) ? btnEvent.timestampMs : nowMs;
-                session_.registerPhysicalStop(stopTimestampMs);
-            }
-        }
-
         // 4. Evaluate authority
         const bool authoritative = ControlRuntime::isSnapshotAuthoritative(snapshot, nowMs);
         if (authoritative) {
             authorityLostSinceMs_ = 0; // Reset the loss streak - authority has recovered
 
+            // CSAFE Stop Hierarchy Detection
+            const bool csafeValid = snapshot.csafe.initialized &&
+                                    snapshot.csafe.online &&
+                                    snapshot.csafe.machineStateFresh &&
+                                    snapshot.csafe.qualifiedState != CsafeMachineState::Unknown;
+            if (csafeValid) {
+                if (!csafeStateInitialized_) {
+                    // Re-baseline without firing transitions (initial connect or reconnect)
+                    previousCsafeQualifiedState_ = snapshot.csafe.qualifiedState;
+                    csafeStateInitialized_ = true;
+                } else if (snapshot.csafe.qualifiedState != previousCsafeQualifiedState_) {
+                    // Physical Stop 1: InUse -> Paused
+                    if (previousCsafeQualifiedState_ == CsafeMachineState::InUse &&
+                        snapshot.csafe.qualifiedState == CsafeMachineState::Paused) {
+                        session_.registerPhysicalStop(nowMs);
+                    }
+                    // Physical Stop 2: Paused -> Ready
+                    else if (previousCsafeQualifiedState_ == CsafeMachineState::Paused &&
+                             snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
+                        session_.registerPhysicalStop(nowMs);
+                    }
+                    previousCsafeQualifiedState_ = snapshot.csafe.qualifiedState;
+                }
+            } else {
+                // Communication loss or stale telemetry: mark uninitialized so reconnect re-baselines
+                csafeStateInitialized_ = false;
+            }
+
+            // 3rd Physical Stop Detection: Button press during continuation window when CSAFE is Ready
+            PhysicalButtonEvent btnEvent{};
+            while (console_.receivePhysicalButtonEvent(btnEvent)) {
+                if (btnEvent.button == ButtonId::Stop &&
+                    btnEvent.action == PhysicalButtonAction::Pressed &&
+                    session_.getSnapshot().continuationWindowActive &&
+                    csafeValid &&
+                    snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
+                    const uint32_t stopTimestampMs = (btnEvent.timestampMs != 0) ? btnEvent.timestampMs : nowMs;
+                    session_.registerPhysicalStop(stopTimestampMs);
+                }
+            }
+
             // 5. Tick domain session & target dispatcher
             coordinator_.tick(session_, dispatcher_, targetSink_, snapshot, nowMs);
         } else {
             lostAuthorityCount_++;
+            csafeStateInitialized_ = false;
+
+            // Unconditionally drain physical button queue even when authority is lost, but do not trigger Stop
+            PhysicalButtonEvent btnEvent{};
+            while (console_.receivePhysicalButtonEvent(btnEvent)) {
+                // Drained without action while unauthoritative
+            }
+
             // Telemetry jitter freezes data integration, but must never freeze
             // the athlete's workout session state while the belt moves.
         }
