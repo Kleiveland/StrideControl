@@ -299,7 +299,9 @@
             });
 
             if (saveRes.ok) {
-                setRampStatus(`Test fullført og lagret! Dødtid: ${testResult.deadTimeMs} ms, Rate: ${rampMsPerKmh.toFixed(1)} ms/(km/t) (Total: ${testResult.totalMs} ms)`, 'success');
+                const data = await saveRes.json().catch(() => ({}));
+                const sourceTag = data.source ? ` (${data.source})` : '';
+                setRampStatus(`Test fullført og lagret!${sourceTag} Dødtid: ${testResult.deadTimeMs} ms, Rate: ${rampMsPerKmh.toFixed(1)} ms/(km/t) (Total: ${testResult.totalMs} ms)`, 'success');
             } else {
                 const errData = await saveRes.json().catch(() => ({}));
                 setRampStatus(`Test fullført, men lagring feilet: ${errData.error || saveRes.statusText}`, 'error');

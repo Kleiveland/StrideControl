@@ -48,6 +48,13 @@ struct MaintenanceConfig {
     uint64_t totalTimeSeconds = 0;
 };
 
+enum class CalibrationSource : uint8_t {
+    Unknown = 0,
+    FactoryDefault = 1,
+    Simulated = 2,
+    PhysicalCommissioning = 3
+};
+
 /**
  * @brief Belt acceleration and deceleration ramp calibration configuration.
  */
@@ -57,6 +64,8 @@ struct RampCalibrationConfig {
     float decelMsPerKmh[3] = {1500.0f, 700.0f, 1000.0f};
     float loadMultiplier = 1.15f;
     bool calibrated = false;
+    CalibrationSource source = CalibrationSource::Unknown;
+    uint32_t calibratedAtMs = 0; // millis() timestamp of the save that produced this data
 };
 
 /**

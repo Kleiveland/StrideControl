@@ -1211,9 +1211,17 @@ void WebServerManager::registerRoutes() {
         }
         cfg.deadTimeMs = deadTimeMs;
         cfg.calibrated = true;
+        cfg.calibratedAtMs = millis();
+#if defined(STRIDECONTROL_TESTBENCH)
+        cfg.source = CalibrationSource::Simulated;
+#else
+        cfg.source = CalibrationSource::PhysicalCommissioning;
+#endif
 
         const bool ok = SettingsService::instance().saveRampCalibrationConfig(cfg);
-        request->send(ok ? 200 : 500, "application/json", ok ? "{\"status\":\"saved\"}" : "{\"error\":\"save_failed\"}");
+        request->send(ok ? 200 : 500, "application/json",
+            ok ? String("{\"status\":\"saved\",\"source\":\"") + (cfg.source == CalibrationSource::Simulated ? "Simulated" : "PhysicalCommissioning") + "\"}"
+               : "{\"error\":\"save_failed\"}");
     };
     server_.on("/api/v1/commissioning/ramptest/save", HTTP_POST, rampTestSaveHandler, nullptr, commandBodyBuffer);
 

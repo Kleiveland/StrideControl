@@ -262,6 +262,8 @@ RampCalibrationConfig SettingsService::getRampCalibrationConfig() {
             cfg.decelMsPerKmh[2] = prefs.getFloat("ramp_d2", cfg.decelMsPerKmh[2]);
             cfg.loadMultiplier = prefs.getFloat("ramp_load", cfg.loadMultiplier);
             cfg.calibrated = prefs.getBool("ramp_cal", false);
+            cfg.source = static_cast<CalibrationSource>(prefs.getUChar("ramp_src", static_cast<uint8_t>(CalibrationSource::Unknown)));
+            cfg.calibratedAtMs = prefs.getUInt("ramp_at", 0);
             prefs.end();
         }
         xSemaphoreGive(mutex_);
@@ -283,6 +285,8 @@ bool SettingsService::saveRampCalibrationConfig(const RampCalibrationConfig& con
             prefs.putFloat("ramp_d2", config.decelMsPerKmh[2]);
             prefs.putFloat("ramp_load", config.loadMultiplier);
             prefs.putBool("ramp_cal", config.calibrated);
+            prefs.putUChar("ramp_src", static_cast<uint8_t>(config.source));
+            prefs.putUInt("ramp_at", config.calibratedAtMs);
             prefs.end();
             ok = true;
         }

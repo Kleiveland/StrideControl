@@ -444,6 +444,14 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
 uint32_t WorkoutSession::estimateSpeedRampMs(float fromKmh, float toKmh) const {
     if (std::abs(toKmh - fromKmh) < 0.01f) return 0;
     const stridecontrol::RampCalibrationConfig cfg = stridecontrol::SettingsService::instance().getRampCalibrationConfig();
+#if !defined(STRIDECONTROL_TESTBENCH)
+    stridecontrol::RampCalibrationConfig safeCfg = cfg;
+    if (safeCfg.source == stridecontrol::CalibrationSource::Simulated) {
+        safeCfg = stridecontrol::RampCalibrationConfig{}; // Fall back to conservative factory defaults
+    }
+#else
+    const stridecontrol::RampCalibrationConfig& safeCfg = cfg;
+#endif
     const bool accelerating = toKmh > fromKmh;
     const float lo = std::min(fromKmh, toKmh);
     const float hi = std::max(fromKmh, toKmh);
@@ -455,12 +463,12 @@ uint32_t WorkoutSession::estimateSpeedRampMs(float fromKmh, float toKmh) const {
         const float overlapHi = std::min(hi, zoneHi);
         if (overlapHi > overlapLo) {
             const float spanKmh = overlapHi - overlapLo;
-            const float rate = accelerating ? cfg.accelMsPerKmh[zone] : cfg.decelMsPerKmh[zone];
+            const float rate = accelerating ? safeCfg.accelMsPerKmh[zone] : safeCfg.decelMsPerKmh[zone];
             totalMs += spanKmh * rate;
         }
     }
-    totalMs += static_cast<float>(cfg.deadTimeMs);
-    totalMs *= cfg.loadMultiplier;
+    totalMs += static_cast<float>(safeCfg.deadTimeMs);
+    totalMs *= safeCfg.loadMultiplier;
     return static_cast<uint32_t>(totalMs);
 }
 
