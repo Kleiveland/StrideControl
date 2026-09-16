@@ -3298,10 +3298,8 @@
             // Distance
             const sumDistEl = document.getElementById('sum-dist-val');
             let distKm = null;
-            if (data?.runner && typeof data.runner.distanceKm === 'number') {
-                distKm = data.runner.distanceKm;
-            } else if (data?.speed && typeof data.speed.beltDistanceKm === 'number') {
-                distKm = data.speed.beltDistanceKm;
+            if (data?.session && typeof data.session.totalValidatedDistanceKm === 'number') {
+                distKm = data.session.totalValidatedDistanceKm;
             }
             if (sumDistEl) {
                 const distText = (typeof distKm === 'number' && !isNaN(distKm)) ? formatDecimalComma(distKm, 2) : '--';
@@ -3380,7 +3378,7 @@
 
             const spd = telem.speed?.kmh;
             const inc = telem.incline?.pct;
-            const dist = telem.runner?.distanceKm;
+            const dist = telem.session?.totalValidatedDistanceKm;
 
             const spdStr = formatDecimalComma(spd, 1);
             const incStr = formatDecimalComma(inc, 1);
@@ -3761,6 +3759,11 @@
                     break;
                 case 'CompletionPending':
                 case 'Completed':
+                    if (lastRenderedSessionState === 'CompletionPending' || lastRenderedSessionState === 'Completed') {
+                        // Already arrived at this terminal state once - do not force navigation
+                        // back to summary if the user has since deliberately navigated elsewhere.
+                        return;
+                    }
                     targetViewId = 'view-summary';
                     break;
                 case 'Aborted':

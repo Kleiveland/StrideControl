@@ -204,6 +204,7 @@ void WebServerManager::registerRoutes() {
         session["stepElapsedMs"] = report.stepElapsedMs;
         session["elapsedTimeMs"] = report.totalElapsedTimeMs;
         session["totalElevationMeters"] = report.totalElevationMeters;
+        session["totalValidatedDistanceKm"] = report.totalValidatedDistanceKm;
         session["avgHeartRateBpm"] = report.avgHeartRateBpm;
         session["maxHeartRateBpm"] = report.maxHeartRateBpm;
         session["heartRateEverValid"] = report.heartRateEverValid;
