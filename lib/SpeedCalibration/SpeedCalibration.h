@@ -12,6 +12,13 @@ namespace stridecontrol {
  *
  * Implements deterministic mapping from desired physical belt speed to corrected
  * treadmill console commands based on stored empirical calibration points.
+ *
+ * NOT to be confused with two other, unrelated calibration concepts in this codebase:
+ * - Speed Sensor Calibration (SpeedSensorConfig::kmhPerHz) - converts raw tachometer
+ *   frequency into a physical speed reading. Has nothing to do with console commands.
+ * - Ramp Timing Calibration (RampCalibrationConfig) - measures how long the belt takes
+ *   to physically reach a commanded speed. Has nothing to do with command accuracy.
+ * This class solely corrects for the console's own command-to-actual-speed inaccuracy.
  */
 class SpeedCalibration {
 public:
