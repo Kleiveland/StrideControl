@@ -41,6 +41,8 @@ struct TreadmillControllerSnapshot {
     uint32_t activeRequestId = 0;
     bool activeRequestValid = false;
     CommandType activeCommandType = CommandType::PressButton;
+    uint32_t interruptedRequestId = 0;
+    bool interruptedRequestValid = false;
 
     // Latest terminal command outcome & validities
     ConsoleOutcome latestOutcome = ConsoleOutcome::NormalSingle;

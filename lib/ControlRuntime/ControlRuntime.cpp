@@ -50,6 +50,11 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     publishedInclineCommandContext_ = InclineVerificationCommandInput{};
     portEXIT_CRITICAL(&inclineCommandContextMux_);
 
+    portENTER_CRITICAL(&commandExecutionStatusMux_);
+    publishedCommandExecutionStatus_ = CommandExecutionStatus{};
+    portEXIT_CRITICAL(&commandExecutionStatusMux_);
+    lastReportedAbortedRequestId_ = 0;
+
     return true;
 }
 
@@ -72,6 +77,11 @@ void ControlRuntime::end() {
         portENTER_CRITICAL(&inclineCommandContextMux_);
         publishedInclineCommandContext_ = InclineVerificationCommandInput{};
         portEXIT_CRITICAL(&inclineCommandContextMux_);
+
+        portENTER_CRITICAL(&commandExecutionStatusMux_);
+        publishedCommandExecutionStatus_ = CommandExecutionStatus{};
+        portEXIT_CRITICAL(&commandExecutionStatusMux_);
+        lastReportedAbortedRequestId_ = 0;
 
         rampTestTracker_.reset();
     }
@@ -261,8 +271,9 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         //   but must never freeze the athlete's workout session state while the belt moves.
     }
 
-    // 4. Publish latest incline verification command input for cross-core consumer
+    // 4. Publish latest incline verification command input and command execution status for cross-core consumers
     publishInclineVerificationCommandInput();
+    publishCommandExecutionStatus();
 }
 
 bool ControlRuntime::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs) {
@@ -623,6 +634,28 @@ void ControlRuntime::publishInclineVerificationCommandInput() {
     portENTER_CRITICAL(&inclineCommandContextMux_);
     publishedInclineCommandContext_ = input;
     portEXIT_CRITICAL(&inclineCommandContextMux_);
+}
+
+void ControlRuntime::publishCommandExecutionStatus() {
+    const TreadmillControllerSnapshot ctrlSnap = controller_.getSnapshot();
+    CommandExecutionStatus status{};
+    if (ctrlSnap.interruptedRequestValid && ctrlSnap.interruptedRequestId != 0 &&
+        ctrlSnap.interruptedRequestId != lastReportedAbortedRequestId_) {
+        status.lastCommandAborted = true;
+        status.abortedRequestId = ctrlSnap.interruptedRequestId;
+        lastReportedAbortedRequestId_ = ctrlSnap.interruptedRequestId;
+    }
+    portENTER_CRITICAL(&commandExecutionStatusMux_);
+    publishedCommandExecutionStatus_ = status;
+    portEXIT_CRITICAL(&commandExecutionStatusMux_);
+}
+
+CommandExecutionStatus ControlRuntime::getCommandExecutionStatus() const {
+    CommandExecutionStatus status{};
+    portENTER_CRITICAL(&commandExecutionStatusMux_);
+    status = publishedCommandExecutionStatus_;
+    portEXIT_CRITICAL(&commandExecutionStatusMux_);
+    return status;
 }
 
 const char* ControlRuntime::version() {

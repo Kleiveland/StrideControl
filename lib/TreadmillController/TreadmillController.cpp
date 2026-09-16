@@ -224,6 +224,8 @@ bool TreadmillController::submitStop(uint32_t requestTimestampMs) {
 
     // Stop has explicit priority: abort any active in-flight macro before submission
     if (snapshot_.busy || console_.isActive()) {
+        snapshot_.interruptedRequestId = snapshot_.activeRequestId;
+        snapshot_.interruptedRequestValid = snapshot_.activeRequestValid;
         console_.abortActiveCommand();
     }
 
