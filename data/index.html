@@ -1526,7 +1526,7 @@
         const btnResumeContinuation = document.getElementById('btn-resume-continuation');
         if (btnResumeContinuation) {
             btnResumeContinuation.addEventListener('click', () => {
-                fetch('/api/v1/control/quickstart', { method: 'POST' })
+                fetch('/api/v1/control/resume', { method: 'POST' })
                 .then(res => {
                     if (!res.ok) {
                         console.error('[Control] Resume continuation rejected:', res.status);

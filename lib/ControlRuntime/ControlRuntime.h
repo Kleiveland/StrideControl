@@ -19,6 +19,7 @@
 #include "../ApplicationSnapshot/ApplicationSnapshot.h"
 #include "../ApplicationOrchestrator/ApplicationOrchestrator.h"
 #include "../InclineVerifier/InclineVerifierTypes.h"
+#include "../RampTestTracker/RampTestTracker.h"
 
 namespace stridecontrol {
 
@@ -80,11 +81,12 @@ public:
     uint32_t getOverrunCount() const;
     InclineVerificationCommandInput getInclineVerificationCommandInput() const;
 
-    bool isRampTestActive() const override { return rampTestActive_; }
-    bool isRampTestComplete() const override { return rampTestComplete_; }
-    bool didRampTestTimeOut() const override { return rampTestTimedOut_; }
-    uint32_t getRampTestDeadTimeMs() const override { return rampTestDeadTimeMs_; }
-    uint32_t getRampTestTotalMs() const override { return rampTestTotalMs_; }
+    bool isRampTestActive() const override { return rampTestTracker_.active(); }
+    bool isRampTestComplete() const override { return rampTestTracker_.complete(); }
+    bool didRampTestTimeOut() const override { return rampTestTracker_.timedOut(); }
+    uint32_t getRampTestDeadTimeMs() const override { return rampTestTracker_.deadTimeMs(); }
+    uint32_t getRampTestTotalMs() const override { return rampTestTracker_.totalTimeMs(); }
+    RampTestPhase getRampTestPhase() const { return rampTestTracker_.phase(); }
 
     static const char* version();
 
@@ -127,17 +129,7 @@ private:
     CsafeMachineState previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
     bool csafeStateInitialized_ = false;
 
-    volatile bool rampTestActive_ = false;
-    volatile bool rampTestComplete_ = false;
-    volatile bool rampTestTimedOut_ = false;
-    uint32_t rampTestStartMs_ = 0;
-    float rampTestStartSpeedKmh_ = 0.0f;
-    float rampTestTargetSpeedKmh_ = 0.0f;
-    uint32_t rampTestDeadTimeMs_ = 0;
-    uint32_t rampTestTotalMs_ = 0;
-    static constexpr uint32_t kRampTestTimeoutMs = 30000;
-    static constexpr float kRampTestMoveThresholdKmh = 0.1f;
-    static constexpr float kRampTestArrivalToleranceKmh = 0.3f;
+    RampTestTracker rampTestTracker_;
 
     bool initialized_ = false;
     uint32_t lastAuthoritativeTimestampMs_ = 0;

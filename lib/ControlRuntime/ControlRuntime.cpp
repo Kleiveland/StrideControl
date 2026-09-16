@@ -35,6 +35,7 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     controller_.begin();
     session_.begin(sessionConfig);
     dispatcher_.begin();
+    rampTestTracker_.reset();
 
     initialized_ = true;
     lastAuthoritativeTimestampMs_ = 0;
@@ -69,6 +70,8 @@ void ControlRuntime::end() {
         portENTER_CRITICAL(&inclineCommandContextMux_);
         publishedInclineCommandContext_ = InclineVerificationCommandInput{};
         portEXIT_CRITICAL(&inclineCommandContextMux_);
+
+        rampTestTracker_.reset();
     }
 }
 
@@ -159,25 +162,18 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
     // 1. Always update the physical controller so active hardware execution can complete or report failure
     controller_.update(nowMs);
 
-    if (rampTestActive_ && !rampTestComplete_) {
-        const uint32_t elapsedMs = nowMs - rampTestStartMs_;
-        const float currentSpeed = snapshot.speed.speedKmh;
-        const float movedFromStart = std::abs(currentSpeed - rampTestStartSpeedKmh_);
-        const float distFromTarget = std::abs(currentSpeed - rampTestTargetSpeedKmh_);
+    rampTestTracker_.update(
+        snapshot.speed.speedKmh,
+        snapshot.speed.measurementValid,
+        nowMs
+    );
 
-        if (rampTestDeadTimeMs_ == 0 && movedFromStart >= kRampTestMoveThresholdKmh) {
-            rampTestDeadTimeMs_ = elapsedMs;
-        }
-        if (distFromTarget <= kRampTestArrivalToleranceKmh) {
-            rampTestTotalMs_ = elapsedMs;
-            rampTestComplete_ = true;
-            rampTestActive_ = false;
-        } else if (elapsedMs >= kRampTestTimeoutMs) {
-            rampTestTotalMs_ = elapsedMs;
-            rampTestTimedOut_ = true;
-            rampTestComplete_ = true;
-            rampTestActive_ = false;
-        }
+    if (rampTestTracker_.targetDispatchRequested()) {
+        TargetContext ctx;
+        ctx.origin = TargetOrigin::Commissioning;
+        ctx.timestampMs = nowMs;
+        dispatcher_.stageSpeedTarget(rampTestTracker_.targetSpeedKmh(), ctx);
+        rampTestTracker_.acknowledgeTargetDispatched();
     }
 
     // CSAFE Stop Hierarchy Detection
@@ -251,7 +247,7 @@ bool ControlRuntime::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs) 
         return false;
     }
     // Prevent workout loading or rebinding while session or ramp test is active
-    if (session_.isActive() || rampTestActive_) {
+    if (session_.isActive() || rampTestTracker_.active()) {
         return false;
     }
     dispatcher_.clearForNewSession();
@@ -397,18 +393,26 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
         const uint32_t cmdNowMs = (cmd.timestampMs != 0) ? cmd.timestampMs : nowMs;
         switch (cmd.type) {
             case ControlCommandType::QuickStart:
-                controller_.submitSpeedTarget(1.0f, cmdNowMs);
+                if (!rampTestTracker_.active()) {
+                    controller_.submitSpeedTarget(1.0f, cmdNowMs);
+                }
                 break;
             case ControlCommandType::Stop:
+                rampTestTracker_.abort(cmdNowMs);
                 controller_.submitStop(cmdNowMs);
                 break;
             case ControlCommandType::Pause:
                 session_.suspend(cmdNowMs);
                 break;
             case ControlCommandType::Resume:
-                controller_.submitSpeedTarget(1.0f, cmdNowMs);
+                if (!session_.isActive() && !rampTestTracker_.active()) {
+                    controller_.submitSpeedTarget(1.0f, cmdNowMs);
+                }
                 break;
             case ControlCommandType::SetSpeed: {
+                if (rampTestTracker_.active()) {
+                    break;
+                }
                 TargetContext ctx;
                 if (session_.isActive()) {
                     ctx.origin = TargetOrigin::SessionManualAdjustment;
@@ -436,6 +440,9 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             }
             case ControlCommandType::StepSpeed: {
+                if (rampTestTracker_.active()) {
+                    break;
+                }
                 const float currentSpd = controller_.getSnapshot().acceptedPhysicalSpeedTargetKmh;
                 TargetContext ctx;
                 if (session_.isActive()) {
@@ -465,7 +472,7 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             }
             case ControlCommandType::ArmWorkout: {
-                if (session_.isActive() || rampTestActive_) {
+                if (session_.isActive() || rampTestTracker_.active()) {
                     Serial.println("[ControlRuntime] Cannot arm workout: session or ramp test already active");
                     break;
                 }
@@ -508,20 +515,15 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
                     Serial.println("[ControlRuntime] Cannot start ramp test: session already active");
                     break;
                 }
-                rampTestActive_ = true;
-                rampTestStartMs_ = cmdNowMs;
-                rampTestStartSpeedKmh_ = cmd.data.rampTest.startSpeedKmh;
-                rampTestTargetSpeedKmh_ = cmd.data.rampTest.targetSpeedKmh;
-                rampTestDeadTimeMs_ = 0;
-                rampTestTotalMs_ = 0;
-                rampTestComplete_ = false;
-                rampTestTimedOut_ = false;
-                {
-                    TargetContext ctx;
-                    ctx.origin = TargetOrigin::Commissioning;
-                    ctx.timestampMs = cmdNowMs;
-                    dispatcher_.stageSpeedTarget(cmd.data.rampTest.targetSpeedKmh, ctx);
+                if (rampTestTracker_.active()) {
+                    Serial.println("[ControlRuntime] Cannot start ramp test: ramp test already active");
+                    break;
                 }
+                rampTestTracker_.beginTest(
+                    cmd.data.rampTest.startSpeedKmh,
+                    cmd.data.rampTest.targetSpeedKmh,
+                    cmdNowMs
+                );
                 break;
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual, cmdNowMs);

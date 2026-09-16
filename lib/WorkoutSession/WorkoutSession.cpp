@@ -546,7 +546,7 @@ void WorkoutSession::registerPhysicalStop(uint32_t nowMs) {
         continuationWindowExpiresMs_ = 0;
         snapshot_.continuationWindowActive = false;
     } else if (physicalStopCount_ == 2) {
-        // 2x Stop: Resets machine targets, preserves 10-second continuation window
+        // 2x Stop: Resets machine targets, preserves 30-second continuation window
         suspend(nowMs);
         clearPendingCommandIntent();
         restartReissuePending_ = true;

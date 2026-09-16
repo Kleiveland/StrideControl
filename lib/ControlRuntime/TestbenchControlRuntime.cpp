@@ -109,6 +109,7 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     portEXIT_CRITICAL(&inclineCommandContextMux_);
 
     composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 0, 0.0f, true);
+    rampTestTracker_.reset();
 
     if (commandQueue_ == nullptr) {
         commandQueue_ = xQueueCreate(kCommandQueueDepth, sizeof(ControlCommand));
@@ -160,11 +161,13 @@ void TestbenchControlRuntime::end() {
         portENTER_CRITICAL(&inclineCommandContextMux_);
         publishedInclineCommandContext_ = InclineVerificationCommandInput{};
         portEXIT_CRITICAL(&inclineCommandContextMux_);
+
+        rampTestTracker_.reset();
     }
 }
 
 bool TestbenchControlRuntime::armWorkout(const WorkoutDefinition& def, uint32_t nowMs) {
-    if (!initialized_ || session_.isActive() || rampTestActive_) {
+    if (!initialized_ || session_.isActive() || rampTestTracker_.active()) {
         return false;
     }
     if (!workoutEngine_.loadWorkout(def)) {
@@ -353,25 +356,15 @@ void TestbenchControlRuntime::runTaskLoop() {
         // 3. Obtain authoritative ApplicationSnapshot representing resulting state
         ApplicationSnapshot snapshot = orchestrator_.getSnapshot();
 
-        if (rampTestActive_ && !rampTestComplete_) {
-            const uint32_t elapsedMs = nowMs - rampTestStartMs_;
-            const float currentSpeed = snapshot.speed.speedKmh;
-            const float movedFromStart = std::abs(currentSpeed - rampTestStartSpeedKmh_);
-            const float distFromTarget = std::abs(currentSpeed - rampTestTargetSpeedKmh_);
+        rampTestTracker_.update(
+            snapshot.speed.speedKmh,
+            snapshot.speed.measurementValid,
+            nowMs
+        );
 
-            if (rampTestDeadTimeMs_ == 0 && movedFromStart >= kRampTestMoveThresholdKmh) {
-                rampTestDeadTimeMs_ = elapsedMs;
-            }
-            if (distFromTarget <= kRampTestArrivalToleranceKmh) {
-                rampTestTotalMs_ = elapsedMs;
-                rampTestComplete_ = true;
-                rampTestActive_ = false;
-            } else if (elapsedMs >= kRampTestTimeoutMs) {
-                rampTestTotalMs_ = elapsedMs;
-                rampTestTimedOut_ = true;
-                rampTestComplete_ = true;
-                rampTestActive_ = false;
-            }
+        if (rampTestTracker_.targetDispatchRequested()) {
+            composite_.submitSpeedTarget(rampTestTracker_.targetSpeedKmh(), nowMs);
+            rampTestTracker_.acknowledgeTargetDispatched();
         }
 
         if (simHeartRateFromSpeedEnabled_) {
@@ -478,20 +471,28 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
         const uint32_t cmdNowMs = (cmd.timestampMs != 0) ? cmd.timestampMs : nowMs;
         switch (cmd.type) {
             case ControlCommandType::QuickStart:
-                composite_.stageQuickStart(cmdNowMs);
-                composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
+                if (!rampTestTracker_.active()) {
+                    composite_.stageQuickStart(cmdNowMs);
+                    composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
+                }
                 break;
             case ControlCommandType::Stop:
+                rampTestTracker_.abort(cmdNowMs);
                 composite_.stageStop(cmdNowMs);
                 break;
             case ControlCommandType::Pause:
                 session_.suspend(cmdNowMs);
                 break;
             case ControlCommandType::Resume:
-                composite_.stageQuickStart(cmdNowMs);
-                composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
+                if (!session_.isActive() && !rampTestTracker_.active()) {
+                    composite_.stageQuickStart(cmdNowMs);
+                    composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
+                }
                 break;
             case ControlCommandType::SetSpeed: {
+                if (rampTestTracker_.active()) {
+                    break;
+                }
                 TargetContext ctx;
                 if (session_.isActive()) {
                     ctx.origin = TargetOrigin::SessionManualAdjustment;
@@ -519,6 +520,9 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             }
             case ControlCommandType::StepSpeed: {
+                if (rampTestTracker_.active()) {
+                    break;
+                }
                 const float currentSimSpd = composite_.getVirtualTreadmill().getTargetSpeedKmh();
                 TargetContext ctx;
                 if (session_.isActive()) {
@@ -548,7 +552,7 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             }
             case ControlCommandType::ArmWorkout: {
-                if (session_.isActive() || rampTestActive_) {
+                if (session_.isActive() || rampTestTracker_.active()) {
                     Serial.println("[TestbenchControlRuntime] Cannot arm workout: session or ramp test already active");
                     break;
                 }
@@ -591,20 +595,15 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                     Serial.println("[TestbenchControlRuntime] Cannot start ramp test: session already active");
                     break;
                 }
-                rampTestActive_ = true;
-                rampTestStartMs_ = cmdNowMs;
-                rampTestStartSpeedKmh_ = cmd.data.rampTest.startSpeedKmh;
-                rampTestTargetSpeedKmh_ = cmd.data.rampTest.targetSpeedKmh;
-                rampTestDeadTimeMs_ = 0;
-                rampTestTotalMs_ = 0;
-                rampTestComplete_ = false;
-                rampTestTimedOut_ = false;
-                {
-                    TargetContext ctx;
-                    ctx.origin = TargetOrigin::Commissioning;
-                    ctx.timestampMs = cmdNowMs;
-                    dispatcher_.stageSpeedTarget(cmd.data.rampTest.targetSpeedKmh, ctx);
+                if (rampTestTracker_.active()) {
+                    Serial.println("[TestbenchControlRuntime] Cannot start ramp test: ramp test already active");
+                    break;
                 }
+                rampTestTracker_.beginTest(
+                    cmd.data.rampTest.startSpeedKmh,
+                    cmd.data.rampTest.targetSpeedKmh,
+                    cmdNowMs
+                );
                 break;
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual, cmdNowMs);

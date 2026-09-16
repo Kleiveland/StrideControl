@@ -471,13 +471,13 @@ void test_session_stop_hierarchy_1x_2x_3x() {
     TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
     TEST_ASSERT_EQUAL_UINT8(1, session.getSnapshot().physicalStopCount);
 
-    // 2nd stop within pause -> 10s continuation window opened, targets reset
+    // 2nd stop within pause -> 30s continuation window opened, targets reset
     session.registerPhysicalStop(4000);
     snap = session.getSnapshot();
     TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, snap.state);
     TEST_ASSERT_EQUAL_UINT8(2, snap.physicalStopCount);
     TEST_ASSERT_TRUE(snap.continuationWindowActive);
-    TEST_ASSERT_EQUAL_UINT32(10000, snap.continuationWindowRemainingMs);
+    TEST_ASSERT_EQUAL_UINT32(30000, snap.continuationWindowRemainingMs);
     TEST_ASSERT_FALSE(session.getPendingCommandIntent().hasSpeedTarget);
 
     // 3rd stop -> Immediately finalizes session
@@ -500,13 +500,13 @@ void test_session_continuation_window_expiry() {
     session.registerPhysicalStop(3000);
     TEST_ASSERT_TRUE(session.getSnapshot().continuationWindowActive);
 
-    // Time advances by 5 seconds (5,000 ms) -> still active
-    session.update(makeAppSnapshot(0.0f, 0.0), 3000 + 5000);
+    // Time advances by 15 seconds (15,000 ms) -> still active
+    session.update(makeAppSnapshot(0.0f, 0.0), 3000 + 15000);
     TEST_ASSERT_TRUE(session.getSnapshot().continuationWindowActive);
     TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
 
-    // Time advances past 10 seconds (10,001 ms) -> auto-finalizes
-    session.update(makeAppSnapshot(0.0f, 0.0), 3000 + 10001);
+    // Time advances past 30 seconds (30,001 ms) -> auto-finalizes
+    session.update(makeAppSnapshot(0.0f, 0.0), 3000 + 30001);
     WorkoutSessionSnapshot snap = session.getSnapshot();
     TEST_ASSERT_FALSE(snap.continuationWindowActive);
     TEST_ASSERT_EQUAL(WorkoutSessionState::Completed, snap.state);

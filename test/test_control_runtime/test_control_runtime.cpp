@@ -20,6 +20,7 @@
 #include "SpeedCalibration.h"
 #include "DiagnosticsService.h"
 #include "InclineVerifier.h"
+#include "RampTestTracker.h"
 
 using namespace stridecontrol;
 
@@ -1139,6 +1140,292 @@ static void test_testbench_simulated_incline_command_context_tracking() {
 }
 #endif
 
+// ============================================================================
+// RampTestTracker and ControlRuntime Ramp Calibration Tests
+// ============================================================================
+
+// 1. One sample within start tolerance does not trigger stable start.
+static void test_ramp_tracker_one_sample_does_not_trigger_stable_start() {
+    RampTestTracker tracker;
+    TEST_ASSERT_TRUE(tracker.beginTest(5.0f, 10.0f, 1000));
+    TEST_ASSERT_EQUAL(RampTestPhase::WaitingForStableStart, tracker.phase());
+    TEST_ASSERT_FALSE(tracker.targetDispatchRequested());
+
+    // Single sample within +/- 0.25 km/h
+    tracker.update(5.05f, true, 1000);
+    TEST_ASSERT_EQUAL(RampTestPhase::WaitingForStableStart, tracker.phase());
+    TEST_ASSERT_FALSE(tracker.targetDispatchRequested());
+    TEST_ASSERT_EQUAL_UINT32(0, tracker.stableDurationMs(1000));
+}
+
+// 2. 1000 ms continuous stability qualifies stable start and requests target dispatch.
+static void test_ramp_tracker_1000ms_continuous_stability_qualifies_start() {
+    RampTestTracker tracker;
+    TEST_ASSERT_TRUE(tracker.beginTest(5.0f, 10.0f, 1000));
+
+    tracker.update(5.1f, true, 1000);
+    TEST_ASSERT_EQUAL(RampTestPhase::WaitingForStableStart, tracker.phase());
+
+    // Progress to 999 ms
+    tracker.update(5.15f, true, 1999);
+    TEST_ASSERT_EQUAL(RampTestPhase::WaitingForStableStart, tracker.phase());
+    TEST_ASSERT_FALSE(tracker.targetDispatchRequested());
+
+    // 1000 ms reached
+    tracker.update(5.12f, true, 2000);
+    TEST_ASSERT_EQUAL(RampTestPhase::MeasuringDeadTime, tracker.phase());
+    TEST_ASSERT_TRUE(tracker.targetDispatchRequested());
+
+    tracker.acknowledgeTargetDispatched();
+    TEST_ASSERT_FALSE(tracker.targetDispatchRequested());
+}
+
+// 3. Leaving the start band resets stability timer.
+static void test_ramp_tracker_leaving_start_band_resets_timer() {
+    RampTestTracker tracker;
+    TEST_ASSERT_TRUE(tracker.beginTest(5.0f, 10.0f, 1000));
+
+    // Stable for 600 ms (1000 -> 1600)
+    tracker.update(5.0f, true, 1000);
+    tracker.update(5.1f, true, 1600);
+    TEST_ASSERT_EQUAL_UINT32(600, tracker.stableDurationMs(1600));
+
+    // Exits band (5.0 +/- 0.25 => 5.35f is out)
+    tracker.update(5.35f, true, 1700);
+    TEST_ASSERT_EQUAL(RampTestPhase::WaitingForStableStart, tracker.phase());
+    TEST_ASSERT_EQUAL_UINT32(0, tracker.stableDurationMs(1700));
+
+    // Re-enters band at 1800 ms
+    tracker.update(5.05f, true, 1800);
+    // Needs 1000 ms from 1800 -> 2800 ms
+    tracker.update(5.05f, true, 2700);
+    TEST_ASSERT_EQUAL(RampTestPhase::WaitingForStableStart, tracker.phase());
+    TEST_ASSERT_FALSE(tracker.targetDispatchRequested());
+
+    tracker.update(5.05f, true, 2800);
+    TEST_ASSERT_EQUAL(RampTestPhase::MeasuringDeadTime, tracker.phase());
+    TEST_ASSERT_TRUE(tracker.targetDispatchRequested());
+}
+
+// 4. Stability timeout triggers after 20000 ms if start speed is never stabilized.
+static void test_ramp_tracker_stability_timeout_after_20000ms() {
+    RampTestTracker tracker;
+    TEST_ASSERT_TRUE(tracker.beginTest(5.0f, 10.0f, 1000));
+
+    // Speed remains outside tolerance (e.g. 4.5 km/h)
+    tracker.update(4.5f, true, 1000);
+    tracker.update(4.5f, true, 15000);
+    TEST_ASSERT_EQUAL(RampTestPhase::WaitingForStableStart, tracker.phase());
+    TEST_ASSERT_FALSE(tracker.timedOut());
+
+    // 20000 ms elapsed from 1000 -> 21000 ms
+    tracker.update(4.5f, true, 21000);
+    TEST_ASSERT_EQUAL(RampTestPhase::TimedOut, tracker.phase());
+    TEST_ASSERT_TRUE(tracker.timedOut());
+    TEST_ASSERT_FALSE(tracker.active());
+}
+
+// 5. Wrong-direction movement does not register as dead-time movement.
+static void test_ramp_tracker_wrong_direction_movement_ignored() {
+    RampTestTracker tracker;
+    TEST_ASSERT_TRUE(tracker.beginTest(5.0f, 10.0f, 1000));
+    // Stabilize
+    tracker.update(5.0f, true, 1000);
+    tracker.update(5.0f, true, 2000);
+    TEST_ASSERT_EQUAL(RampTestPhase::MeasuringDeadTime, tracker.phase());
+
+    // Command is 5.0 -> 10.0 (accel). Wrong direction: speed decreases to 4.8 km/h
+    tracker.update(4.8f, true, 2100);
+    tracker.update(4.7f, true, 2400);
+    TEST_ASSERT_EQUAL(RampTestPhase::MeasuringDeadTime, tracker.phase());
+    TEST_ASSERT_EQUAL_UINT32(0, tracker.deadTimeMs());
+}
+
+// 6. Transient noise (< 200 ms) in correct direction is rejected.
+static void test_ramp_tracker_transient_noise_in_correct_direction_rejected() {
+    RampTestTracker tracker;
+    TEST_ASSERT_TRUE(tracker.beginTest(5.0f, 10.0f, 1000));
+    tracker.update(5.0f, true, 1000);
+    tracker.update(5.0f, true, 2000); // Measurement begins at 2000 ms
+
+    // Movement starts at 2200 ms (delta = +0.15 >= 0.10)
+    tracker.update(5.15f, true, 2200);
+    // At 2350 ms (150 ms < 200 ms), drops back to 5.05 (delta = 0.05 < 0.10)
+    tracker.update(5.05f, true, 2350);
+    TEST_ASSERT_EQUAL(RampTestPhase::MeasuringDeadTime, tracker.phase());
+
+    // Another 150 ms at 5.15
+    tracker.update(5.15f, true, 2400);
+    tracker.update(5.15f, true, 2550);
+    TEST_ASSERT_EQUAL(RampTestPhase::MeasuringDeadTime, tracker.phase());
+    TEST_ASSERT_EQUAL_UINT32(0, tracker.deadTimeMs());
+}
+
+// 7. 200 ms continuous correct-direction movement confirms dead time (latched to candidate start sample).
+static void test_ramp_tracker_200ms_movement_confirms_dead_time_candidate_start() {
+    RampTestTracker tracker;
+    TEST_ASSERT_TRUE(tracker.beginTest(5.0f, 10.0f, 1000));
+    tracker.update(5.0f, true, 1000);
+    tracker.update(5.0f, true, 2000); // measurementStartMs = 2000
+
+    // First movement sample at 2300 ms (dead time candidate = 2300 - 2000 = 300 ms)
+    tracker.update(5.15f, true, 2300);
+    tracker.update(5.20f, true, 2400);
+    TEST_ASSERT_EQUAL(RampTestPhase::MeasuringDeadTime, tracker.phase());
+
+    // 200 ms elapsed at 2500 ms
+    tracker.update(5.25f, true, 2500);
+    TEST_ASSERT_EQUAL(RampTestPhase::MeasuringRamp, tracker.phase());
+    // Latched to candidate start sample (2300 - 2000 = 300 ms, NOT 2500 - 2000 = 500 ms)
+    TEST_ASSERT_EQUAL_UINT32(300, tracker.deadTimeMs());
+}
+
+// 8. Transient noise (< 300 ms) around target speed is rejected.
+static void test_ramp_tracker_transient_noise_around_target_rejected() {
+    RampTestTracker tracker;
+    TEST_ASSERT_TRUE(tracker.beginTest(5.0f, 10.0f, 1000));
+    tracker.update(5.0f, true, 1000);
+    tracker.update(5.0f, true, 2000); // measurementStartMs = 2000
+    tracker.update(5.2f, true, 2200);
+    tracker.update(5.2f, true, 2400); // Enters MeasuringRamp
+
+    // Enter target band at 3000 ms (10.0 +/- 0.30 => 9.75f)
+    tracker.update(9.75f, true, 3000);
+    // After 200 ms (< 300 ms), dips to 9.60f
+    tracker.update(9.60f, true, 3200);
+    TEST_ASSERT_EQUAL(RampTestPhase::MeasuringRamp, tracker.phase());
+    TEST_ASSERT_FALSE(tracker.complete());
+}
+
+// 9. 300 ms continuous target band arrival confirms completion (latched to candidate start sample).
+static void test_ramp_tracker_300ms_arrival_confirms_completion_candidate_start() {
+    RampTestTracker tracker;
+    TEST_ASSERT_TRUE(tracker.beginTest(5.0f, 10.0f, 1000));
+    tracker.update(5.0f, true, 1000);
+    tracker.update(5.0f, true, 2000); // measurementStartMs = 2000
+    tracker.update(5.2f, true, 2200);
+    tracker.update(5.2f, true, 2400); // Enters MeasuringRamp
+
+    // First arrival sample at 3500 ms (total candidate = 3500 - 2000 = 1500 ms)
+    tracker.update(9.8f, true, 3500);
+    tracker.update(9.9f, true, 3650);
+    TEST_ASSERT_EQUAL(RampTestPhase::MeasuringRamp, tracker.phase());
+    TEST_ASSERT_FALSE(tracker.complete());
+
+    // 300 ms continuous at 3800 ms
+    tracker.update(10.0f, true, 3800);
+    TEST_ASSERT_EQUAL(RampTestPhase::Complete, tracker.phase());
+    TEST_ASSERT_TRUE(tracker.complete());
+    // Latched to first sample: 3500 - 2000 = 1500 ms (NOT 3800 - 2000 = 1800 ms)
+    TEST_ASSERT_EQUAL_UINT32(1500, tracker.totalTimeMs());
+}
+
+// 10. Manual speed command (SetSpeed/StepSpeed) is rejected while tracker is active in ControlRuntime.
+static void test_control_runtime_rejects_manual_speed_while_ramp_active() {
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+
+    ControlCommand rampCmd{};
+    rampCmd.type = ControlCommandType::StartRampCalibrationTest;
+    rampCmd.timestampMs = 1000;
+    rampCmd.data.rampTest.startSpeedKmh = 5.0f;
+    rampCmd.data.rampTest.targetSpeedKmh = 10.0f;
+    TEST_ASSERT_TRUE(runtime.stageCommand(rampCmd));
+
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1000, 5.0f, 0.0);
+    runtime.update(snap, 1000);
+    TEST_ASSERT_TRUE(runtime.isRampTestActive());
+
+    // Dispatch a manual SetSpeed command
+    ControlCommand speedCmd{};
+    speedCmd.type = ControlCommandType::SetSpeed;
+    speedCmd.timestampMs = 1020;
+    speedCmd.data.target.speedKmh = 12.0f;
+    TEST_ASSERT_TRUE(runtime.stageCommand(speedCmd));
+
+    snap = makeAuthoritativeSnapshot(1020, 5.0f, 0.0);
+    runtime.update(snap, 1020);
+
+    // Staged speed in dispatcher must NOT be 12.0f
+    TEST_ASSERT_FALSE(runtime.getStagedTargets().pendingSpeed);
+
+    // Dispatch a manual StepSpeed command
+    ControlCommand stepCmd{};
+    stepCmd.type = ControlCommandType::StepSpeed;
+    stepCmd.timestampMs = 1040;
+    stepCmd.data.stepSpeed.deltaSpeedKmh = 1.0f;
+    TEST_ASSERT_TRUE(runtime.stageCommand(stepCmd));
+
+    snap = makeAuthoritativeSnapshot(1040, 5.0f, 0.0);
+    runtime.update(snap, 1040);
+    TEST_ASSERT_FALSE(runtime.getStagedTargets().pendingSpeed);
+
+    runtime.end();
+}
+
+// 11. Stop command aborts active tracker immediately.
+static void test_control_runtime_stop_aborts_ramp_tracker() {
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+
+    ControlCommand rampCmd{};
+    rampCmd.type = ControlCommandType::StartRampCalibrationTest;
+    rampCmd.timestampMs = 1000;
+    rampCmd.data.rampTest.startSpeedKmh = 5.0f;
+    rampCmd.data.rampTest.targetSpeedKmh = 10.0f;
+    TEST_ASSERT_TRUE(runtime.stageCommand(rampCmd));
+
+    ApplicationSnapshot snap = makeAuthoritativeSnapshot(1000, 5.0f, 0.0);
+    runtime.update(snap, 1000);
+    TEST_ASSERT_TRUE(runtime.isRampTestActive());
+    TEST_ASSERT_EQUAL(RampTestPhase::WaitingForStableStart, runtime.getRampTestPhase());
+
+    // Submit Stop command
+    ControlCommand stopCmd{};
+    stopCmd.type = ControlCommandType::Stop;
+    stopCmd.timestampMs = 1020;
+    TEST_ASSERT_TRUE(runtime.stageCommand(stopCmd));
+
+    snap = makeAuthoritativeSnapshot(1020, 5.0f, 0.0);
+    runtime.update(snap, 1020);
+
+    TEST_ASSERT_FALSE(runtime.isRampTestActive());
+    TEST_ASSERT_EQUAL(RampTestPhase::Aborted, runtime.getRampTestPhase());
+
+    runtime.end();
+}
+
+// 12. Consecutive tests reset cleanly without stale state.
+static void test_ramp_tracker_consecutive_runs_reset_cleanly() {
+    RampTestTracker tracker;
+
+    // Run 1: Full completion
+    TEST_ASSERT_TRUE(tracker.beginTest(5.0f, 10.0f, 1000));
+    tracker.update(5.0f, true, 1000);
+    tracker.update(5.0f, true, 2000);
+    tracker.update(5.2f, true, 2200);
+    tracker.update(5.2f, true, 2400);
+    tracker.update(10.0f, true, 3000);
+    tracker.update(10.0f, true, 3300);
+    TEST_ASSERT_TRUE(tracker.complete());
+    TEST_ASSERT_EQUAL_UINT32(200, tracker.deadTimeMs());
+    TEST_ASSERT_EQUAL_UINT32(1000, tracker.totalTimeMs());
+
+    // Reset
+    tracker.reset();
+    TEST_ASSERT_EQUAL(RampTestPhase::Idle, tracker.phase());
+    TEST_ASSERT_EQUAL_UINT32(0, tracker.deadTimeMs());
+    TEST_ASSERT_EQUAL_UINT32(0, tracker.totalTimeMs());
+
+    // Run 2: Fresh test starting at 6.0 -> 12.0 km/h
+    TEST_ASSERT_TRUE(tracker.beginTest(6.0f, 12.0f, 4000));
+    TEST_ASSERT_EQUAL(RampTestPhase::WaitingForStableStart, tracker.phase());
+    TEST_ASSERT_EQUAL_FLOAT(6.0f, tracker.startSpeedKmh());
+    TEST_ASSERT_EQUAL_FLOAT(12.0f, tracker.targetSpeedKmh());
+    TEST_ASSERT_EQUAL_UINT32(0, tracker.deadTimeMs());
+    TEST_ASSERT_EQUAL_UINT32(0, tracker.totalTimeMs());
+}
+
 void run_all_control_runtime_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_control_runtime_single_owner_path);
@@ -1179,6 +1466,18 @@ void run_all_control_runtime_tests() {
 #if defined(STRIDECONTROL_TESTBENCH)
     RUN_TEST(test_testbench_simulated_incline_command_context_tracking);
 #endif
+    RUN_TEST(test_ramp_tracker_one_sample_does_not_trigger_stable_start);
+    RUN_TEST(test_ramp_tracker_1000ms_continuous_stability_qualifies_start);
+    RUN_TEST(test_ramp_tracker_leaving_start_band_resets_timer);
+    RUN_TEST(test_ramp_tracker_stability_timeout_after_20000ms);
+    RUN_TEST(test_ramp_tracker_wrong_direction_movement_ignored);
+    RUN_TEST(test_ramp_tracker_transient_noise_in_correct_direction_rejected);
+    RUN_TEST(test_ramp_tracker_200ms_movement_confirms_dead_time_candidate_start);
+    RUN_TEST(test_ramp_tracker_transient_noise_around_target_rejected);
+    RUN_TEST(test_ramp_tracker_300ms_arrival_confirms_completion_candidate_start);
+    RUN_TEST(test_control_runtime_rejects_manual_speed_while_ramp_active);
+    RUN_TEST(test_control_runtime_stop_aborts_ramp_tracker);
+    RUN_TEST(test_ramp_tracker_consecutive_runs_reset_cleanly);
     UNITY_END();
 }
 
