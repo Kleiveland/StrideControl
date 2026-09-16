@@ -28,6 +28,7 @@
 #include "HeartRateClient.h"
 #include "RscService.h"
 #include "FtmsService.h"
+#include "InclineVerifier.h"
 
 namespace stridecontrol {
 
@@ -78,6 +79,7 @@ public:
 
     uint32_t getLostAuthorityCount() const;
     uint32_t getMinFreeStackBytes() const;
+    InclineVerificationCommandInput getInclineVerificationCommandInput() const;
 
     bool isRampTestActive() const override { return rampTestActive_; }
     bool isRampTestComplete() const override { return rampTestComplete_; }
@@ -99,11 +101,58 @@ public:
 
 private:
     static void taskEntry(void* param);
+    static CsafeState provideSimulatedCsafe(void* context);
+    static InclineVerificationCommandInput provideSimulatedInclineCommandContext(void* context);
+
+    class TargetSinkWrapper : public IWorkoutTargetSink {
+    public:
+        TargetSinkWrapper(TreadmillSimulatorComposite& composite,
+                          InclineVerificationCommandInput& context,
+                          portMUX_TYPE& mux)
+            : composite_(composite), context_(context), mux_(mux) {}
+
+        bool submitSpeedTarget(float targetSpeedKmh, uint32_t nowMs) override {
+            return composite_.submitSpeedTarget(targetSpeedKmh, nowMs);
+        }
+
+        bool submitInclineTarget(float targetInclinePct, uint32_t nowMs) override {
+            const bool ok = composite_.submitInclineTarget(targetInclinePct, nowMs);
+            if (ok) {
+                portENTER_CRITICAL(&mux_);
+                context_.targetInclinePct = targetInclinePct;
+                context_.targetInclineValid = true;
+                context_.commandSequence++;
+                if (context_.commandSequence == 0) {
+                    context_.commandSequence++;
+                }
+                context_.commandTimestampMs = nowMs;
+                context_.commandTimestampValid = (nowMs != 0);
+                portEXIT_CRITICAL(&mux_);
+            }
+            return ok;
+        }
+
+        bool isBusy() const override {
+            return composite_.isBusy();
+        }
+
+        bool isReady() const override {
+            return composite_.isReady();
+        }
+
+    private:
+        TreadmillSimulatorComposite& composite_;
+        InclineVerificationCommandInput& context_;
+        portMUX_TYPE& mux_;
+    };
+
     void runTaskLoop();
     void processQueuedCommands(uint32_t nowMs);
 
     QueueHandle_t commandQueue_ = nullptr;
     mutable portMUX_TYPE snapshotMux_ = portMUX_INITIALIZER_UNLOCKED;
+    mutable portMUX_TYPE inclineCommandContextMux_ = portMUX_INITIALIZER_UNLOCKED;
+    InclineVerificationCommandInput publishedInclineCommandContext_{};
 
     // Production Sensor & Domain Drivers (SoftwareObservation Mode)
     SpeedSensor speedSensor_;
@@ -111,6 +160,7 @@ private:
     ConsoleInterface console_;
     ImuInterface imu_;
     RunnerDynamics runnerDynamics_;
+    InclineVerifier inclineVerifier_;
     DiagnosticsService diagService_;
     ApplicationOrchestrator orchestrator_;
     BleManager bleManager_;
@@ -121,6 +171,7 @@ private:
 
     // Passive Composite Simulator
     TreadmillSimulatorComposite composite_;
+    TargetSinkWrapper targetSink_{composite_, publishedInclineCommandContext_, inclineCommandContextMux_};
 
     // Domain Session & Coordination
     WorkoutSession session_;

@@ -22,6 +22,9 @@ namespace stridecontrol {
 class BleManager;
 class HeartRateClient;
 
+using CsafeStateProvider = CsafeState (*)(void* context);
+using InclineCommandContextProvider = InclineVerificationCommandInput (*)(void* context);
+
 /**
  * @brief Dependencies injected into ApplicationOrchestrator.
  */
@@ -30,6 +33,10 @@ struct ApplicationOrchestratorDependencies {
     InclineSensor* inclineSensor = nullptr;
     ImuInterface* imuInterface = nullptr;
     CsafeInterface* csafeInterface = nullptr;
+    CsafeStateProvider csafeStateProvider = nullptr;
+    void* csafeStateProviderContext = nullptr;
+    InclineCommandContextProvider inclineCommandContextProvider = nullptr;
+    void* inclineCommandContextProviderContext = nullptr;
     RunnerDynamics* runnerDynamics = nullptr;
     InclineVerifier* inclineVerifier = nullptr;
     DiagnosticsService* diagnosticsService = nullptr;
@@ -107,6 +114,8 @@ private:
     void runBleTask();
 
     bool executePipelineStep(const ApplicationTickContext& context);
+    CsafeState readCsafeState() const;
+    InclineVerificationCommandInput readInclineCommandContext() const;
 
     using SpeedUpdateStrategy = void (*)(SpeedSensor& sensor, const ApplicationTickContext& context);
     static void hardwareSpeedStrategy(SpeedSensor& sensor, const ApplicationTickContext& context);

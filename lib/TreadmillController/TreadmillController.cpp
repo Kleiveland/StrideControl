@@ -189,6 +189,11 @@ bool TreadmillController::submitInclineTarget(
 
     snapshot_.acceptedInclineTargetPct = targetInclinePct;
     snapshot_.inclineTargetValid = true;
+    snapshot_.acceptedInclineTargetSequence++;
+    if (snapshot_.acceptedInclineTargetSequence == 0) {
+        snapshot_.acceptedInclineTargetSequence++;
+    }
+    snapshot_.acceptedInclineTargetTimestampMs = requestTimestampMs;
 
     snapshot_.activeRequestId = reqId;
     snapshot_.activeRequestValid = true;

@@ -38,6 +38,30 @@ bool ApplicationOrchestrator::softwareInclineStrategy(InclineSensor& sensor, con
     return sensor.evaluate(context.nowMs);
 }
 
+CsafeState ApplicationOrchestrator::readCsafeState() const {
+    if (deps_.csafeStateProvider != nullptr) {
+        return deps_.csafeStateProvider(
+            deps_.csafeStateProviderContext
+        );
+    }
+
+    if (deps_.csafeInterface != nullptr) {
+        return deps_.csafeInterface->getState();
+    }
+
+    return CsafeState{};
+}
+
+InclineVerificationCommandInput ApplicationOrchestrator::readInclineCommandContext() const {
+    if (deps_.inclineCommandContextProvider != nullptr) {
+        return deps_.inclineCommandContextProvider(
+            deps_.inclineCommandContextProviderContext
+        );
+    }
+
+    return InclineVerificationCommandInput{};
+}
+
 bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& deps,
                                    OrchestratorExecutionMode mode) {
     portENTER_CRITICAL(&metricsMux_);
@@ -417,7 +441,7 @@ bool ApplicationOrchestrator::executePipelineStep(const ApplicationTickContext& 
 
     stagingSnapshot_.speed = deps_.speedSensor ? deps_.speedSensor->getState() : SpeedSensorState{};
     stagingSnapshot_.incline = deps_.inclineSensor ? deps_.inclineSensor->getState() : InclineState{};
-    CsafeState csafeState = deps_.csafeInterface ? deps_.csafeInterface->getState() : CsafeState{};
+    const CsafeState csafeState = readCsafeState();
     stagingSnapshot_.csafe = csafeState;
     stagingSnapshot_.imu = deps_.imuInterface ? deps_.imuInterface->getState() : ImuState{};
 
@@ -436,7 +460,7 @@ bool ApplicationOrchestrator::executePipelineStep(const ApplicationTickContext& 
     }
 
     if (deps_.inclineVerifier != nullptr) {
-        InclineVerificationCommandInput cmdInput{};
+        const InclineVerificationCommandInput cmdInput = readInclineCommandContext();
         deps_.inclineVerifier->update(cmdInput, stagingSnapshot_.incline, stagingSnapshot_.imu, context.nowMs);
         stagingSnapshot_.inclineVerifier = deps_.inclineVerifier->getState();
     } else {

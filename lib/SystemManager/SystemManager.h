@@ -39,6 +39,8 @@ public:
     const ControlRuntime& getControlRuntime() const { return controlRuntime_; }
     ControlRuntime& getControlRuntime() { return controlRuntime_; }
 
+    InclineVerificationCommandInput getInclineVerificationCommandInput() const;
+
     SystemState getState() const;
     bool isFaulted() const;
     bool isSafetyStop() const;

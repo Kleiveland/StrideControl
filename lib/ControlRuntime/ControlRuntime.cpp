@@ -42,6 +42,11 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     authorityLostReported_ = false;
     previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
     csafeStateInitialized_ = false;
+
+    portENTER_CRITICAL(&inclineCommandContextMux_);
+    publishedInclineCommandContext_ = InclineVerificationCommandInput{};
+    portEXIT_CRITICAL(&inclineCommandContextMux_);
+
     return true;
 }
 
@@ -60,6 +65,10 @@ void ControlRuntime::end() {
         initialized_ = false;
         previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
         csafeStateInitialized_ = false;
+
+        portENTER_CRITICAL(&inclineCommandContextMux_);
+        publishedInclineCommandContext_ = InclineVerificationCommandInput{};
+        portEXIT_CRITICAL(&inclineCommandContextMux_);
     }
 }
 
@@ -232,6 +241,9 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         // - Do NOT suspend session_: telemetry jitter must freeze data integration,
         //   but must never freeze the athlete's workout session state while the belt moves.
     }
+
+    // 4. Publish latest incline verification command input for cross-core consumer
+    publishInclineVerificationCommandInput();
 }
 
 bool ControlRuntime::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs) {
@@ -564,6 +576,28 @@ uint32_t ControlRuntime::getDeadlineMissCount() const {
 
 uint32_t ControlRuntime::getOverrunCount() const {
     return overrunCount_;
+}
+
+InclineVerificationCommandInput ControlRuntime::getInclineVerificationCommandInput() const {
+    InclineVerificationCommandInput input{};
+    portENTER_CRITICAL(&inclineCommandContextMux_);
+    input = publishedInclineCommandContext_;
+    portEXIT_CRITICAL(&inclineCommandContextMux_);
+    return input;
+}
+
+void ControlRuntime::publishInclineVerificationCommandInput() {
+    const TreadmillControllerSnapshot ctrlSnap = controller_.getSnapshot();
+    InclineVerificationCommandInput input{};
+    input.targetInclinePct = ctrlSnap.acceptedInclineTargetPct;
+    input.targetInclineValid = ctrlSnap.inclineTargetValid;
+    input.commandSequence = ctrlSnap.acceptedInclineTargetSequence;
+    input.commandTimestampMs = ctrlSnap.acceptedInclineTargetTimestampMs;
+    input.commandTimestampValid = ctrlSnap.inclineTargetValid && ctrlSnap.acceptedInclineTargetTimestampMs != 0;
+
+    portENTER_CRITICAL(&inclineCommandContextMux_);
+    publishedInclineCommandContext_ = input;
+    portEXIT_CRITICAL(&inclineCommandContextMux_);
 }
 
 const char* ControlRuntime::version() {

@@ -116,6 +116,14 @@ static stridecontrol::BleManager s_bleManager;
 static stridecontrol::HeartRateClient s_heartRateClient;
 static stridecontrol::RscService s_rscService;
 static stridecontrol::FtmsService s_ftmsService;
+
+static stridecontrol::InclineVerificationCommandInput provideProductionInclineCommandContext(void* context) {
+    if (context == nullptr) {
+        return stridecontrol::InclineVerificationCommandInput{};
+    }
+    const auto* mgr = static_cast<const stridecontrol::SystemManager*>(context);
+    return mgr->getInclineVerificationCommandInput();
+}
 #endif
 
 class ProductionTelemetryProvider : public stridecontrol::ITelemetryProvider {
@@ -270,6 +278,8 @@ void setup() {
     orchestratorDeps.csafeInterface = &s_csafeInterface;
     orchestratorDeps.runnerDynamics = &s_runnerDynamics;
     orchestratorDeps.inclineVerifier = &s_inclineVerifier;
+    orchestratorDeps.inclineCommandContextProvider = &provideProductionInclineCommandContext;
+    orchestratorDeps.inclineCommandContextProviderContext = &s_systemManager;
     orchestratorDeps.maintenanceService = &s_maintenanceService;
     orchestratorDeps.bleManager = &s_bleManager;
     orchestratorDeps.hrClient = &s_heartRateClient;

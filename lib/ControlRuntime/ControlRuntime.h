@@ -18,6 +18,7 @@
 #include "../ControlCoordinator/ControlCoordinator.h"
 #include "../ApplicationSnapshot/ApplicationSnapshot.h"
 #include "../ApplicationOrchestrator/ApplicationOrchestrator.h"
+#include "../InclineVerifier/InclineVerifierTypes.h"
 
 namespace stridecontrol {
 
@@ -77,6 +78,7 @@ public:
     uint32_t getLoopCount() const;
     uint32_t getDeadlineMissCount() const;
     uint32_t getOverrunCount() const;
+    InclineVerificationCommandInput getInclineVerificationCommandInput() const;
 
     bool isRampTestActive() const override { return rampTestActive_; }
     bool isRampTestComplete() const override { return rampTestComplete_; }
@@ -104,6 +106,10 @@ private:
     static void taskEntry(void* param);
     void runTaskLoop();
     void processQueuedCommands(uint32_t nowMs);
+    void publishInclineVerificationCommandInput();
+
+    mutable portMUX_TYPE inclineCommandContextMux_ = portMUX_INITIALIZER_UNLOCKED;
+    InclineVerificationCommandInput publishedInclineCommandContext_{};
 
     QueueHandle_t commandQueue_ = nullptr;
 

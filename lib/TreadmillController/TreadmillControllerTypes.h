@@ -34,6 +34,8 @@ struct TreadmillControllerSnapshot {
     // Incline context
     float acceptedInclineTargetPct = 0.0f;
     bool inclineTargetValid = false;
+    uint32_t acceptedInclineTargetSequence = 0;
+    uint32_t acceptedInclineTargetTimestampMs = 0;
 
     // Active command tracking
     uint32_t activeRequestId = 0;

@@ -130,6 +130,10 @@ bool SystemManager::isSafetyStop() const {
     return state_ == SystemState::SafetyStop;
 }
 
+InclineVerificationCommandInput SystemManager::getInclineVerificationCommandInput() const {
+    return controlRuntime_.getInclineVerificationCommandInput();
+}
+
 const char* SystemManager::version() {
     return "1.0.0";
 }

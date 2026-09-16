@@ -19,6 +19,7 @@
 #include "ConsoleInterface.h"
 #include "SpeedCalibration.h"
 #include "DiagnosticsService.h"
+#include "InclineVerifier.h"
 
 using namespace stridecontrol;
 
@@ -974,6 +975,170 @@ void test_testbench_command_path_parity_no_bypass() {
 }
 #endif
 
+static void test_incline_command_provider_readout_in_snapshot() {
+    ApplicationOrchestrator orchestrator;
+    InclineVerifier inclineVerifier;
+    inclineVerifier.begin();
+
+    InclineVerificationCommandInput expectedCtx{};
+    expectedCtx.targetInclinePct = 4.0f;
+    expectedCtx.targetInclineValid = true;
+    expectedCtx.commandSequence = 12;
+    expectedCtx.commandTimestampMs = 15000;
+    expectedCtx.commandTimestampValid = true;
+
+    ApplicationOrchestratorDependencies deps{};
+    deps.inclineVerifier = &inclineVerifier;
+    deps.inclineCommandContextProvider = [](void* ctx) -> InclineVerificationCommandInput {
+        return *static_cast<InclineVerificationCommandInput*>(ctx);
+    };
+    deps.inclineCommandContextProviderContext = &expectedCtx;
+
+    TEST_ASSERT_TRUE(orchestrator.begin(deps, OrchestratorExecutionMode::ExternalStep));
+    TEST_ASSERT_TRUE(orchestrator.step(ApplicationTickContext(1, 20000ULL, 20)));
+
+    ApplicationSnapshot snap = orchestrator.getSnapshot();
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 4.0f, snap.inclineVerifier.targetInclinePct);
+    TEST_ASSERT_TRUE(snap.inclineVerifier.targetInclineValid);
+    TEST_ASSERT_EQUAL_UINT32(12, snap.inclineVerifier.commandSequence);
+    TEST_ASSERT_EQUAL_UINT32(15000, snap.inclineVerifier.commandTimestampMs);
+    TEST_ASSERT_TRUE(snap.inclineVerifier.commandTimestampValid);
+
+    orchestrator.end();
+    inclineVerifier.end();
+}
+
+static void test_incline_command_provider_single_read_per_accepted_tick() {
+    ApplicationOrchestrator orchestrator;
+    InclineVerifier inclineVerifier;
+    inclineVerifier.begin();
+
+    uint32_t callCount = 0;
+    ApplicationOrchestratorDependencies deps{};
+    deps.inclineVerifier = &inclineVerifier;
+    deps.inclineCommandContextProvider = [](void* ctx) -> InclineVerificationCommandInput {
+        (*static_cast<uint32_t*>(ctx))++;
+        return InclineVerificationCommandInput{};
+    };
+    deps.inclineCommandContextProviderContext = &callCount;
+
+    TEST_ASSERT_TRUE(orchestrator.begin(deps, OrchestratorExecutionMode::ExternalStep));
+    TEST_ASSERT_EQUAL_UINT32(0, callCount);
+
+    for (uint64_t i = 1; i <= 5; ++i) {
+        TEST_ASSERT_TRUE(orchestrator.step(ApplicationTickContext(i, i * 20000ULL, 20)));
+        TEST_ASSERT_EQUAL_UINT32(i, callCount);
+    }
+
+    // Step with non-monotonic timestamp (duplicate) -> rejected
+    ApplicationTickContext duplicateCtx(6, 5 * 20000ULL, 20);
+    const bool accepted = orchestrator.step(duplicateCtx);
+    TEST_ASSERT_FALSE(accepted);
+    TEST_ASSERT_EQUAL_UINT32(5, callCount);
+
+    orchestrator.end();
+    inclineVerifier.end();
+}
+
+static void test_treadmill_controller_incline_sequence_increments_only_on_incline_target() {
+    ConsoleInterface console;
+    console.begin(ConsoleExecutionMode::SoftwareSink);
+    SpeedCalibration cal;
+    DiagnosticsService diag;
+    TreadmillController controller(console, cal, diag);
+    TEST_ASSERT_TRUE(controller.begin());
+
+    TreadmillControllerSnapshot snap = controller.getSnapshot();
+    TEST_ASSERT_EQUAL_UINT32(0, snap.acceptedInclineTargetSequence);
+    TEST_ASSERT_EQUAL_UINT32(0, snap.acceptedInclineTargetTimestampMs);
+    TEST_ASSERT_FALSE(snap.inclineTargetValid);
+
+    // Speed target submission must NOT alter incline sequence or timestamp
+    TEST_ASSERT_TRUE(controller.submitSpeedTarget(5.0f, 1000));
+    controller.update(1000);
+    snap = controller.getSnapshot();
+    TEST_ASSERT_EQUAL_UINT32(0, snap.acceptedInclineTargetSequence);
+    TEST_ASSERT_EQUAL_UINT32(0, snap.acceptedInclineTargetTimestampMs);
+    TEST_ASSERT_FALSE(snap.inclineTargetValid);
+
+    // Stop submission must NOT alter incline sequence or timestamp
+    TEST_ASSERT_TRUE(controller.submitStop(2000));
+    controller.update(2000);
+    snap = controller.getSnapshot();
+    TEST_ASSERT_EQUAL_UINT32(0, snap.acceptedInclineTargetSequence);
+    TEST_ASSERT_EQUAL_UINT32(0, snap.acceptedInclineTargetTimestampMs);
+    TEST_ASSERT_FALSE(snap.inclineTargetValid);
+
+    // Valid incline target submission increments sequence and records timestamp
+    TEST_ASSERT_TRUE(controller.submitInclineTarget(3.0f, 3000));
+    snap = controller.getSnapshot();
+    TEST_ASSERT_TRUE(snap.inclineTargetValid);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 3.0f, snap.acceptedInclineTargetPct);
+    TEST_ASSERT_EQUAL_UINT32(1, snap.acceptedInclineTargetSequence);
+    TEST_ASSERT_EQUAL_UINT32(3000, snap.acceptedInclineTargetTimestampMs);
+
+    controller.update(3000);
+
+    // Second valid incline target
+    TEST_ASSERT_TRUE(controller.submitInclineTarget(5.0f, 4000));
+    snap = controller.getSnapshot();
+    TEST_ASSERT_TRUE(snap.inclineTargetValid);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 5.0f, snap.acceptedInclineTargetPct);
+    TEST_ASSERT_EQUAL_UINT32(2, snap.acceptedInclineTargetSequence);
+    TEST_ASSERT_EQUAL_UINT32(4000, snap.acceptedInclineTargetTimestampMs);
+
+    controller.update(4000);
+
+    // Speed target again -> sequence remains 2
+    TEST_ASSERT_TRUE(controller.submitSpeedTarget(8.0f, 5000));
+    snap = controller.getSnapshot();
+    TEST_ASSERT_EQUAL_UINT32(2, snap.acceptedInclineTargetSequence);
+    TEST_ASSERT_EQUAL_UINT32(4000, snap.acceptedInclineTargetTimestampMs);
+
+    // Lifecycle reset on end()
+    controller.end();
+    snap = controller.getSnapshot();
+    TEST_ASSERT_EQUAL_UINT32(0, snap.acceptedInclineTargetSequence);
+    TEST_ASSERT_EQUAL_UINT32(0, snap.acceptedInclineTargetTimestampMs);
+    TEST_ASSERT_FALSE(snap.inclineTargetValid);
+}
+
+static void test_control_runtime_incline_command_context_lifecycle_reset() {
+    ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
+    TEST_ASSERT_TRUE(runtime.begin());
+
+    InclineVerificationCommandInput inCtx = runtime.getInclineVerificationCommandInput();
+    TEST_ASSERT_EQUAL_UINT32(0, inCtx.commandSequence);
+    TEST_ASSERT_EQUAL_UINT32(0, inCtx.commandTimestampMs);
+    TEST_ASSERT_FALSE(inCtx.targetInclineValid);
+    TEST_ASSERT_FALSE(inCtx.commandTimestampValid);
+
+    runtime.end();
+    inCtx = runtime.getInclineVerificationCommandInput();
+    TEST_ASSERT_EQUAL_UINT32(0, inCtx.commandSequence);
+    TEST_ASSERT_EQUAL_UINT32(0, inCtx.commandTimestampMs);
+    TEST_ASSERT_FALSE(inCtx.targetInclineValid);
+    TEST_ASSERT_FALSE(inCtx.commandTimestampValid);
+}
+
+#if defined(STRIDECONTROL_TESTBENCH)
+static void test_testbench_simulated_incline_command_context_tracking() {
+    TestbenchControlRuntime tbRuntime;
+    TEST_ASSERT_TRUE(tbRuntime.begin());
+
+    InclineVerificationCommandInput inCtx = tbRuntime.getInclineVerificationCommandInput();
+    TEST_ASSERT_EQUAL_UINT32(0, inCtx.commandSequence);
+    TEST_ASSERT_EQUAL_UINT32(0, inCtx.commandTimestampMs);
+    TEST_ASSERT_FALSE(inCtx.targetInclineValid);
+
+    tbRuntime.end();
+    inCtx = tbRuntime.getInclineVerificationCommandInput();
+    TEST_ASSERT_EQUAL_UINT32(0, inCtx.commandSequence);
+    TEST_ASSERT_EQUAL_UINT32(0, inCtx.commandTimestampMs);
+    TEST_ASSERT_FALSE(inCtx.targetInclineValid);
+}
+#endif
+
 void run_all_control_runtime_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_control_runtime_single_owner_path);
@@ -1006,6 +1171,13 @@ void run_all_control_runtime_tests() {
     RUN_TEST(test_start_ramp_calibration_test_blocked_while_session_active);
 #if defined(STRIDECONTROL_TESTBENCH)
     RUN_TEST(test_testbench_command_path_parity_no_bypass);
+#endif
+    RUN_TEST(test_incline_command_provider_readout_in_snapshot);
+    RUN_TEST(test_incline_command_provider_single_read_per_accepted_tick);
+    RUN_TEST(test_treadmill_controller_incline_sequence_increments_only_on_incline_target);
+    RUN_TEST(test_control_runtime_incline_command_context_lifecycle_reset);
+#if defined(STRIDECONTROL_TESTBENCH)
+    RUN_TEST(test_testbench_simulated_incline_command_context_tracking);
 #endif
     UNITY_END();
 }

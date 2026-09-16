@@ -19,6 +19,7 @@
 #include "WorkoutDispatcher.h"
 #include "ControlCoordinator.h"
 #include "ControlRuntime.h"
+#include "CsafeInterface.h"
 
 using namespace stridecontrol;
 
@@ -34,6 +35,15 @@ struct CompositeTestRig {
 
     std::unique_ptr<TreadmillSimulatorComposite> composite;
 
+    static CsafeState provideCompositeCsafe(void* ctx) {
+        if (!ctx) return CsafeState{};
+        auto* rig = static_cast<CompositeTestRig*>(ctx);
+        if (rig->composite) {
+            return rig->composite->getCsafeState();
+        }
+        return CsafeState{};
+    }
+
     CompositeTestRig() {
         speedSensor.begin(SpeedSensorConfig{}, SpeedObservationMode::SoftwareObservation);
         inclineSensor.begin(InclineSensorConfig{}, InclineCalibration{}, InclineObservationMode::SoftwareObservation);
@@ -45,6 +55,8 @@ struct CompositeTestRig {
         deps.speedSensor = &speedSensor;
         deps.inclineSensor = &inclineSensor;
         deps.imuInterface = &imu;
+        deps.csafeStateProvider = &CompositeTestRig::provideCompositeCsafe;
+        deps.csafeStateProviderContext = this;
         deps.runnerDynamics = &runnerDynamics;
         deps.diagnosticsService = &diagService;
         orchestrator.begin(deps, OrchestratorExecutionMode::ExternalStep);
@@ -69,9 +81,7 @@ struct CompositeTestRig {
 
         ApplicationTickContext appCtx(tickIdx, scenarioTimeUs, dtMs);
         orchestrator.step(appCtx);
-        ApplicationSnapshot snap = orchestrator.getSnapshot();
-        snap.csafe = composite->getCsafeState();
-        return snap;
+        return orchestrator.getSnapshot();
     }
 };
 
@@ -280,10 +290,22 @@ void test_t610_csafe_physically_verified_state_sequence() {
     imu.begin(ImuObservationMode::SoftwareObservation);
     runnerDynamics.begin();
 
+    struct CsafeSimContext {
+        TreadmillSimulatorComposite* composite = nullptr;
+    } csafeSimCtx;
+
     ApplicationOrchestratorDependencies deps{};
     deps.speedSensor = &speedSensor;
     deps.inclineSensor = &inclineSensor;
     deps.imuInterface = &imu;
+    deps.csafeStateProvider = [](void* ctx) -> CsafeState {
+        auto* simCtx = static_cast<CsafeSimContext*>(ctx);
+        if (simCtx && simCtx->composite) {
+            return simCtx->composite->getCsafeState();
+        }
+        return CsafeState{};
+    };
+    deps.csafeStateProviderContext = &csafeSimCtx;
     deps.runnerDynamics = &runnerDynamics;
     deps.diagnosticsService = &diagService;
     orchestrator.begin(deps, OrchestratorExecutionMode::ExternalStep);
@@ -295,6 +317,7 @@ void test_t610_csafe_physically_verified_state_sequence() {
     auto composite = std::unique_ptr<TreadmillSimulatorComposite>(
         new TreadmillSimulatorComposite(speedSensor, inclineSensor, imu, vtCfg)
     );
+    csafeSimCtx.composite = composite.get();
     composite->stageRunner(VirtualRunnerMode::RunningOnBelt, 180);
 
     auto stepRig = [&](uint64_t tickIdx, uint32_t dtMs = 20) -> ApplicationSnapshot {
@@ -303,9 +326,7 @@ void test_t610_csafe_physically_verified_state_sequence() {
         composite->tick(simTick, 0.0f);
         ApplicationTickContext appCtx(tickIdx, scenarioTimeUs, dtMs);
         orchestrator.step(appCtx);
-        ApplicationSnapshot snap = orchestrator.getSnapshot();
-        snap.csafe = composite->getCsafeState();
-        return snap;
+        return orchestrator.getSnapshot();
     };
 
     // 1. Initial State: Ready (0x01)
@@ -414,6 +435,156 @@ void test_t610_csafe_physically_verified_state_sequence() {
     orchestrator.end();
 }
 
+void test_csafe_provider_value_appears_in_snapshot() {
+    ApplicationOrchestrator orchestrator;
+    ApplicationOrchestratorDependencies deps{};
+
+    CsafeState customState{};
+    customState.initialized = true;
+    customState.online = true;
+    customState.machineStateFresh = true;
+    customState.qualifiedState = CsafeMachineState::InUse;
+    customState.reportedState = CsafeMachineState::InUse;
+    customState.rawStateByte = 0x85;
+    customState.linkStatus = CsafeLinkStatus::Online;
+
+    deps.csafeStateProvider = [](void* ctx) -> CsafeState {
+        return *static_cast<CsafeState*>(ctx);
+    };
+    deps.csafeStateProviderContext = &customState;
+
+    TEST_ASSERT_TRUE(orchestrator.begin(deps, OrchestratorExecutionMode::ExternalStep));
+    const ApplicationTickContext ctx(1, 20000ULL, 20);
+    TEST_ASSERT_TRUE(orchestrator.step(ctx));
+
+    ApplicationSnapshot snap = orchestrator.getSnapshot();
+    TEST_ASSERT_TRUE(snap.csafe.initialized);
+    TEST_ASSERT_TRUE(snap.csafe.online);
+    TEST_ASSERT_TRUE(snap.csafe.machineStateFresh);
+    TEST_ASSERT_EQUAL(CsafeMachineState::InUse, snap.csafe.qualifiedState);
+    TEST_ASSERT_EQUAL_UINT8(0x85, snap.csafe.rawStateByte);
+    TEST_ASSERT_EQUAL(CsafeLinkStatus::Online, snap.csafe.linkStatus);
+
+    orchestrator.end();
+}
+
+void test_csafe_provider_runner_dynamics_receives_identical_state() {
+    RunnerDynamics runnerDynamics;
+    runnerDynamics.begin();
+
+    ApplicationOrchestrator orchestrator;
+    ApplicationOrchestratorDependencies deps{};
+    deps.runnerDynamics = &runnerDynamics;
+
+    CsafeState customState{};
+    customState.initialized = true;
+    customState.online = true;
+    customState.machineStateFresh = true;
+    customState.reportedState = CsafeMachineState::InUse;
+    customState.qualifiedState = CsafeMachineState::InUse;
+
+    deps.csafeStateProvider = [](void* ctx) -> CsafeState {
+        return *static_cast<CsafeState*>(ctx);
+    };
+    deps.csafeStateProviderContext = &customState;
+
+    TEST_ASSERT_TRUE(orchestrator.begin(deps, OrchestratorExecutionMode::ExternalStep));
+
+    // Tick 1: Fresh and online CSAFE input -> RunnerDynamics.csafeInputValid must match snapshot.csafe
+    ApplicationTickContext ctx1(1, 20000ULL, 20);
+    TEST_ASSERT_TRUE(orchestrator.step(ctx1));
+    ApplicationSnapshot snap1 = orchestrator.getSnapshot();
+    TEST_ASSERT_EQUAL(CsafeMachineState::InUse, snap1.csafe.qualifiedState);
+    TEST_ASSERT_TRUE(snap1.csafe.machineStateFresh);
+    TEST_ASSERT_TRUE(snap1.runner.csafeInputValid);
+
+    // Tick 2: Invalidate fresh state -> RunnerDynamics and snapshot both reflect invalidity identically
+    customState.machineStateFresh = false;
+    ApplicationTickContext ctx2(2, 40000ULL, 20);
+    TEST_ASSERT_TRUE(orchestrator.step(ctx2));
+    ApplicationSnapshot snap2 = orchestrator.getSnapshot();
+    TEST_ASSERT_FALSE(snap2.csafe.machineStateFresh);
+    TEST_ASSERT_FALSE(snap2.runner.csafeInputValid);
+
+    orchestrator.end();
+    runnerDynamics.end();
+}
+
+void test_csafe_provider_called_exactly_once_per_accepted_tick() {
+    ApplicationOrchestrator orchestrator;
+    ApplicationOrchestratorDependencies deps{};
+
+    uint32_t callCount = 0;
+    deps.csafeStateProvider = [](void* ctx) -> CsafeState {
+        auto* counter = static_cast<uint32_t*>(ctx);
+        (*counter)++;
+        CsafeState s{};
+        s.initialized = true;
+        return s;
+    };
+    deps.csafeStateProviderContext = &callCount;
+
+    TEST_ASSERT_TRUE(orchestrator.begin(deps, OrchestratorExecutionMode::ExternalStep));
+    TEST_ASSERT_EQUAL_UINT32(0, callCount);
+
+    // 5 distinct accepted ticks
+    for (uint64_t i = 1; i <= 5; ++i) {
+        ApplicationTickContext ctx(i, i * 20000ULL, 20);
+        TEST_ASSERT_TRUE(orchestrator.step(ctx));
+        TEST_ASSERT_EQUAL_UINT32(i, callCount);
+    }
+
+    // Step with non-monotonic timestamp (rejected tick)
+    ApplicationTickContext duplicateCtx(6, 5 * 20000ULL, 20);
+    const bool accepted = orchestrator.step(duplicateCtx);
+    TEST_ASSERT_FALSE(accepted);
+    TEST_ASSERT_EQUAL_UINT32(5, callCount); // Must not increment on rejected tick
+
+    orchestrator.end();
+}
+
+void test_csafe_provider_null_with_null_interface_yields_default() {
+    ApplicationOrchestrator orchestrator;
+    ApplicationOrchestratorDependencies deps{};
+    deps.csafeStateProvider = nullptr;
+    deps.csafeStateProviderContext = nullptr;
+    deps.csafeInterface = nullptr;
+
+    TEST_ASSERT_TRUE(orchestrator.begin(deps, OrchestratorExecutionMode::ExternalStep));
+    ApplicationTickContext ctx(1, 20000ULL, 20);
+    TEST_ASSERT_TRUE(orchestrator.step(ctx));
+
+    ApplicationSnapshot snap = orchestrator.getSnapshot();
+    TEST_ASSERT_FALSE(snap.csafe.initialized);
+    TEST_ASSERT_FALSE(snap.csafe.online);
+    TEST_ASSERT_FALSE(snap.csafe.machineStateFresh);
+    TEST_ASSERT_EQUAL(CsafeMachineState::Unknown, snap.csafe.qualifiedState);
+    TEST_ASSERT_EQUAL_UINT8(0, snap.csafe.rawStateByte);
+
+    orchestrator.end();
+}
+
+void test_csafe_provider_production_csafe_interface_path_functional() {
+    CsafeInterface csafe;
+    ApplicationOrchestrator orchestrator;
+    ApplicationOrchestratorDependencies deps{};
+    deps.csafeInterface = &csafe;
+    deps.csafeStateProvider = nullptr;
+    deps.csafeStateProviderContext = nullptr;
+
+    TEST_ASSERT_TRUE(orchestrator.begin(deps, OrchestratorExecutionMode::ExternalStep));
+    ApplicationTickContext ctx(1, 20000ULL, 20);
+    TEST_ASSERT_TRUE(orchestrator.step(ctx));
+
+    ApplicationSnapshot snap = orchestrator.getSnapshot();
+    CsafeState expected = csafe.getState();
+    TEST_ASSERT_EQUAL(expected.initialized, snap.csafe.initialized);
+    TEST_ASSERT_EQUAL(expected.linkStatus, snap.csafe.linkStatus);
+    TEST_ASSERT_EQUAL(expected.qualifiedState, snap.csafe.qualifiedState);
+
+    orchestrator.end();
+}
+
 void run_all_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_mailbox_fifo_and_overflow);
@@ -422,6 +593,11 @@ void run_all_tests() {
     RUN_TEST(test_side_rails_freeze_and_resume);
     RUN_TEST(test_workout_session_coordination_and_stop);
     RUN_TEST(test_t610_csafe_physically_verified_state_sequence);
+    RUN_TEST(test_csafe_provider_value_appears_in_snapshot);
+    RUN_TEST(test_csafe_provider_runner_dynamics_receives_identical_state);
+    RUN_TEST(test_csafe_provider_called_exactly_once_per_accepted_tick);
+    RUN_TEST(test_csafe_provider_null_with_null_interface_yields_default);
+    RUN_TEST(test_csafe_provider_production_csafe_interface_path_functional);
     UNITY_END();
 }
 

@@ -10,10 +10,45 @@
 namespace stridecontrol {
 
 TestbenchControlRuntime::TestbenchControlRuntime()
-    : composite_(speedSensor_, inclineSensor_, imu_) {}
+    : composite_(speedSensor_, inclineSensor_, imu_),
+      targetSink_(composite_, publishedInclineCommandContext_, inclineCommandContextMux_) {}
 
 TestbenchControlRuntime::~TestbenchControlRuntime() {
     end();
+}
+
+CsafeState TestbenchControlRuntime::provideSimulatedCsafe(
+    void* context
+) {
+    if (context == nullptr) {
+        return CsafeState{};
+    }
+
+    auto* runtime =
+        static_cast<TestbenchControlRuntime*>(context);
+
+    return runtime->composite_.getCsafeState();
+}
+
+InclineVerificationCommandInput TestbenchControlRuntime::provideSimulatedInclineCommandContext(
+    void* context
+) {
+    if (context == nullptr) {
+        return InclineVerificationCommandInput{};
+    }
+
+    auto* runtime =
+        static_cast<TestbenchControlRuntime*>(context);
+
+    return runtime->getInclineVerificationCommandInput();
+}
+
+InclineVerificationCommandInput TestbenchControlRuntime::getInclineVerificationCommandInput() const {
+    InclineVerificationCommandInput input{};
+    portENTER_CRITICAL(&inclineCommandContextMux_);
+    input = publishedInclineCommandContext_;
+    portEXIT_CRITICAL(&inclineCommandContextMux_);
+    return input;
 }
 
 bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, const BleConfig& bleConfig) {
@@ -27,6 +62,7 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     console_.begin(ConsoleExecutionMode::SoftwareSink);
     imu_.begin(ImuObservationMode::SoftwareObservation);
     runnerDynamics_.begin();
+    inclineVerifier_.begin();
 
     // 2. Initialize ApplicationOrchestrator in ExternalStep mode
     Serial.printf("[Testbench][BLE] Pre-init heap: free=%u, largest_free_block=%u, min_free=%u\n",
@@ -49,7 +85,12 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     deps.speedSensor = &speedSensor_;
     deps.inclineSensor = &inclineSensor_;
     deps.imuInterface = &imu_;
+    deps.csafeStateProvider = &TestbenchControlRuntime::provideSimulatedCsafe;
+    deps.csafeStateProviderContext = this;
+    deps.inclineCommandContextProvider = &TestbenchControlRuntime::provideSimulatedInclineCommandContext;
+    deps.inclineCommandContextProviderContext = this;
     deps.runnerDynamics = &runnerDynamics_;
+    deps.inclineVerifier = &inclineVerifier_;
     deps.diagnosticsService = &diagService_;
     deps.bleManager = &bleManager_;
     deps.hrClient = &heartRateClient_;
@@ -62,6 +103,10 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     session_.begin(sessionConfig);
     dispatcher_.begin();
     workoutEngine_.reset();
+
+    portENTER_CRITICAL(&inclineCommandContextMux_);
+    publishedInclineCommandContext_ = InclineVerificationCommandInput{};
+    portEXIT_CRITICAL(&inclineCommandContextMux_);
 
     composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 0, 0.0f, true);
 
@@ -77,7 +122,6 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
 
     portENTER_CRITICAL(&snapshotMux_);
     publishedSnapshot_ = orchestrator_.getSnapshot();
-    publishedSnapshot_.csafe = composite_.getCsafeState();
     publishedSessionSnapshot_ = session_.getSnapshot();
     publishedSimTargetSpeedKmh_ = composite_.getVirtualTreadmill().getTargetSpeedKmh();
     publishedSimTargetInclinePct_ = composite_.getVirtualTreadmill().getTargetInclinePct();
@@ -105,12 +149,17 @@ void TestbenchControlRuntime::end() {
         session_.end();
         workoutEngine_.reset();
         runnerDynamics_.end();
+        inclineVerifier_.end();
         imu_.end();
         inclineSensor_.end();
         speedSensor_.end();
         initialized_ = false;
         previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
         csafeStateInitialized_ = false;
+
+        portENTER_CRITICAL(&inclineCommandContextMux_);
+        publishedInclineCommandContext_ = InclineVerificationCommandInput{};
+        portEXIT_CRITICAL(&inclineCommandContextMux_);
     }
 }
 
@@ -126,7 +175,6 @@ bool TestbenchControlRuntime::armWorkout(const WorkoutDefinition& def, uint32_t 
     if (armed) {
         portENTER_CRITICAL(&snapshotMux_);
         publishedSnapshot_ = orchestrator_.getSnapshot();
-        publishedSnapshot_.csafe = composite_.getCsafeState();
         publishedSessionSnapshot_ = session_.getSnapshot();
         publishedSimTargetSpeedKmh_ = composite_.getVirtualTreadmill().getTargetSpeedKmh();
         publishedSimTargetInclinePct_ = composite_.getVirtualTreadmill().getTargetInclinePct();
@@ -304,7 +352,6 @@ void TestbenchControlRuntime::runTaskLoop() {
 
         // 3. Obtain authoritative ApplicationSnapshot representing resulting state
         ApplicationSnapshot snapshot = orchestrator_.getSnapshot();
-        snapshot.csafe = composite_.getCsafeState();
 
         if (rampTestActive_ && !rampTestComplete_) {
             const uint32_t elapsedMs = nowMs - rampTestStartMs_;
@@ -385,7 +432,7 @@ void TestbenchControlRuntime::runTaskLoop() {
             authorityLostSinceMs_ = 0; // Reset the loss streak - authority has recovered
 
             // 5. Tick domain session & target dispatcher
-            coordinator_.tick(session_, dispatcher_, composite_, snapshot, nowMs);
+            coordinator_.tick(session_, dispatcher_, targetSink_, snapshot, nowMs);
         } else {
             lostAuthorityCount_++;
             // Telemetry jitter freezes data integration, but must never freeze
