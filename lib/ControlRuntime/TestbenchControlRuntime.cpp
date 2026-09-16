@@ -122,6 +122,7 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     authorityLostSinceMs_ = 0;
     authorityLostReported_ = false;
     connectionWarningActive_ = false;
+    wasAuthoritative_ = false;
     minFreeStackBytes_ = 8192;
 
     portENTER_CRITICAL(&snapshotMux_);
@@ -382,7 +383,7 @@ void TestbenchControlRuntime::runTaskLoop() {
         }
 
         // 4. Evaluate authority
-        const bool authoritative = ControlRuntime::isSnapshotAuthoritative(snapshot, nowMs);
+        const bool authoritative = ControlRuntime::isSnapshotAuthoritative(snapshot, nowMs, &wasAuthoritative_);
         if (authoritative) {
             authorityLostReported_ = false;
             authorityLostSinceMs_ = 0; // Reset the loss streak - authority has recovered

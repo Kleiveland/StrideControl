@@ -53,8 +53,15 @@ public:
 
     /**
      * @brief Snapshot authority evaluation predicate.
+     * @param snapshot The application snapshot to evaluate.
+     * @param nowMs Current monotonic millisecond timestamp.
+     * @param wasAuthoritative Optional pointer to transition-tracking state.
      */
-    static bool isSnapshotAuthoritative(const ApplicationSnapshot& snapshot, uint32_t nowMs);
+    static bool isSnapshotAuthoritative(
+        const ApplicationSnapshot& snapshot,
+        uint32_t nowMs,
+        bool* wasAuthoritative = nullptr
+    );
 
     // Workout session lifecycle and rebinding safety guards
     bool armWorkout(const ExpandedWorkout* workout, uint32_t nowMs);
@@ -140,6 +147,7 @@ private:
     uint32_t lostAuthorityCount_ = 0;
     bool authorityLostReported_ = false;
     bool connectionWarningActive_ = false;
+    bool wasAuthoritative_ = false;
 
     ApplicationOrchestrator* orchestrator_ = nullptr;
     TaskHandle_t taskHandle_ = nullptr;

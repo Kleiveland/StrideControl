@@ -203,6 +203,7 @@ private:
     static constexpr uint32_t kAuthorityLossWarningThresholdMs = 5000;
     bool authorityLostReported_ = false;
     bool connectionWarningActive_ = false;
+    bool wasAuthoritative_ = false;
     uint32_t minFreeStackBytes_ = 8192;
 
     static constexpr uint32_t kPeriodMs = 20; // 50 Hz

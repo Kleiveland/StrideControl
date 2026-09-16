@@ -42,6 +42,7 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     lostAuthorityCount_ = 0;
     authorityLostReported_ = false;
     connectionWarningActive_ = false;
+    wasAuthoritative_ = false;
     previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
     csafeStateInitialized_ = false;
 
@@ -78,9 +79,9 @@ void ControlRuntime::end() {
 
 bool ControlRuntime::isSnapshotAuthoritative(
     const ApplicationSnapshot& snapshot,
-    uint32_t nowMs
+    uint32_t nowMs,
+    bool* wasAuthoritative
 ) {
-    static bool s_wasAuthoritative = false;
     const char* dropReason = nullptr;
     char reasonBuf[96]{};
 
@@ -138,19 +139,21 @@ bool ControlRuntime::isSnapshotAuthoritative(
 
     const bool authoritative = (dropReason == nullptr);
 
-    if (s_wasAuthoritative && !authoritative) {
-        Serial.printf("[Authority] DROPPED: Reason: %s | Time: %lu ms | Seq: %lu | Now: %lu ms\n",
-                      dropReason ? dropReason : "Unknown",
-                      static_cast<unsigned long>(snapshot.timestampMs),
-                      static_cast<unsigned long>(snapshot.sequenceNumber),
-                      static_cast<unsigned long>(nowMs));
-        DiagnosticsLog::instance().addEntryf("[Authority] DROPPED: Reason: %s | Time: %lu ms | Seq: %lu | Now: %lu ms",
-                                             dropReason ? dropReason : "Unknown",
-                                             static_cast<unsigned long>(snapshot.timestampMs),
-                                             static_cast<unsigned long>(snapshot.sequenceNumber),
-                                             static_cast<unsigned long>(nowMs));
+    if (wasAuthoritative != nullptr) {
+        if (*wasAuthoritative && !authoritative) {
+            Serial.printf("[Authority] DROPPED: Reason: %s | Time: %lu ms | Seq: %lu | Now: %lu ms\n",
+                          dropReason ? dropReason : "Unknown",
+                          static_cast<unsigned long>(snapshot.timestampMs),
+                          static_cast<unsigned long>(snapshot.sequenceNumber),
+                          static_cast<unsigned long>(nowMs));
+            DiagnosticsLog::instance().addEntryf("[Authority] DROPPED: Reason: %s | Time: %lu ms | Seq: %lu | Now: %lu ms",
+                                                 dropReason ? dropReason : "Unknown",
+                                                 static_cast<unsigned long>(snapshot.timestampMs),
+                                                 static_cast<unsigned long>(snapshot.sequenceNumber),
+                                                 static_cast<unsigned long>(nowMs));
+        }
+        *wasAuthoritative = authoritative;
     }
-    s_wasAuthoritative = authoritative;
 
     return authoritative;
 }
@@ -177,7 +180,7 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         rampTestTracker_.acknowledgeTargetDispatched();
     }
 
-    const bool authoritative = isSnapshotAuthoritative(snapshot, nowMs);
+    const bool authoritative = isSnapshotAuthoritative(snapshot, nowMs, &wasAuthoritative_);
 
     if (authoritative) {
         lastAuthoritativeTimestampMs_ = nowMs;
