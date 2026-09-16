@@ -3,6 +3,7 @@
 #if defined(STRIDECONTROL_TESTBENCH)
 
 #include <cstdint>
+#include <atomic>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
@@ -178,7 +179,7 @@ private:
     HeartRateClient heartRateClient_;
     RscService rscService_;
     FtmsService ftmsService_;
-    volatile bool simHeartRateFromSpeedEnabled_ = false;
+    std::atomic<bool> simHeartRateFromSpeedEnabled_{false};
 
     // Passive Composite Simulator
     TreadmillSimulatorComposite composite_;
