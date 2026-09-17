@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
@@ -158,8 +159,8 @@ private:
     ApplicationOrchestrator* orchestrator_ = nullptr;
     TaskHandle_t taskHandle_ = nullptr;
     SemaphoreHandle_t exitSem_ = nullptr;
-    volatile bool stopRequested_ = false;
-    volatile bool taskRunning_ = false;
+    std::atomic<bool> stopRequested_{false};
+    std::atomic<bool> taskRunning_{false};
 
     uint32_t loopCount_ = 0;
     uint32_t deadlineMissCount_ = 0;

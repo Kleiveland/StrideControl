@@ -200,8 +200,8 @@ private:
 
     TaskHandle_t taskHandle_ = nullptr;
     SemaphoreHandle_t exitSem_ = nullptr;
-    volatile bool taskRunning_ = false;
-    volatile bool stopRequested_ = false;
+    std::atomic<bool> taskRunning_{false};
+    std::atomic<bool> stopRequested_{false};
 
     bool initialized_ = false;
     CsafeMachineState previousCsafeQualifiedState_ = CsafeMachineState::Unknown;

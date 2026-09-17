@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <atomic>
 #include <cstddef>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -144,8 +145,8 @@ private:
 
     TaskHandle_t taskHandle_ = nullptr;
     SemaphoreHandle_t exitSem_ = nullptr;
-    volatile bool running_ = false;
-    volatile bool stopRequested_ = false;
+    std::atomic<bool> running_{false};
+    std::atomic<bool> stopRequested_{false};
 
     TaskHandle_t bleTaskHandle_ = nullptr;
     SemaphoreHandle_t bleExitSem_ = nullptr;
