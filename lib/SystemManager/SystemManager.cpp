@@ -11,7 +11,6 @@ SystemManager::SystemManager(
 
 bool SystemManager::begin(uint32_t nowMs) {
     state_ = SystemState::Initializing;
-    previousSpeedKmh_ = 0.0f;
     return controlRuntime_.begin();
 }
 
@@ -22,6 +21,7 @@ bool SystemManager::begin(ApplicationOrchestrator* orchestrator, uint32_t nowMs)
 }
 
 void SystemManager::end() {
+    state_ = SystemState::ShuttingDown;
     controlRuntime_.end();
     initialized_ = false;
     orchestrator_ = nullptr;
@@ -43,7 +43,7 @@ void SystemManager::update() {
         return;
     }
 
-    ApplicationSnapshot snap = orchestrator_->getSnapshot();
+    const ApplicationSnapshot snap = orchestrator_->getSnapshot();
     if (snap.timestampMs == 0 && snap.sequenceNumber == 0) {
         state_ = SystemState::Initializing;
         return;
@@ -53,69 +53,25 @@ void SystemManager::update() {
     if (snap.health.highestSeverity == FaultSeverity::Critical ||
         snap.health.highestSeverity == FaultSeverity::Fatal) {
         state_ = SystemState::Faulted;
-        previousSpeedKmh_ = snap.speed.speedKmh;
         return;
     }
 
-    // Recovering from Faulted state
-    if (state_ == SystemState::Faulted) {
-        if (snap.speed.speedKmh > 0.1f) {
-            state_ = SystemState::Stopping;
-        } else {
-            state_ = SystemState::Ready;
+    // 2. Initializing -> Operational, once sensors are confirmed ready
+    if (state_ == SystemState::Initializing) {
+        if (!snap.speed.initialized || !snap.incline.initialized) {
+            return; // still initializing
         }
     }
 
-    // 2. Operational State Machine Transitions
-    const float currentSpeed = snap.speed.speedKmh;
+    // 3. Degraded: a non-fatal issue is present. Own health only - never derived from raw
+    //    belt speed, which is CsafeMachineState's and WorkoutSessionState's responsibility.
+    const bool csafeCommsIssue = snap.csafe.initialized &&
+                                  (!snap.csafe.online || !snap.csafe.machineStateFresh);
+    const bool degraded = controlRuntime_.isConnectionWarningActive() ||
+                          snap.health.highestSeverity == FaultSeverity::Warning ||
+                          csafeCommsIssue;
 
-    switch (state_) {
-        case SystemState::Initializing:
-            if (snap.speed.initialized && snap.incline.initialized) {
-                state_ = (currentSpeed > 0.1f) ? SystemState::Running : SystemState::Ready;
-            }
-            break;
-
-        case SystemState::Ready:
-            if (currentSpeed > 0.1f) {
-                state_ = SystemState::Starting;
-            }
-            break;
-
-        case SystemState::Starting:
-            if (currentSpeed >= 0.5f) {
-                state_ = SystemState::Running;
-            } else if (currentSpeed <= 0.05f) {
-                state_ = SystemState::Ready;
-            }
-            break;
-
-        case SystemState::Running:
-            if (currentSpeed < previousSpeedKmh_ && currentSpeed < 0.5f) {
-                state_ = SystemState::Stopping;
-            } else if (currentSpeed <= 0.05f) {
-                state_ = SystemState::Ready;
-            }
-            break;
-
-        case SystemState::Stopping:
-            if (currentSpeed <= 0.05f) {
-                state_ = SystemState::Ready;
-            } else if (currentSpeed > previousSpeedKmh_ && currentSpeed >= 0.5f) {
-                state_ = SystemState::Running;
-            }
-            break;
-
-        case SystemState::Faulted:
-            // Latch handled above
-            break;
-
-        case SystemState::SafetyStop:
-            // Contract gap: ApplicationSnapshot contains no physical safety-stop hardware line.
-            break;
-    }
-
-    previousSpeedKmh_ = currentSpeed;
+    state_ = degraded ? SystemState::Degraded : SystemState::Operational;
 }
 
 SystemState SystemManager::getState() const {
@@ -124,10 +80,6 @@ SystemState SystemManager::getState() const {
 
 bool SystemManager::isFaulted() const {
     return state_ == SystemState::Faulted;
-}
-
-bool SystemManager::isSafetyStop() const {
-    return state_ == SystemState::SafetyStop;
 }
 
 InclineVerificationCommandInput SystemManager::getInclineVerificationCommandInput() const {

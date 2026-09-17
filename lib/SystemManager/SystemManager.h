@@ -44,7 +44,6 @@ public:
 
     SystemState getState() const;
     bool isFaulted() const;
-    bool isSafetyStop() const;
 
     static const char* version();
 
@@ -53,7 +52,6 @@ private:
     ApplicationOrchestrator* orchestrator_ = nullptr;
     SystemState state_ = SystemState::Initializing;
     bool initialized_ = false;
-    float previousSpeedKmh_ = 0.0f;
 };
 
 } // namespace stridecontrol
