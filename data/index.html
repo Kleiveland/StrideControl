@@ -3013,20 +3013,7 @@
                 targetUser = systemSettings.users.find(u => u.name === activeUserProfile.name);
             }
             if (!targetUser) {
-                const selectedBtn = document.querySelector('.user-btn.selected');
-                if (selectedBtn) {
-                    const userBtns = document.querySelectorAll('.user-btn');
-                    const selectedIdx = Array.from(userBtns).indexOf(selectedBtn);
-                    if (selectedIdx >= 0 && systemSettings.users[selectedIdx]) {
-                        targetUser = systemSettings.users[selectedIdx];
-                    }
-                }
-            }
-            if (!targetUser) {
-                targetUser = systemSettings.users[0];
-            }
-            if (!targetUser) {
-                console.error('[StrideControl] Ingen aktiv bruker funnet for lagring.');
+                console.error('[StrideControl] Ingen aktiv bruker funnet for lagring. Avbryter for a unnga a lagre pa feil bruker.');
                 return;
             }
 
