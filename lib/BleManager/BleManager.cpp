@@ -329,6 +329,8 @@ bool BleManager::buildAndStartAdvertising() {
     if (advertising_ == nullptr) {
         return false;
     }
+    advertising_->setMinInterval(240); // 240 * 0.625ms = 150ms
+    advertising_->setMaxInterval(480); // 480 * 0.625ms = 300ms
 
     NimBLEAdvertisementData advData;
     advData.setFlags(0x06); // LE General Discoverable Mode + BR/EDR Not Supported
