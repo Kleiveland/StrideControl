@@ -136,6 +136,7 @@ private:
 
     QueueHandle_t commandQueue_ = nullptr;
 
+    DiagnosticsService* diagnostics_ = nullptr;
     ConsoleInterface& console_;
 
     // STRICT MEMBER DECLARATION ORDER:

@@ -339,16 +339,24 @@ bool TestbenchControlRuntime::stopControlTask(uint32_t timeoutMs) {
     }
 
     if (taskHandle_ != nullptr) {
+        // Task must be removed either way to avoid a permanently stuck reference, but a
+        // forced (non-clean) deletion means the task may still have been mid-execution and
+        // could reference exitSem_ - do not delete it in that case.
         vTaskDelete(taskHandle_);
         taskHandle_ = nullptr;
     }
-
     taskRunning_ = false;
     stopRequested_ = false;
 
-    if (exitSem_ != nullptr) {
-        vSemaphoreDelete(exitSem_);
-        exitSem_ = nullptr;
+    if (cleanExit) {
+        if (exitSem_ != nullptr) {
+            vSemaphoreDelete(exitSem_);
+            exitSem_ = nullptr;
+        }
+    } else {
+        // Forced termination: report it, and deliberately leak exitSem_ rather than risk a
+        // use-after-free on a task that may not have actually stopped touching it yet.
+        diagService_.reportFault(FaultCode::SystemWatchdogWarning, millis());
     }
 
     return cleanExit;
