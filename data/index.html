@@ -3471,17 +3471,14 @@
                     renderTimelines(activeWorkout, false, telem.session.actualStepDurationsMs ?? [], liveCurrentStep);
                     applyLiveTimelineProgress(telem.session.stepIndex ?? 0, telem.session.stepProgressFraction ?? 0);
 
-                    const seq = buildExecutionSequence(activeWorkout);
-                    const currentStep = seq[currentIdx];
-                    const isDragStep = currentStep && currentStep.role === 'drag';
-                    const canStartDragNow = currentStep && currentStep.role !== 'drag' &&
-                        seq.slice(currentIdx + 1).some(s => s.role === 'drag');
+                    const isDragStep = telem.session?.currentRole === 'WORK';
+                    const canStartDragNow = telem.session?.currentRole !== 'WORK' && telem.session?.hasUpcomingDragStep === true;
 
                     if (kuttDragBtn) kuttDragBtn.style.display = isDragStep ? '' : 'none';
                     if (gotoDragRunBtn) gotoDragRunBtn.style.display = canStartDragNow ? '' : 'none';
                     if (gotoDragP2Btn) gotoDragP2Btn.style.display = canStartDragNow ? '' : 'none';
 
-                    const isRestStep = currentStep && currentStep.role === 'rest';
+                    const isRestStep = telem.session?.currentRole === 'REST';
                     if (extendRestRunBtn) extendRestRunBtn.style.display = isRestStep ? '' : 'none';
                 } else {
                     if (kuttDragBtn) kuttDragBtn.style.display = 'none';

@@ -976,6 +976,18 @@ bool WorkoutSession::skipToNextDrag(uint32_t nowMs) {
     return true;
 }
 
+bool WorkoutSession::hasUpcomingDragStep() const {
+    if (!initialized_ || !snapshot_.active || workout_ == nullptr) {
+        return false;
+    }
+    for (uint8_t i = snapshot_.currentStepIndex + 1; i < workout_->totalSteps; ++i) {
+        if (workout_->steps[i].role == StepRole::WORK) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool WorkoutSession::extendRest(uint32_t extensionSeconds) {
     if (!initialized_ || !snapshot_.active || snapshot_.state != WorkoutSessionState::Running ||
         snapshot_.currentStep.role != StepRole::REST || extensionSeconds == 0) {
@@ -1049,6 +1061,7 @@ WorkoutSessionSnapshot WorkoutSession::getSnapshot() const {
     WorkoutSessionSnapshot snap = snapshot_;
     snap.activeUserId = activeUserId_;
     snap.hasActiveUser = hasActiveUser_;
+    snap.hasUpcomingDragStep = hasUpcomingDragStep();
     return snap;
 }
 

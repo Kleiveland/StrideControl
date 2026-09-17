@@ -60,6 +60,7 @@ public:
     bool cutDrag(uint32_t nowMs);
     bool extendRest(uint32_t extensionSeconds = 30);
     bool skipToNextDrag(uint32_t nowMs);
+    bool hasUpcomingDragStep() const;
     bool advanceToNextStep(uint32_t nowMs);
     bool abortSession(uint32_t nowMs);
     bool finalizeSession(uint32_t nowMs);

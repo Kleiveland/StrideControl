@@ -207,6 +207,8 @@ void WebServerManager::registerRoutes() {
         session["totalValidatedDistanceKm"] = report.totalValidatedDistanceKm;
         session["activeUserId"] = report.activeUserId;
         session["hasActiveUser"] = report.hasActiveUser;
+        session["currentRole"] = stepRoleName(report.currentRole);
+        session["hasUpcomingDragStep"] = report.hasUpcomingDragStep;
         session["avgHeartRateBpm"] = report.avgHeartRateBpm;
         session["maxHeartRateBpm"] = report.maxHeartRateBpm;
         session["heartRateEverValid"] = report.heartRateEverValid;

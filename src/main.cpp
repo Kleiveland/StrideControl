@@ -77,6 +77,8 @@ public:
         report.totalValidatedDistanceKm = telem.sessionSnapshot.totalValidatedDistanceKm;
         report.activeUserId = telem.sessionSnapshot.activeUserId;
         report.hasActiveUser = telem.sessionSnapshot.hasActiveUser;
+        report.currentRole = telem.sessionSnapshot.currentRole;
+        report.hasUpcomingDragStep = telem.sessionSnapshot.hasUpcomingDragStep;
         report.avgHeartRateBpm = telem.sessionSnapshot.avgHeartRateBpm;
         report.maxHeartRateBpm = telem.sessionSnapshot.maxHeartRateBpm;
         report.heartRateEverValid = telem.sessionSnapshot.heartRateEverValid;
@@ -177,6 +179,8 @@ public:
         report.totalValidatedDistanceKm = sessSnap.totalValidatedDistanceKm;
         report.activeUserId = sessSnap.activeUserId;
         report.hasActiveUser = sessSnap.hasActiveUser;
+        report.currentRole = sessSnap.currentRole;
+        report.hasUpcomingDragStep = sessSnap.hasUpcomingDragStep;
         report.avgHeartRateBpm = sessSnap.avgHeartRateBpm;
         report.maxHeartRateBpm = sessSnap.maxHeartRateBpm;
         report.heartRateEverValid = sessSnap.heartRateEverValid;

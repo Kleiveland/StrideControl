@@ -34,6 +34,8 @@ struct TelemetryReport {
     double totalValidatedDistanceKm = 0.0;
     uint8_t activeUserId = 0;
     bool hasActiveUser = false;
+    StepRole currentRole = StepRole::WARMUP;
+    bool hasUpcomingDragStep = false;
     uint32_t avgHeartRateBpm = 0;
     uint8_t maxHeartRateBpm = 0;
     bool heartRateEverValid = false;

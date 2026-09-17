@@ -87,6 +87,7 @@ struct WorkoutSessionSnapshot {
 
     ExpandedStep currentStep{};
     StepRole currentRole = StepRole::WORK;
+    bool hasUpcomingDragStep = false;
     uint16_t currentRep = 0;
     uint16_t totalRepsInGroup = 0;
 
