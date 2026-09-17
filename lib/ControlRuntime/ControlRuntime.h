@@ -121,6 +121,11 @@ private:
     void runTaskLoop();
     void processQueuedCommands(uint32_t nowMs);
     void publishInclineVerificationCommandInput();
+    void publishSnapshots();
+
+    mutable portMUX_TYPE snapshotMux_ = portMUX_INITIALIZER_UNLOCKED;
+    WorkoutSessionSnapshot publishedSessionSnapshot_{};
+    TreadmillControllerSnapshot publishedControllerSnapshot_{};
 
     mutable portMUX_TYPE inclineCommandContextMux_ = portMUX_INITIALIZER_UNLOCKED;
     InclineVerificationCommandInput publishedInclineCommandContext_{};

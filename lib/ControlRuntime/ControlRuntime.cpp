@@ -44,7 +44,10 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     connectionWarningActive_ = false;
     wasAuthoritative_ = false;
     previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
-    csafeStateInitialized_ = false;
+    portENTER_CRITICAL(&snapshotMux_);
+    publishedSessionSnapshot_ = WorkoutSessionSnapshot{};
+    publishedControllerSnapshot_ = TreadmillControllerSnapshot{};
+    portEXIT_CRITICAL(&snapshotMux_);
 
     portENTER_CRITICAL(&inclineCommandContextMux_);
     publishedInclineCommandContext_ = InclineVerificationCommandInput{};
@@ -54,6 +57,8 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     publishedCommandExecutionStatus_ = CommandExecutionStatus{};
     portEXIT_CRITICAL(&commandExecutionStatusMux_);
     lastReportedAbortedRequestId_ = 0;
+
+    publishSnapshots();
 
     return true;
 }
@@ -73,6 +78,11 @@ void ControlRuntime::end() {
         initialized_ = false;
         previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
         csafeStateInitialized_ = false;
+
+        portENTER_CRITICAL(&snapshotMux_);
+        publishedSessionSnapshot_ = WorkoutSessionSnapshot{};
+        publishedControllerSnapshot_ = TreadmillControllerSnapshot{};
+        portEXIT_CRITICAL(&snapshotMux_);
 
         portENTER_CRITICAL(&inclineCommandContextMux_);
         publishedInclineCommandContext_ = InclineVerificationCommandInput{};
@@ -274,6 +284,7 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
     // 4. Publish latest incline verification command input and command execution status for cross-core consumers
     publishInclineVerificationCommandInput();
     publishCommandExecutionStatus();
+    publishSnapshots();
 }
 
 bool ControlRuntime::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs) {
@@ -285,7 +296,11 @@ bool ControlRuntime::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs) 
         return false;
     }
     dispatcher_.clearForNewSession();
-    return session_.armWorkout(workout, nowMs);
+    const bool armed = session_.armWorkout(workout, nowMs);
+    if (armed) {
+        publishSnapshots();
+    }
+    return armed;
 }
 
 bool ControlRuntime::abortWorkout(uint32_t nowMs) {
@@ -293,7 +308,11 @@ bool ControlRuntime::abortWorkout(uint32_t nowMs) {
         return false;
     }
     dispatcher_.clearWorkoutTargets();
-    return session_.abortSession(nowMs);
+    const bool aborted = session_.abortSession(nowMs);
+    if (aborted) {
+        publishSnapshots();
+    }
+    return aborted;
 }
 
 bool ControlRuntime::finalizeWorkout(uint32_t nowMs) {
@@ -301,7 +320,11 @@ bool ControlRuntime::finalizeWorkout(uint32_t nowMs) {
         return false;
     }
     dispatcher_.clearWorkoutTargets();
-    return session_.finalizeSession(nowMs);
+    const bool finalized = session_.finalizeSession(nowMs);
+    if (finalized) {
+        publishSnapshots();
+    }
+    return finalized;
 }
 
 bool ControlRuntime::canSafelyModifyWorkoutEngine() const {
@@ -571,11 +594,28 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
 }
 
 WorkoutSessionSnapshot ControlRuntime::getSessionSnapshot() const {
-    return session_.getSnapshot();
+    WorkoutSessionSnapshot snap{};
+    portENTER_CRITICAL(&snapshotMux_);
+    snap = publishedSessionSnapshot_;
+    portEXIT_CRITICAL(&snapshotMux_);
+    return snap;
 }
 
 TreadmillControllerSnapshot ControlRuntime::getControllerSnapshot() const {
-    return controller_.getSnapshot();
+    TreadmillControllerSnapshot snap{};
+    portENTER_CRITICAL(&snapshotMux_);
+    snap = publishedControllerSnapshot_;
+    portEXIT_CRITICAL(&snapshotMux_);
+    return snap;
+}
+
+void ControlRuntime::publishSnapshots() {
+    const WorkoutSessionSnapshot sessSnap = session_.getSnapshot();
+    const TreadmillControllerSnapshot ctrlSnap = controller_.getSnapshot();
+    portENTER_CRITICAL(&snapshotMux_);
+    publishedSessionSnapshot_ = sessSnap;
+    publishedControllerSnapshot_ = ctrlSnap;
+    portEXIT_CRITICAL(&snapshotMux_);
 }
 
 StagedTargets ControlRuntime::getStagedTargets() const {
