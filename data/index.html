@@ -2823,6 +2823,13 @@
         function applyUserProfile(user) {
             if (!user) return;
             activeUserProfile = user;
+            if (user && user.id !== undefined && user.id !== null) {
+                fetch('/api/v1/control/selectuser', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ userId: user.id })
+                }).catch(() => {});
+            }
             const validName = isValidUserName(user.name) ? user.name : '';
             activeUser = validName;
 
@@ -3835,6 +3842,14 @@
 
             if (data.session && typeof data.session.state === 'string') {
                 syncIntervalViewOnStateChange(data.session.state);
+            }
+
+            if (!activeUserProfile && data.session?.hasActiveUser && systemSettings?.users) {
+                const restoredUser = systemSettings.users.find(u => u.id === data.session.activeUserId);
+                if (restoredUser) {
+                    activeUserProfile = restoredUser;
+                    applyUserProfile(restoredUser);
+                }
             }
         }
 

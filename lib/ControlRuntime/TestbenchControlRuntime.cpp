@@ -675,6 +675,9 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual, cmdNowMs);
                 break;
+            case ControlCommandType::SelectUser:
+                session_.selectUser(cmd.data.selectUser.userId);
+                break;
             case ControlCommandType::None:
             default:
                 break;

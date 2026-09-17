@@ -63,6 +63,7 @@ public:
     bool advanceToNextStep(uint32_t nowMs);
     bool abortSession(uint32_t nowMs);
     bool finalizeSession(uint32_t nowMs);
+    void selectUser(uint8_t userId);
 
     WorkoutSessionSnapshot getSnapshot() const;
     WorkoutCommandIntent getPendingCommandIntent() const;
@@ -86,6 +87,9 @@ private:
     const ExpandedWorkout* workout_ = nullptr;
     WorkoutSessionSnapshot snapshot_{};
     WorkoutCommandIntent pendingIntent_{};
+
+    uint8_t activeUserId_ = 0;
+    bool hasActiveUser_ = false;
 
     bool initialized_ = false;
     uint32_t sessionGeneration_ = 0;

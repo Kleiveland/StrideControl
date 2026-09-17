@@ -1038,8 +1038,18 @@ bool WorkoutSession::finalizeSession(uint32_t nowMs) {
     return true;
 }
 
+void WorkoutSession::selectUser(uint8_t userId) {
+    activeUserId_ = userId;
+    hasActiveUser_ = true;
+    snapshot_.activeUserId = userId;
+    snapshot_.hasActiveUser = true;
+}
+
 WorkoutSessionSnapshot WorkoutSession::getSnapshot() const {
-    return snapshot_;
+    WorkoutSessionSnapshot snap = snapshot_;
+    snap.activeUserId = activeUserId_;
+    snap.hasActiveUser = hasActiveUser_;
+    return snap;
 }
 
 WorkoutCommandIntent WorkoutSession::getPendingCommandIntent() const {

@@ -24,7 +24,8 @@ enum class ControlCommandType : uint8_t {
     AcceptSpeedShift,
     RejectSpeedShift,
     StartRampCalibrationTest,
-    SetGuiMode
+    SetGuiMode,
+    SelectUser
 };
 
 struct ControlCommand {
@@ -49,6 +50,9 @@ struct ControlCommand {
             uint8_t userId;
             bool isManual;
         } guiMode;
+        struct {
+            uint8_t userId;
+        } selectUser;
         struct {
             float startSpeedKmh;
             float targetSpeedKmh;

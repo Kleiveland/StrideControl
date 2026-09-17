@@ -205,6 +205,8 @@ void WebServerManager::registerRoutes() {
         session["elapsedTimeMs"] = report.totalElapsedTimeMs;
         session["totalElevationMeters"] = report.totalElevationMeters;
         session["totalValidatedDistanceKm"] = report.totalValidatedDistanceKm;
+        session["activeUserId"] = report.activeUserId;
+        session["hasActiveUser"] = report.hasActiveUser;
         session["avgHeartRateBpm"] = report.avgHeartRateBpm;
         session["maxHeartRateBpm"] = report.maxHeartRateBpm;
         session["heartRateEverValid"] = report.heartRateEverValid;
@@ -943,6 +945,66 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/control/mode", HTTP_POST, setGuiModeHandler, nullptr, commandBodyBuffer);
     server_.on("/api/v1/control/mode", HTTP_POST, setGuiModeHandler, nullptr, commandBodyBuffer);
+
+    auto selectUserHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+        if (commandStager_ == nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        bool hasUserId = false;
+        uint8_t userId = 0;
+
+        if (request->_tempObject) {
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received != buffer->capacity) {
+                free(buffer);
+                request->_tempObject = nullptr;
+                request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+                return;
+            }
+            if (buffer->received > 0) {
+                JsonDocument doc;
+                DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+                if (!err) {
+                    if (doc.containsKey("userId")) {
+                        hasUserId = true;
+                        userId = doc["userId"].as<uint8_t>();
+                    }
+                }
+            }
+            free(buffer);
+            request->_tempObject = nullptr;
+        }
+
+        if (!hasUserId) {
+            request->send(400, "application/json", "{\"error\":\"Missing userId\"}");
+            return;
+        }
+
+        ControlCommand cmd{};
+        cmd.timestampMs = millis();
+        cmd.type = ControlCommandType::SelectUser;
+        cmd.data.selectUser.userId = userId;
+
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/selectuser", HTTP_POST, selectUserHandler, nullptr, commandBodyBuffer);
+    server_.on("/api/v1/control/selectuser", HTTP_POST, selectUserHandler, nullptr, commandBodyBuffer);
 
     auto inclineHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {

@@ -75,6 +75,8 @@ public:
         report.totalElapsedTimeMs = telem.sessionSnapshot.totalElapsedTimeMs;
         report.totalElevationMeters = telem.sessionSnapshot.totalElevationMeters;
         report.totalValidatedDistanceKm = telem.sessionSnapshot.totalValidatedDistanceKm;
+        report.activeUserId = telem.sessionSnapshot.activeUserId;
+        report.hasActiveUser = telem.sessionSnapshot.hasActiveUser;
         report.avgHeartRateBpm = telem.sessionSnapshot.avgHeartRateBpm;
         report.maxHeartRateBpm = telem.sessionSnapshot.maxHeartRateBpm;
         report.heartRateEverValid = telem.sessionSnapshot.heartRateEverValid;
@@ -173,6 +175,8 @@ public:
         report.totalElapsedTimeMs = sessSnap.totalElapsedTimeMs;
         report.totalElevationMeters = sessSnap.totalElevationMeters;
         report.totalValidatedDistanceKm = sessSnap.totalValidatedDistanceKm;
+        report.activeUserId = sessSnap.activeUserId;
+        report.hasActiveUser = sessSnap.hasActiveUser;
         report.avgHeartRateBpm = sessSnap.avgHeartRateBpm;
         report.maxHeartRateBpm = sessSnap.maxHeartRateBpm;
         report.heartRateEverValid = sessSnap.heartRateEverValid;

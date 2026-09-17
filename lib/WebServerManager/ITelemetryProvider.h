@@ -32,6 +32,8 @@ struct TelemetryReport {
     uint32_t totalElapsedTimeMs = 0;
     double totalElevationMeters = 0.0;
     double totalValidatedDistanceKm = 0.0;
+    uint8_t activeUserId = 0;
+    bool hasActiveUser = false;
     uint32_t avgHeartRateBpm = 0;
     uint8_t maxHeartRateBpm = 0;
     bool heartRateEverValid = false;
