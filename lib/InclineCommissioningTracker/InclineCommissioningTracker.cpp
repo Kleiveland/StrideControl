@@ -1,4 +1,4 @@
-﻿#include "InclineCommissioningTracker.h"
+#include "InclineCommissioningTracker.h"
 #include <algorithm>
 
 namespace stridecontrol {
@@ -15,7 +15,7 @@ void InclineCommissioningTracker::beginHoming(uint32_t nowMs) {
 }
 
 void InclineCommissioningTracker::onHomedConfirmed(uint32_t nowMs) {
-    if (phase_ == InclineCommissioningPhase::Homing || phase_ == InclineCommissioningPhase::Idle) {
+    if (phase_ == InclineCommissioningPhase::HomedSettled || phase_ == InclineCommissioningPhase::Idle) {
         phase_ = InclineCommissioningPhase::Idle;
         points_[0] = InclineCalibrationPoint{0.0f, 0.0f};
         pointCount_ = 1;
@@ -45,6 +45,33 @@ void InclineCommissioningTracker::update(float pulseSensorReportedPct, float imu
     if (phase_ == InclineCommissioningPhase::Homing) {
         if (nowMs - homingStartMs_ >= config_.homingTimeoutMs) {
             phase_ = InclineCommissioningPhase::TimedOut;
+            stableActive_ = false;
+            stableSinceMs_ = 0;
+            return;
+        }
+
+        const bool pulseNearZero = std::isfinite(pulseSensorReportedPct) &&
+            (std::abs(pulseSensorReportedPct - 0.0f) <= config_.arrivalTolerancePct);
+        const bool imuValid = imuDataValid && std::isfinite(imuRelativeDeckAngleDeg);
+
+        if (pulseNearZero && imuValid) {
+            if (!stableActive_) {
+                stableActive_ = true;
+                stableSinceMs_ = nowMs;
+                lastSampleAngleDeg_ = imuRelativeDeckAngleDeg;
+            } else {
+                if (std::abs(imuRelativeDeckAngleDeg - lastSampleAngleDeg_) > config_.stabilityAngleToleranceDeg) {
+                    stableSinceMs_ = nowMs;
+                    lastSampleAngleDeg_ = imuRelativeDeckAngleDeg;
+                } else if (nowMs - stableSinceMs_ >= config_.stableDurationMs) {
+                    phase_ = InclineCommissioningPhase::HomedSettled;
+                    stableActive_ = false;
+                    stableSinceMs_ = 0;
+                }
+            }
+        } else {
+            stableActive_ = false;
+            stableSinceMs_ = 0;
         }
         return;
     }
@@ -175,6 +202,10 @@ void InclineCommissioningTracker::reset() {
 
 InclineCommissioningPhase InclineCommissioningTracker::phase() const {
     return phase_;
+}
+
+bool InclineCommissioningTracker::isHomedSettled() const {
+    return phase_ == InclineCommissioningPhase::HomedSettled;
 }
 
 bool InclineCommissioningTracker::currentPointDirectionConfirmed() const {

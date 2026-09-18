@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <cstdint>
 #include <cmath>
@@ -11,6 +11,7 @@ namespace stridecontrol {
 enum class InclineCommissioningPhase : uint8_t {
     Idle = 0,
     Homing,
+    HomedSettled,   // Pulse sensor near 0% and IMU stable, ready for caller to confirm
     MeasuringPoint,
     Complete,
     Failed,
@@ -41,6 +42,7 @@ public:
     void reset();
 
     InclineCommissioningPhase phase() const;
+    bool isHomedSettled() const;
     bool currentPointDirectionConfirmed() const; // True once IMU confirmed movement in expectedDirection for this point
     InclineConfig buildCandidateConfig() const;  // Assembles all confirmed points into an InclineConfig, once all target points have been measured
     bool timedOut() const;
