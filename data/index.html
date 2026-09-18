@@ -3018,19 +3018,15 @@
                 return;
             }
 
-            // Snapshot previous values for rollback on error
-            const prevHvile = targetUser.hvileSpeedKmh;
-            const prevDrag = targetUser.dragSpeedKmh;
-            const prevSpd = targetUser.speedQuickKeys ? [...targetUser.speedQuickKeys] : null;
-            const prevInc = targetUser.inclineQuickKeys ? [...targetUser.inclineQuickKeys] : null;
+            // Build an isolated candidate - never mutate targetUser/activeUserProfile until confirmed saved
+            const candidateUser = { ...targetUser };
 
-            // Read floats from #inp-hvile and #inp-drag
+            // Read DOM inputs into candidateUser only (not targetUser, not activeUserProfile)
             const inpHvile = document.getElementById('inp-hvile');
             if (inpHvile) {
                 const hVal = parseFloat(inpHvile.value.replace('+', '').replace(',', '.'));
                 if (!isNaN(hVal) && hVal >= 0.5 && hVal <= 20.0) {
-                    targetUser.hvileSpeedKmh = hVal;
-                    if (activeUserProfile) activeUserProfile.hvileSpeedKmh = hVal;
+                    candidateUser.hvileSpeedKmh = hVal;
                 }
             }
 
@@ -3038,8 +3034,7 @@
             if (inpDrag) {
                 const dVal = parseFloat(inpDrag.value.replace('+', '').replace(',', '.'));
                 if (!isNaN(dVal) && dVal >= 0.5 && dVal <= 25.0) {
-                    targetUser.dragSpeedKmh = dVal;
-                    if (activeUserProfile) activeUserProfile.dragSpeedKmh = dVal;
+                    candidateUser.dragSpeedKmh = dVal;
                 }
             }
 
@@ -3047,9 +3042,8 @@
             const hotkeySpdBtns = document.querySelectorAll('#modal-hotkeys-edit .btn-speed');
             if (hotkeySpdBtns.length === 8) {
                 const spdArr = Array.from(hotkeySpdBtns).map(b => parseFloat(b.innerText.replace(',', '.')));
-                if (spdArr.every(v => !isNaN(v) && v >= 0.5 && v <= 22.0)) {
-                    targetUser.speedQuickKeys = spdArr;
-                    if (activeUserProfile) activeUserProfile.speedQuickKeys = spdArr;
+                if (spdArr.every(v => !isNaN(v) && v >= 0.5 && v <= maxAchievableSpeedKmh)) {
+                    candidateUser.speedQuickKeys = spdArr;
                 }
             }
 
@@ -3057,25 +3051,33 @@
             if (hotkeyIncBtns.length === 8) {
                 const incArr = Array.from(hotkeyIncBtns).map(b => parseInt(b.innerText, 10));
                 if (incArr.every(v => !isNaN(v) && v >= 0 && v <= 15)) {
-                    targetUser.inclineQuickKeys = incArr;
-                    if (activeUserProfile) activeUserProfile.inclineQuickKeys = incArr;
+                    candidateUser.inclineQuickKeys = incArr;
                 }
             }
+
+            // Build the request payload as a copy of systemSettings with the candidate substituted in -
+            // systemSettings itself is never touched until the save is confirmed
+            const payloadSettings = {
+                ...systemSettings,
+                users: systemSettings.users.map(u => u === targetUser ? candidateUser : u)
+            };
 
             // Execute POST request to /api/settings
             try {
                 const res = await fetch('/api/settings', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(systemSettings)
+                    body: JSON.stringify(payloadSettings)
                 });
 
                 if (!res.ok) {
                     throw new Error(`HTTP ${res.status} ${res.statusText}`);
                 }
 
-                // Immediate in-memory dashboard refresh without GET or reload
-                if (activeUserProfile) {
+                // Only now, after confirmed success, apply the candidate to the real, live objects
+                Object.assign(targetUser, candidateUser);
+                if (activeUserProfile && activeUserProfile.id === targetUser.id) {
+                    Object.assign(activeUserProfile, candidateUser);
                     applyUserProfile(activeUserProfile);
                 }
 
@@ -3084,18 +3086,7 @@
                 document.getElementById('modal-hotkeys-edit')?.classList.remove('active');
                 showGlobalToast('INNSTILLINGER LAGRET');
             } catch (err) {
-                // Revert in-memory mutations on error
-                targetUser.hvileSpeedKmh = prevHvile;
-                targetUser.dragSpeedKmh = prevDrag;
-                targetUser.speedQuickKeys = prevSpd;
-                targetUser.inclineQuickKeys = prevInc;
-                if (activeUserProfile) {
-                    activeUserProfile.hvileSpeedKmh = prevHvile;
-                    activeUserProfile.dragSpeedKmh = prevDrag;
-                    activeUserProfile.speedQuickKeys = prevSpd;
-                    activeUserProfile.inclineQuickKeys = prevInc;
-                    applyUserProfile(activeUserProfile);
-                }
+                // Nothing to revert - targetUser/activeUserProfile were never mutated before this point
                 alert('Kunne ikke lagre innstillinger: ' + err.message);
                 console.error('[StrideControl] Feil ved lagring av innstillinger:', err);
             }
