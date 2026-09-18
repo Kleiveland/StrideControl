@@ -5,18 +5,11 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+#include "../InclineCalibration/InclineCalibrationTypes.h"
 
 namespace stridecontrol {
 
 constexpr size_t kMaxSpeedCalibrationPoints = 10;
-
-/**
- * @brief Incline subsystem persistent calibration and configuration.
- */
-struct InclineConfig {
-    int32_t homingOffset = 0;
-    bool isCalibrated = false;
-};
 
 /**
  * @brief Individual physical-to-command speed calibration point.
@@ -46,13 +39,6 @@ struct SpeedConfig {
 struct MaintenanceConfig {
     uint64_t totalDistanceMeters = 0;
     uint64_t totalTimeSeconds = 0;
-};
-
-enum class CalibrationSource : uint8_t {
-    Unknown = 0,
-    FactoryDefault = 1,
-    Simulated = 2,
-    PhysicalCommissioning = 3
 };
 
 /**

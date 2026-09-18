@@ -155,8 +155,16 @@ InclineConfig SettingsService::getInclineConfig() {
     if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
         Preferences prefs;
         if (prefs.begin(kNvsNamespace, true)) {
-            cfg.homingOffset = prefs.getInt("inc_offset", 0);
-            cfg.isCalibrated = prefs.getBool("inc_cal", false);
+            cfg.maxAchievableInclinePct = prefs.getFloat("inc_max", 15.0f);
+            cfg.maxAchievableInclineVerified = prefs.getBool("inc_max_v", false);
+            cfg.commandMapValid = prefs.getBool("inc_map_v", false);
+            cfg.pointCount = prefs.getUChar("inc_pts", 0);
+            if (cfg.pointCount > kMaxInclineCalibrationPoints) {
+                cfg.pointCount = kMaxInclineCalibrationPoints;
+            }
+            prefs.getBytes("inc_data", cfg.points.data(), cfg.pointCount * sizeof(InclineCalibrationPoint));
+            cfg.source = static_cast<CalibrationSource>(prefs.getUChar("inc_src", static_cast<uint8_t>(CalibrationSource::Unknown)));
+            cfg.calibratedAtMs = prefs.getUInt("inc_cal_ms", 0);
             prefs.end();
         }
         xSemaphoreGive(mutex_);
@@ -203,8 +211,15 @@ bool SettingsService::saveInclineConfig(const InclineConfig& config) {
     if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
         Preferences prefs;
         if (prefs.begin(kNvsNamespace, false)) {
-            prefs.putInt("inc_offset", config.homingOffset);
-            prefs.putBool("inc_cal", config.isCalibrated);
+            prefs.putFloat("inc_max", config.maxAchievableInclinePct);
+            prefs.putBool("inc_max_v", config.maxAchievableInclineVerified);
+            prefs.putBool("inc_map_v", config.commandMapValid);
+            prefs.putUChar("inc_pts", config.pointCount);
+            if (config.pointCount > 0) {
+                prefs.putBytes("inc_data", config.points.data(), config.pointCount * sizeof(InclineCalibrationPoint));
+            }
+            prefs.putUChar("inc_src", static_cast<uint8_t>(config.source));
+            prefs.putUInt("inc_cal_ms", config.calibratedAtMs);
             prefs.end();
             ok = true;
         }
