@@ -119,6 +119,8 @@ public:
 
     static const char* version();
 
+    void requestInclineCommissioningAction(bool confirmHomed, bool zeroImu);
+
 private:
     static void taskEntry(void* param);
     void runLoop();
@@ -145,6 +147,9 @@ private:
 
     mutable portMUX_TYPE snapshotMux_ = portMUX_INITIALIZER_UNLOCKED;
     mutable portMUX_TYPE metricsMux_ = portMUX_INITIALIZER_UNLOCKED;
+    mutable portMUX_TYPE inclineCommissioningActionMux_ = portMUX_INITIALIZER_UNLOCKED;
+    bool pendingConfirmInclineHomed_ = false;
+    bool pendingZeroImuAngle_ = false;
 
     ApplicationOrchestratorDependencies deps_{};
     ApplicationSnapshot publishedSnapshot_{};

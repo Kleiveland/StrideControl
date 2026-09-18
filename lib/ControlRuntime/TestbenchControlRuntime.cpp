@@ -97,6 +97,10 @@ void TestbenchControlRuntime::publishCommandExecutionStatus() {
     portEXIT_CRITICAL(&commandExecutionStatusMux_);
 }
 
+void TestbenchControlRuntime::requestInclineCommissioningAction(bool confirmHomed, bool zeroImu) {
+    orchestrator_.requestInclineCommissioningAction(confirmHomed, zeroImu);
+}
+
 bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, const BleConfig& bleConfig) {
     if (initialized_) {
         return true;

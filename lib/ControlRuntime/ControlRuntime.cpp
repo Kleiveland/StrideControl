@@ -713,6 +713,12 @@ CommandExecutionStatus ControlRuntime::getCommandExecutionStatus() const {
     return status;
 }
 
+void ControlRuntime::requestInclineCommissioningAction(bool confirmHomed, bool zeroImu) {
+    if (orchestrator_ != nullptr) {
+        orchestrator_->requestInclineCommissioningAction(confirmHomed, zeroImu);
+    }
+}
+
 float ControlRuntime::getMaxAchievableSpeedKmh() const {
     return calibration_.getMaxAchievableSpeedKmh();
 }

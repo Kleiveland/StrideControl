@@ -374,6 +374,17 @@ const char* ApplicationOrchestrator::version() {
     return "1.3.0";
 }
 
+void ApplicationOrchestrator::requestInclineCommissioningAction(bool confirmHomed, bool zeroImu) {
+    portENTER_CRITICAL(&inclineCommissioningActionMux_);
+    if (confirmHomed) {
+        pendingConfirmInclineHomed_ = true;
+    }
+    if (zeroImu) {
+        pendingZeroImuAngle_ = true;
+    }
+    portEXIT_CRITICAL(&inclineCommissioningActionMux_);
+}
+
 void ApplicationOrchestrator::taskEntry(void* param) {
     auto* self = static_cast<ApplicationOrchestrator*>(param);
     if (self != nullptr) {
@@ -454,6 +465,22 @@ bool ApplicationOrchestrator::executePipelineStep(const ApplicationTickContext& 
     }
     if (deps_.imuInterface != nullptr) {
         deps_.imuInterface->update();
+    }
+
+    bool localConfirmHomed = false;
+    bool localZeroImu = false;
+    portENTER_CRITICAL(&inclineCommissioningActionMux_);
+    localConfirmHomed = pendingConfirmInclineHomed_;
+    localZeroImu = pendingZeroImuAngle_;
+    pendingConfirmInclineHomed_ = false;
+    pendingZeroImuAngle_ = false;
+    portEXIT_CRITICAL(&inclineCommissioningActionMux_);
+
+    if (localConfirmHomed && deps_.inclineSensor != nullptr) {
+        deps_.inclineSensor->confirmHomedAtZero();
+    }
+    if (localZeroImu && deps_.imuInterface != nullptr) {
+        deps_.imuInterface->setCurrentAngleAsZero();
     }
 
     // 3. Obtain Immutable Interface States directly into stagingSnapshot_

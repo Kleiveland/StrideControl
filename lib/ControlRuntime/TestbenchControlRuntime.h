@@ -85,6 +85,7 @@ public:
     InclineVerificationCommandInput getInclineVerificationCommandInput() const;
     CommandExecutionStatus getCommandExecutionStatus() const;
     void publishCommandExecutionStatus();
+    void requestInclineCommissioningAction(bool confirmHomed, bool zeroImu);
 
     bool isRampTestActive() const override { return rampTestTracker_.active(); }
     bool isRampTestComplete() const override { return rampTestTracker_.complete(); }
