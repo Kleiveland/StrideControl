@@ -40,6 +40,24 @@
         .stop-btn { background-color: var(--red); color: #fff; width: 100%; font-size: 1.1rem; padding: 12px; margin-bottom: 16px; border: 1px solid var(--red-hover); border-radius: 6px; font-weight: bold; letter-spacing: 0.05em; }
         .stop-btn:hover { background-color: var(--red-hover); border-color: #ff7b72; }
 
+        .btn-primary { background-color: var(--green); border-color: var(--green-hover); }
+        .btn-primary:hover { background-color: var(--green-hover); }
+        .btn-danger { background-color: var(--red); border-color: var(--red-hover); }
+        .btn-danger:hover { background-color: var(--red-hover); }
+        .btn-secondary { background-color: var(--card-bg); border-color: var(--surface-border); }
+        .btn-secondary:hover { background-color: #30363d; border-color: #8b949e; }
+
+        input[type="number"], select {
+            background-color: var(--card-bg);
+            border: 1px solid var(--surface-border);
+            color: var(--text);
+            border-radius: 6px;
+        }
+        input[type="number"]:focus, select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
         .control-group { margin-bottom: 16px; }
         .checkbox-group { display: flex; align-items: center; gap: 10px; background: var(--card-bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--surface-border); cursor: pointer; }
         .checkbox-group input[type="checkbox"] { cursor: pointer; accent-color: var(--green); transform: scale(1.2); }
@@ -123,6 +141,34 @@
                 <button class="ramp-test-btn" onclick="startZoneTest(2, 'decel', 20.0, 14.0)">Sone 3: 20,0 &rarr; 14,0 km/t (ned)</button>
             </div>
             <div id="ramp-test-status" style="background: var(--card-bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--surface-border); font-size: 0.85rem; min-height: 42px; display: flex; align-items: center;">Klar for måling. Sørg for at ingen står på beltet før start.</div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">
+                <span>Stigning-kalibrering</span>
+                <span style="font-size:0.75rem; color:var(--text-dim)">Commissioning</span>
+            </div>
+            <div id="incline-status-line" style="margin-bottom: 10px; font-size: 0.85rem; color: var(--text-dim);">
+                Status: <span id="incline-phase">--</span> | Punkter målt: <span id="incline-points">0</span>
+            </div>
+            <button id="btn-incline-home" class="btn-secondary" style="width:100%; margin-bottom: 10px;">
+                1. Start hjemming
+            </button>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                <input type="number" id="incline-target-pct" placeholder="Mål %" min="0" max="15" step="0.5" style="padding: 8px;">
+                <select id="incline-direction" style="padding: 8px;">
+                    <option value="up">Opp</option>
+                    <option value="down">Ned</option>
+                </select>
+            </div>
+            <button id="btn-incline-measure" class="btn-secondary" style="width:100%; margin-bottom: 10px;" disabled>
+                2. Mål dette punktet
+            </button>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <button id="btn-incline-save" class="btn-primary" disabled>3. Lagre kalibrering</button>
+                <button id="btn-incline-abort" class="btn-danger">Avbryt</button>
+            </div>
+            <div id="incline-status-msg" style="margin-top: 10px; font-size: 0.85rem;"></div>
         </div>
     </div>
 
@@ -360,6 +406,104 @@
         }
     }
 
+    let inclinePollTimer = null;
+
+    function setInclineStatus(msg, type = '') {
+        const el = document.getElementById('incline-status-msg');
+        if (!el) return;
+        el.innerText = msg;
+        el.className = type === 'success' ? 'status-success' : (type === 'error' ? 'status-error' : '');
+    }
+
+    async function fetchInclineStatus() {
+        const res = await fetch('/api/v1/commissioning/incline/status', { cache: 'no-cache' });
+        if (!res.ok) throw new Error('Kunne ikke hente status');
+        return await res.json();
+    }
+
+    function updateInclineUI(data) {
+        document.getElementById('incline-phase').innerText = data.phase;
+        document.getElementById('incline-points').innerText = data.pointCount;
+
+        const measureBtn = document.getElementById('btn-incline-measure');
+        const saveBtn = document.getElementById('btn-incline-save');
+        const homeBtn = document.getElementById('btn-incline-home');
+
+        const busy = (data.phase === 'Homing' || data.phase === 'MeasuringPoint');
+        homeBtn.disabled = busy;
+        measureBtn.disabled = busy || data.pointCount === 0;
+        saveBtn.disabled = busy || data.pointCount < 2;
+
+        if (data.timedOut) {
+            setInclineStatus('Tidsavbrudd - prøv igjen.', 'error');
+        }
+    }
+
+    function startInclinePolling() {
+        if (inclinePollTimer) return;
+        inclinePollTimer = setInterval(async () => {
+            try {
+                const data = await fetchInclineStatus();
+                updateInclineUI(data);
+            } catch (e) {
+                setInclineStatus('Feil ved statushenting: ' + e.message, 'error');
+            }
+        }, 1000);
+    }
+
+    document.getElementById('btn-incline-home')?.addEventListener('click', async () => {
+        setInclineStatus('Starter hjemming...');
+        try {
+            await fetch('/api/v1/commissioning/incline/homing/start', { method: 'POST' });
+            startInclinePolling();
+        } catch (e) {
+            setInclineStatus('Feil: ' + e.message, 'error');
+        }
+    });
+
+    document.getElementById('btn-incline-measure')?.addEventListener('click', async () => {
+        const pct = parseFloat(document.getElementById('incline-target-pct').value);
+        const dir = document.getElementById('incline-direction').value;
+        if (isNaN(pct) || pct < 0 || pct > 15) {
+            setInclineStatus('Ugyldig prosentverdi (0-15).', 'error');
+            return;
+        }
+        setInclineStatus(`Måler ${pct}% (${dir})...`);
+        try {
+            await fetch('/api/v1/commissioning/incline/measure/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ commandedPct: pct, direction: dir })
+            });
+            startInclinePolling();
+        } catch (e) {
+            setInclineStatus('Feil: ' + e.message, 'error');
+        }
+    });
+
+    document.getElementById('btn-incline-save')?.addEventListener('click', async () => {
+        try {
+            const res = await fetch('/api/v1/commissioning/incline/save', { method: 'POST' });
+            if (res.ok) {
+                setInclineStatus('Kalibrering lagret!', 'success');
+            } else {
+                setInclineStatus('Lagring feilet.', 'error');
+            }
+        } catch (e) {
+            setInclineStatus('Feil: ' + e.message, 'error');
+        }
+    });
+
+    document.getElementById('btn-incline-abort')?.addEventListener('click', async () => {
+        try {
+            await fetch('/api/v1/commissioning/incline/abort', { method: 'POST' });
+            setInclineStatus('Avbrutt.');
+            startInclinePolling();
+        } catch (e) {
+            setInclineStatus('Feil: ' + e.message, 'error');
+        }
+    });
+
     loadBleConfig();
     refreshLog();
     fetchTelemetrySpeed().catch(() => {});
@@ -368,6 +512,8 @@
             fetchTelemetrySpeed().catch(() => {});
         }
     }, 2000);
+    fetchInclineStatus().then(updateInclineUI).catch(() => {});
+    startInclinePolling();
 </script>
 </body>
 </html>
