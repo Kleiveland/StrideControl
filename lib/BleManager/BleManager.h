@@ -6,6 +6,7 @@
 #include "../BluetoothTypes/BluetoothTypes.h"
 #include "../SettingsService/SettingsServiceTypes.h"
 #include "BleManagerTypes.h"
+#include "../ApplicationSnapshot/ApplicationSnapshot.h"
 
 // Forward declarations in global namespace
 class NimBLEScan;
@@ -20,6 +21,7 @@ class BleScanCallbackAdapter;
 class BleServerCallbackAdapter;
 class RscService;
 class FtmsService;
+class HeartRateService;
 
 /**
  * @brief Dual-role Bluetooth Low Energy subsystem coordinator.
@@ -63,17 +65,19 @@ public:
     BleManager& operator=(BleManager&&) = delete;
 
     /**
-     * @brief Pre-begin attachment for Peripheral GATT services (RscService, FtmsService).
+     * @brief Pre-begin attachment for Peripheral GATT services (RscService, FtmsService, HeartRateService).
      * @param [in] rsc Pointer to RscService instance (or nullptr).
      * @param [in] ftms Pointer to FtmsService instance (or nullptr).
+     * @param [in] hrs Pointer to HeartRateService instance (or nullptr).
      * @return true if services attached successfully or idempotently re-supplied; false if called while initialized.
      */
-    bool attachServices(RscService* rsc, FtmsService* ftms);
+    bool attachServices(RscService* rsc, FtmsService* ftms, HeartRateService* hrs = nullptr);
 
     bool begin(const BleConfig& config);
     void end();
 
     void update(uint32_t nowMs);
+    void updateServices(uint32_t nowMs, const ApplicationSnapshot& snapshot);
     void updateConfig(const BleConfig& config);
 
     bool startAdvertising();
@@ -110,6 +114,7 @@ private:
 
     RscService* rscService_{nullptr};
     FtmsService* ftmsService_{nullptr};
+    HeartRateService* heartRateService_{nullptr};
 
     ScanListenerEntry scanListeners_[4]{};
     ::NimBLEScan* scan_{nullptr};

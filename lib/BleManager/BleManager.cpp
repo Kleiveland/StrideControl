@@ -10,6 +10,7 @@
 #include <vector>
 #include "../RscService/RscService.h"
 #include "../FtmsService/FtmsService.h"
+#include "../HeartRateService/HeartRateService.h"
 
 namespace stridecontrol {
 
@@ -118,14 +119,14 @@ BleManager::~BleManager() {
     end();
 }
 
-bool BleManager::attachServices(RscService* rsc, FtmsService* ftms) {
+bool BleManager::attachServices(RscService* rsc, FtmsService* ftms, HeartRateService* hrs) {
     portENTER_CRITICAL(&mux_);
     if (state_.initialized || isTransitioningLifecycle_ || isShuttingDown_) {
         portEXIT_CRITICAL(&mux_);
         return false;
     }
-    if (rscService_ != nullptr || ftmsService_ != nullptr) {
-        if (rscService_ == rsc && ftmsService_ == ftms) {
+    if (rscService_ != nullptr || ftmsService_ != nullptr || heartRateService_ != nullptr) {
+        if (rscService_ == rsc && ftmsService_ == ftms && heartRateService_ == hrs) {
             portEXIT_CRITICAL(&mux_);
             return true; // Idempotent re-attachment
         }
@@ -134,6 +135,7 @@ bool BleManager::attachServices(RscService* rsc, FtmsService* ftms) {
     }
     rscService_ = rsc;
     ftmsService_ = ftms;
+    heartRateService_ = hrs;
     portEXIT_CRITICAL(&mux_);
     return true;
 }
@@ -242,8 +244,35 @@ bool BleManager::begin(const BleConfig& config) {
         }
     }
 
+    if (heartRateService_ != nullptr) {
+        if (!heartRateService_->begin(server_)) {
+            if (ftmsService_ != nullptr) {
+                ftmsService_->end();
+            }
+            if (rscService_ != nullptr) {
+                rscService_->end();
+            }
+            NimBLEDevice::deinit(true);
+            s_scanCallbackAdapter.clearOwner(this);
+            s_serverCallbackAdapter.clearOwner(this);
+
+            portENTER_CRITICAL(&mux_);
+            server_ = nullptr;
+            state_.initialized = false;
+            state_.state = BleManagerState::Uninitialized;
+            internalState_ = BleCoordinatorInternalState::Uninitialized;
+            isTransitioningLifecycle_ = false;
+            isShuttingDown_ = false;
+            portEXIT_CRITICAL(&mux_);
+            return false;
+        }
+    }
+
     // 5. Build and Start GAP Advertising with Error Propagation & Full Rollback
     if (!buildAndStartAdvertising()) {
+        if (heartRateService_ != nullptr) {
+            heartRateService_->end();
+        }
         if (ftmsService_ != nullptr) {
             ftmsService_->end();
         }
@@ -278,6 +307,9 @@ bool BleManager::begin(const BleConfig& config) {
     if (scan_ == nullptr) {
         if (advertising_ != nullptr && ble_gap_adv_active()) {
             advertising_->stop();
+        }
+        if (heartRateService_ != nullptr) {
+            heartRateService_->end();
         }
         if (ftmsService_ != nullptr) {
             ftmsService_->end();
@@ -343,6 +375,9 @@ bool BleManager::buildAndStartAdvertising() {
     if (ftmsService_ != nullptr) {
         serviceUuids.push_back(NimBLEUUID((uint16_t)0x1826));
     }
+    if (heartRateService_ != nullptr) {
+        serviceUuids.push_back(NimBLEUUID((uint16_t)0x180D));
+    }
     if (!serviceUuids.empty()) {
         advData.setCompleteServices16(serviceUuids);
     }
@@ -389,6 +424,7 @@ void BleManager::end() {
     ::NimBLEAdvertising* localAdv = advertising_;
     RscService* localRsc = rscService_;
     FtmsService* localFtms = ftmsService_;
+    HeartRateService* localHrs = heartRateService_;
     portEXIT_CRITICAL(&mux_);
 
     // 1. Stop advertising and scanning
@@ -416,6 +452,9 @@ void BleManager::end() {
     }
     if (localFtms != nullptr) {
         localFtms->end();
+    }
+    if (localHrs != nullptr) {
+        localHrs->end();
     }
 
     // 4. Deinit NimBLEDevice (host port stop + controller deinit barrier)
@@ -537,6 +576,9 @@ void BleManager::update(uint32_t nowMs) {
             if (ftmsService_ != nullptr) {
                 ftmsService_->handleDisconnect(localDisconnects[i]);
             }
+            if (heartRateService_ != nullptr) {
+                heartRateService_->handleDisconnect(localDisconnects[i]);
+            }
         }
     }
 
@@ -572,6 +614,18 @@ void BleManager::update(uint32_t nowMs) {
         portENTER_CRITICAL(&mux_);
         state_.peripheralAdvertising = isAdvActive;
         portEXIT_CRITICAL(&mux_);
+    }
+}
+
+void BleManager::updateServices(uint32_t nowMs, const ApplicationSnapshot& snapshot) {
+    if (rscService_ != nullptr) {
+        rscService_->update(nowMs, snapshot);
+    }
+    if (ftmsService_ != nullptr) {
+        ftmsService_->update(nowMs, snapshot);
+    }
+    if (heartRateService_ != nullptr) {
+        heartRateService_->update(nowMs, snapshot);
     }
 }
 

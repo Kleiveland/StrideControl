@@ -517,6 +517,7 @@ bool ApplicationOrchestrator::executePipelineStep(const ApplicationTickContext& 
     }
     if (deps_.bleManager != nullptr) {
         stagingSnapshot_.ble = deps_.bleManager->getState();
+        deps_.bleManager->updateServices(context.nowMs, stagingSnapshot_);
     }
 
     return true;

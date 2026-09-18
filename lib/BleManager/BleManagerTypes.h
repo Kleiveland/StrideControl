@@ -8,6 +8,7 @@ namespace stridecontrol {
 
 class RscService;
 class FtmsService;
+class HeartRateService;
 
 // Shared connection pool budget (CONFIG_BT_NIMBLE_MAX_CONNECTIONS = 3)
 static constexpr uint16_t kMaxCentralConnections    = 1;     // HeartRateClient

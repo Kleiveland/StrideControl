@@ -116,7 +116,7 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     bool bleOk = false;
     bool hrOk = false;
     if (SettingsService::instance().getBleStackEnabled()) {
-        bleManager_.attachServices(&rscService_, &ftmsService_);
+        bleManager_.attachServices(&rscService_, &ftmsService_, &heartRateService_);
         bleOk = bleManager_.begin(bleConfig);
         hrOk = heartRateClient_.begin(bleConfig, &bleManager_);
     } else {
@@ -532,7 +532,10 @@ void TestbenchControlRuntime::runTaskLoop() {
         publishedAuthoritative_ = authoritative;
         portEXIT_CRITICAL(&snapshotMux_);
 
-        // 7. Periodically check stack high-water mark (every 1000 ms)
+        // 7. Dispatch Periodic GATT Peripheral Telemetry Updates
+        bleManager_.updateServices(nowMs, snapshot);
+
+        // 8. Periodically check stack high-water mark (every 1000 ms)
         if (nowMs - lastHeadroomCheckMs >= 1000) {
             lastHeadroomCheckMs = nowMs;
             UBaseType_t highWater = uxTaskGetStackHighWaterMark(NULL);

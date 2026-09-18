@@ -29,6 +29,7 @@
 #include "HeartRateClient.h"
 #include "RscService.h"
 #include "FtmsService.h"
+#include "HeartRateService.h"
 #include "InclineVerifier.h"
 #include "RampTestTracker.h"
 
@@ -182,6 +183,7 @@ private:
     HeartRateClient heartRateClient_;
     RscService rscService_;
     FtmsService ftmsService_;
+    HeartRateService heartRateService_;
     std::atomic<bool> simHeartRateFromSpeedEnabled_{false};
 
     // Passive Composite Simulator

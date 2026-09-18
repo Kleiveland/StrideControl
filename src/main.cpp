@@ -27,6 +27,7 @@
 #include "HeartRateClient.h"
 #include "RscService.h"
 #include "FtmsService.h"
+#include "HeartRateService.h"
 #endif
 
 static stridecontrol::NetworkManager s_networkManager;
@@ -125,6 +126,7 @@ static stridecontrol::BleManager s_bleManager;
 static stridecontrol::HeartRateClient s_heartRateClient;
 static stridecontrol::RscService s_rscService;
 static stridecontrol::FtmsService s_ftmsService;
+static stridecontrol::HeartRateService s_heartRateService;
 
 static stridecontrol::InclineVerificationCommandInput provideProductionInclineCommandContext(void* context) {
     if (context == nullptr) {
@@ -255,7 +257,7 @@ void setup() {
     bool bleOk = false;
     bool hrOk = false;
     if (stridecontrol::SettingsService::instance().getBleStackEnabled()) {
-        s_bleManager.attachServices(&s_rscService, &s_ftmsService);
+        s_bleManager.attachServices(&s_rscService, &s_ftmsService, &s_heartRateService);
         bleOk = s_bleManager.begin(bleConfig);
         hrOk = s_heartRateClient.begin(bleConfig, &s_bleManager);
     } else {

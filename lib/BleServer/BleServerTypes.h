@@ -55,5 +55,14 @@ struct FtmsServerStateDto {
     uint32_t lastNotificationMs{0};
 };
 
+/**
+ * @brief Read-only operational state DTO for Heart Rate Service.
+ */
+struct HeartRateServerStateDto {
+    bool initialized{false};
+    bool hasMeasurementSubscribers{false};
+    uint32_t lastNotificationMs{0};
+};
+
 } // namespace stridecontrol
 
