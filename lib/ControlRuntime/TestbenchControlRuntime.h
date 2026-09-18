@@ -95,6 +95,9 @@ public:
     float getMaxAchievableSpeedKmh() const override { return 25.0f; }
     bool isMaxAchievableSpeedVerified() const override { return false; }
     RampTestPhase getRampTestPhase() const { return rampTestTracker_.phase(); }
+    InclineCommissioningPhase getInclineCommissioningPhase() const override { return inclineTracker_.phase(); }
+    uint8_t getInclineCommissioningPointCount() const override { return inclineTracker_.pointCount(); }
+    bool didInclineCommissioningTimeOut() const override { return inclineTracker_.timedOut(); }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
 
@@ -197,6 +200,7 @@ private:
     ControlCoordinator coordinator_;
     WorkoutEngine workoutEngine_;
     RampTestTracker rampTestTracker_;
+    InclineCommissioningTracker inclineTracker_;
 
     ApplicationSnapshot publishedSnapshot_{};
     WorkoutSessionSnapshot publishedSessionSnapshot_{};

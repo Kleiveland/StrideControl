@@ -100,6 +100,9 @@ public:
     float getMaxAchievableSpeedKmh() const override;
     bool isMaxAchievableSpeedVerified() const override;
     RampTestPhase getRampTestPhase() const { return rampTestTracker_.phase(); }
+    InclineCommissioningPhase getInclineCommissioningPhase() const override { return inclineTracker_.phase(); }
+    uint8_t getInclineCommissioningPointCount() const override { return inclineTracker_.pointCount(); }
+    bool didInclineCommissioningTimeOut() const override { return inclineTracker_.timedOut(); }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
 
@@ -156,6 +159,7 @@ private:
     bool csafeStateInitialized_ = false;
 
     RampTestTracker rampTestTracker_;
+    InclineCommissioningTracker inclineTracker_;
 
     bool initialized_ = false;
     uint32_t lastAuthoritativeTimestampMs_ = 0;

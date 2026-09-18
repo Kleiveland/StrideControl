@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include "../InclineCommissioningTracker/InclineCommissioningTracker.h"
 
 namespace stridecontrol {
 
@@ -25,7 +26,11 @@ enum class ControlCommandType : uint8_t {
     RejectSpeedShift,
     StartRampCalibrationTest,
     SetGuiMode,
-    SelectUser
+    SelectUser,
+    StartInclineHoming,
+    StartInclineMeasurePoint,
+    SaveInclineCalibration,
+    AbortInclineCommissioning
 };
 
 struct ControlCommand {
@@ -57,6 +62,10 @@ struct ControlCommand {
             float startSpeedKmh;
             float targetSpeedKmh;
         } rampTest;
+        struct {
+            float commandedPct;
+            uint8_t expectedDirection; // cast to/from InclineDirection
+        } inclineMeasurePoint;
     } data{};
 };
 
@@ -71,6 +80,9 @@ public:
     virtual uint32_t getRampTestTotalMs() const { return 0; }
     virtual float getMaxAchievableSpeedKmh() const { return 25.0f; }
     virtual bool isMaxAchievableSpeedVerified() const { return false; }
+    virtual InclineCommissioningPhase getInclineCommissioningPhase() const { return InclineCommissioningPhase::Idle; }
+    virtual uint8_t getInclineCommissioningPointCount() const { return 0; }
+    virtual bool didInclineCommissioningTimeOut() const { return false; }
 };
 
 } // namespace stridecontrol

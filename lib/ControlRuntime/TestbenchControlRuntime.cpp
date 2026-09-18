@@ -169,6 +169,7 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
 
     composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 0, 0.0f, true);
     rampTestTracker_.reset();
+    inclineTracker_.reset();
 
     if (commandQueue_ == nullptr) {
         commandQueue_ = xQueueCreate(kCommandQueueDepth, sizeof(ControlCommand));
@@ -226,6 +227,7 @@ void TestbenchControlRuntime::end() {
         portEXIT_CRITICAL(&inclineCommandContextMux_);
 
         rampTestTracker_.reset();
+        inclineTracker_.reset();
     }
 }
 
@@ -436,6 +438,18 @@ void TestbenchControlRuntime::runTaskLoop() {
             rampTestTracker_.acknowledgeTargetDispatched();
         }
 
+        inclineTracker_.update(
+            snapshot.incline.estimatedInclinePct,
+            snapshot.imu.relativeDeckAngleDeg,
+            snapshot.imu.dataValid,
+            nowMs
+        );
+
+        if (inclineTracker_.isHomedSettled()) {
+            requestInclineCommissioningAction(true, true);
+            inclineTracker_.onHomedConfirmed(nowMs);
+        }
+
         if (simHeartRateFromSpeedEnabled_) {
             float bpm = 80.0f + (snapshot.speed.speedKmh - 1.0f) * 6.36f;
             if (bpm < 70.0f) bpm = 70.0f;
@@ -572,6 +586,7 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             case ControlCommandType::Stop:
                 rampTestTracker_.abort(cmdNowMs);
+                inclineTracker_.abort(cmdNowMs);
                 composite_.stageStop(cmdNowMs);
                 break;
             case ControlCommandType::Pause:
@@ -705,6 +720,64 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::SelectUser:
                 session_.selectUser(cmd.data.selectUser.userId);
                 break;
+            case ControlCommandType::StartInclineHoming: {
+                if (session_.isActive()) {
+                    Serial.println("[TestbenchControlRuntime] Cannot start incline homing: session already active");
+                    break;
+                }
+                if (rampTestTracker_.active()) {
+                    Serial.println("[TestbenchControlRuntime] Cannot start incline homing: ramp test already active");
+                    break;
+                }
+                const auto phase = inclineTracker_.phase();
+                if (phase != InclineCommissioningPhase::Idle &&
+                    phase != InclineCommissioningPhase::Aborted &&
+                    phase != InclineCommissioningPhase::TimedOut &&
+                    phase != InclineCommissioningPhase::Failed &&
+                    phase != InclineCommissioningPhase::Complete) {
+                    Serial.println("[TestbenchControlRuntime] Cannot start incline homing: incline commissioning already active");
+                    break;
+                }
+                inclineTracker_.beginHoming(cmdNowMs);
+                composite_.submitInclineTarget(0.0f, cmdNowMs);
+                break;
+            }
+            case ControlCommandType::StartInclineMeasurePoint: {
+                if (session_.isActive()) {
+                    Serial.println("[TestbenchControlRuntime] Cannot start incline measurement: session already active");
+                    break;
+                }
+                if (rampTestTracker_.active()) {
+                    Serial.println("[TestbenchControlRuntime] Cannot start incline measurement: ramp test already active");
+                    break;
+                }
+                if (inclineTracker_.pointCount() == 0) {
+                    Serial.println("[TestbenchControlRuntime] Cannot start incline measurement: homing not confirmed");
+                    break;
+                }
+                const auto phase = inclineTracker_.phase();
+                if (phase != InclineCommissioningPhase::Idle &&
+                    phase != InclineCommissioningPhase::Complete) {
+                    Serial.println("[TestbenchControlRuntime] Cannot start incline measurement: incline commissioning already active");
+                    break;
+                }
+                const float cmdPct = cmd.data.inclineMeasurePoint.commandedPct;
+                const auto dir = static_cast<InclineDirection>(cmd.data.inclineMeasurePoint.expectedDirection);
+                inclineTracker_.beginMeasurePoint(cmdPct, dir, cmdNowMs);
+                composite_.submitInclineTarget(cmdPct, cmdNowMs);
+                break;
+            }
+            case ControlCommandType::SaveInclineCalibration: {
+                InclineConfig candidate = inclineTracker_.buildCandidateConfig();
+                if (candidate.commandMapValid) {
+                    SettingsService::instance().saveInclineConfig(candidate);
+                }
+                break;
+            }
+            case ControlCommandType::AbortInclineCommissioning: {
+                inclineTracker_.abort(cmdNowMs);
+                break;
+            }
             case ControlCommandType::None:
             default:
                 break;
