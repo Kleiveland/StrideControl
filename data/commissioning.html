@@ -80,6 +80,27 @@
 
         <div class="panel">
             <div class="panel-title">
+                <span>Vedlikehold &amp; Slitasje</span>
+                <span style="font-size:0.75rem; color:var(--text-dim)">GET /api/v1/telemetry</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                <div style="background: var(--card-bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--surface-border);">
+                    <div style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;">Mekanisk distanse</div>
+                    <div id="maint-distance" style="font-size: 1.25rem; font-weight: 600; color: #fff; margin-top: 4px;">-- km</div>
+                </div>
+                <div style="background: var(--card-bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--surface-border);">
+                    <div style="font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em;">Total driftstid</div>
+                    <div id="maint-time" style="font-size: 1.25rem; font-weight: 600; color: #fff; margin-top: 4px;">-- timer</div>
+                </div>
+            </div>
+            <div style="background: var(--card-bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--surface-border); display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.85rem; color: var(--text);">Lagringsstatus</span>
+                <span id="maint-save-status" style="font-size: 0.85rem; font-weight: 600; color: var(--text-dim);">--</span>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">
                 <span>Diagnostic Log</span>
                 <span style="font-size:0.75rem; color:var(--text-dim)">GET /api/v1/diagnostics/log</span>
             </div>
@@ -188,10 +209,33 @@
         }
     }
 
+    function updateMaintenanceUI(maint) {
+        if (!maint) return;
+        const distEl = document.getElementById('maint-distance');
+        const timeEl = document.getElementById('maint-time');
+        const saveEl = document.getElementById('maint-save-status');
+
+        if (distEl && typeof maint.distanceMeters === 'number') {
+            const distKm = maint.distanceMeters / 1000.0;
+            distEl.innerText = distKm.toFixed(1) + ' km';
+        }
+        if (timeEl && typeof maint.timeSeconds === 'number') {
+            const timeHours = maint.timeSeconds / 3600.0;
+            timeEl.innerText = timeHours.toFixed(1) + ' t';
+        }
+        if (saveEl && typeof maint.savePending === 'boolean') {
+            saveEl.innerText = maint.savePending ? 'Venter på lagring' : 'Lagret';
+            saveEl.style.color = maint.savePending ? '#e3b341' : '#3fb950';
+        }
+    }
+
     async function fetchTelemetrySpeed() {
         const res = await fetch('/api/v1/telemetry', { cache: 'no-cache' });
         if (!res.ok) throw new Error('Kunne ikke hente telemetri');
         const data = await res.json();
+        if (data.maintenance) {
+            updateMaintenanceUI(data.maintenance);
+        }
         return typeof data.actualSpeedKmh === 'number' ? data.actualSpeedKmh : 0.0;
     }
 
@@ -318,6 +362,12 @@
 
     loadBleConfig();
     refreshLog();
+    fetchTelemetrySpeed().catch(() => {});
+    setInterval(() => {
+        if (!testInProgress) {
+            fetchTelemetrySpeed().catch(() => {});
+        }
+    }, 2000);
 </script>
 </body>
 </html>

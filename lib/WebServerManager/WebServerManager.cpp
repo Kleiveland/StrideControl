@@ -244,6 +244,11 @@ void WebServerManager::registerRoutes() {
         csafe["linkStatus"] = csafeLinkStatusName(report.csafe.linkStatus);
         csafe["fresh"] = report.csafe.machineStateFresh;
 
+        JsonObject maintenance = doc["maintenance"].to<JsonObject>();
+        maintenance["distanceMeters"] = report.maintenanceDistanceMeters;
+        maintenance["timeSeconds"] = report.maintenanceTimeSeconds;
+        maintenance["savePending"] = report.maintenanceSavePending;
+
         doc["elapsedTimeMs"] = report.totalElapsedTimeMs;
         doc["targetSpeedKmh"] = report.targetSpeedKmh;
         doc["targetInclinePct"] = report.targetInclinePct;

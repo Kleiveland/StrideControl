@@ -94,6 +94,9 @@ public:
         report.continuationWindowActive = telem.sessionSnapshot.continuationWindowActive;
         report.continuationWindowRemainingMs = telem.sessionSnapshot.continuationWindowRemainingMs;
         memcpy(report.actualStepDurationsMs, telem.sessionSnapshot.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
+        report.maintenanceDistanceMeters = telem.snapshot.maintenance.totalDistanceMeters;
+        report.maintenanceTimeSeconds = telem.snapshot.maintenance.totalTimeSeconds;
+        report.maintenanceSavePending = telem.snapshot.maintenance.savePending;
         return true;
     }
 
@@ -196,6 +199,9 @@ public:
         report.continuationWindowActive = sessSnap.continuationWindowActive;
         report.continuationWindowRemainingMs = sessSnap.continuationWindowRemainingMs;
         memcpy(report.actualStepDurationsMs, sessSnap.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
+        report.maintenanceDistanceMeters = snap.maintenance.totalDistanceMeters;
+        report.maintenanceTimeSeconds = snap.maintenance.totalTimeSeconds;
+        report.maintenanceSavePending = snap.maintenance.savePending;
         return true;
     }
 

@@ -51,6 +51,9 @@ struct TelemetryReport {
     bool continuationWindowActive = false;
     uint32_t continuationWindowRemainingMs = 0;
     uint32_t actualStepDurationsMs[MAX_EXPANDED_WORKOUT_STEPS] = {};
+    uint64_t maintenanceDistanceMeters = 0;
+    uint64_t maintenanceTimeSeconds = 0;
+    bool maintenanceSavePending = false;
 };
 
 /**

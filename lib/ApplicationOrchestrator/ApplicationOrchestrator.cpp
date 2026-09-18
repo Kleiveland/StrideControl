@@ -484,6 +484,11 @@ bool ApplicationOrchestrator::executePipelineStep(const ApplicationTickContext& 
         deps_.maintenanceService->update(stagingSnapshot_.speed.speedKmh,
                                         context.loopDeltaMs > 0 ? context.loopDeltaMs : kPeriodMs);
     }
+    if (deps_.maintenanceService != nullptr) {
+        stagingSnapshot_.maintenance.totalDistanceMeters = deps_.maintenanceService->getTotalDistanceMeters();
+        stagingSnapshot_.maintenance.totalTimeSeconds = deps_.maintenanceService->getTotalTimeSeconds();
+        stagingSnapshot_.maintenance.savePending = deps_.maintenanceService->isSavePending();
+    }
 
     // 7. Obtain Current Health Snapshot
     if (deps_.diagnosticsService != nullptr) {

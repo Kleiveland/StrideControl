@@ -20,6 +20,12 @@ struct CommandExecutionStatus {
     uint32_t abortedRequestId = 0; // requestId of the aborted command, for de-duplication
 };
 
+struct MaintenanceSnapshot {
+    uint64_t totalDistanceMeters = 0;
+    uint64_t totalTimeSeconds = 0;
+    bool savePending = false;
+};
+
 /**
  * @brief Pure passive Data Transfer Object (DTO) capturing the physical
  *        hardware sensor state, verification state, system health, and BLE telemetry.
@@ -42,6 +48,7 @@ struct ApplicationSnapshot {
     HeartRateState heartRate{};
     BleState ble{};
     CommandExecutionStatus commandExecutionStatus{};
+    MaintenanceSnapshot maintenance{};
 };
 
 } // namespace stridecontrol
