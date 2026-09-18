@@ -14,6 +14,7 @@ ControlRuntime::ControlRuntime(
 )
     : diagnostics_(&diagnostics),
       console_(console),
+      calibration_(calibration),
       controller_(console, calibration, diagnostics),
       adapter_(controller_),
       session_(),
@@ -710,6 +711,14 @@ CommandExecutionStatus ControlRuntime::getCommandExecutionStatus() const {
     status = publishedCommandExecutionStatus_;
     portEXIT_CRITICAL(&commandExecutionStatusMux_);
     return status;
+}
+
+float ControlRuntime::getMaxAchievableSpeedKmh() const {
+    return calibration_.getMaxAchievableSpeedKmh();
+}
+
+bool ControlRuntime::isMaxAchievableSpeedVerified() const {
+    return calibration_.isMaxAchievableSpeedVerified();
 }
 
 const char* ControlRuntime::version() {

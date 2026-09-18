@@ -96,6 +96,8 @@ public:
     bool didRampTestTimeOut() const override { return rampTestTracker_.timedOut(); }
     uint32_t getRampTestDeadTimeMs() const override { return rampTestTracker_.deadTimeMs(); }
     uint32_t getRampTestTotalMs() const override { return rampTestTracker_.totalTimeMs(); }
+    float getMaxAchievableSpeedKmh() const override;
+    bool isMaxAchievableSpeedVerified() const override;
     RampTestPhase getRampTestPhase() const { return rampTestTracker_.phase(); }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
@@ -138,6 +140,7 @@ private:
 
     DiagnosticsService* diagnostics_ = nullptr;
     ConsoleInterface& console_;
+    SpeedCalibration& calibration_;
 
     // STRICT MEMBER DECLARATION ORDER:
     // controller_ MUST precede adapter_ so adapter_ never outlives controller_

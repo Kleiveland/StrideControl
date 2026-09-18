@@ -69,6 +69,8 @@ public:
     virtual bool didRampTestTimeOut() const { return false; }
     virtual uint32_t getRampTestDeadTimeMs() const { return 0; }
     virtual uint32_t getRampTestTotalMs() const { return 0; }
+    virtual float getMaxAchievableSpeedKmh() const { return 25.0f; }
+    virtual bool isMaxAchievableSpeedVerified() const { return false; }
 };
 
 } // namespace stridecontrol

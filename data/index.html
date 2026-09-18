@@ -1368,6 +1368,7 @@
         let activeUserProfile = null;
         let activeUser = null;
         let isSensorConnected = true;
+        let maxAchievableSpeedKmh = 25.0; // Physical speed ceiling; fallback until API responds
 
         function isValidUserName(name) {
             if (!name || typeof name !== 'string') return false;
@@ -2051,7 +2052,7 @@
 
                 html += `<div style="display: grid; grid-template-columns: 1fr; gap: 25px;">
                             ${buildField(isTime ? 'Varighet' : 'Lengde', buildNumUI('amount', x.amount, amtUnit, amtStep, amtStep, isTime ? 7200 : 20000, amtText), buildSeg(x.mode))}
-                            ${buildField('Fart', buildNumUI('speed', x.speed, 'KM/T', 0.1, 0.5, 30, spdDisplay, x.setSpeed), cleanSwitch)}`;
+                            ${buildField('Fart', buildNumUI('speed', x.speed, 'KM/T', 0.1, 0.5, maxAchievableSpeedKmh, spdDisplay, x.setSpeed), cleanSwitch)}`;
                             
                 if (x.role === 'drag') {
                     let progText = x.progress > 0 ? '+' + fmt(x.progress) : fmt(x.progress);
@@ -2482,7 +2483,7 @@
                     x.amount = Math.max(50, Math.round(parseFloat(raw) || 500));
                 }
             } else if (field === 'speed') {
-                x.speed = Math.max(0.5, Math.min(30, parseFloat(raw) || 10));
+                x.speed = Math.max(0.5, Math.min(maxAchievableSpeedKmh, parseFloat(raw) || 10));
             } else if (field === 'progress') {
                 x.progress = parseFloat(raw.replace('+', '')) || 0;
             } else if (field === 'reps') {
@@ -3920,6 +3921,14 @@
         function initApp() {
             setDashboardHotkeysEnabled(false);
             initSettingsAndHotkeysUI();
+            fetch('/api/v1/capabilities/speed')
+                .then(r => r.json())
+                .then(data => {
+                    if (typeof data.maxAchievableSpeedKmh === 'number' && data.maxAchievableSpeedKmh > 0) {
+                        maxAchievableSpeedKmh = data.maxAchievableSpeedKmh;
+                    }
+                })
+                .catch(() => {});
             fetchSystemSettings();
             pollTelemetry();
             setInterval(pollTelemetry, TELEMETRY_POLL_INTERVAL_MS);

@@ -8,6 +8,7 @@
 #include <cstring>
 #include <algorithm>
 #include "../CsafeInterface/CsafeTypes.h"
+#include "SystemManager.h"
 
 #if defined(STRIDECONTROL_TESTBENCH)
 #include "TestbenchControlRuntime.h"
@@ -132,6 +133,10 @@ WebServerManager::~WebServerManager() {
 
 void WebServerManager::attachCommandStager(IControlCommandStager* commandStager) {
     commandStager_ = commandStager;
+}
+
+void WebServerManager::attachSystemManager(SystemManager* systemManager) {
+    systemManager_ = systemManager;
 }
 
 #if defined(STRIDECONTROL_TESTBENCH)
@@ -1117,6 +1122,32 @@ void WebServerManager::registerRoutes() {
         serializeJson(doc, *stream);
         request->send(stream);
     });
+
+    auto capabilitiesSpeedHandler = [this](AsyncWebServerRequest* request) {
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        stream->addHeader("Access-Control-Allow-Origin", "*");
+        stream->addHeader("Cache-Control", "no-cache");
+        float maxAchievableSpeedKmh = 25.0f;
+        bool verified = false;
+        if (systemManager_ != nullptr) {
+            maxAchievableSpeedKmh = systemManager_->getMaxAchievableSpeedKmh();
+            verified = systemManager_->isMaxAchievableSpeedVerified();
+        } else if (commandStager_ != nullptr) {
+            maxAchievableSpeedKmh = commandStager_->getMaxAchievableSpeedKmh();
+            verified = commandStager_->isMaxAchievableSpeedVerified();
+        } else {
+            SpeedConfig cfg = SettingsService::instance().getSpeedConfig();
+            maxAchievableSpeedKmh = cfg.maxAchievableSpeedKmh;
+            verified = cfg.maxAchievableSpeedVerified;
+        }
+        JsonDocument doc;
+        doc["maxAchievableSpeedKmh"] = maxAchievableSpeedKmh;
+        doc["verified"] = verified;
+        serializeJson(doc, *stream);
+        request->send(stream);
+    };
+    server_.on("/api/capabilities/speed", HTTP_GET, capabilitiesSpeedHandler);
+    server_.on("/api/v1/capabilities/speed", HTTP_GET, capabilitiesSpeedHandler);
 
     auto bleConfigPostHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {

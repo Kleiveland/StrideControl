@@ -45,10 +45,14 @@ public:
     SystemState getState() const;
     bool isFaulted() const;
 
+    float getMaxAchievableSpeedKmh() const;
+    bool isMaxAchievableSpeedVerified() const;
+
     static const char* version();
 
 private:
     ControlRuntime controlRuntime_;
+    SpeedCalibration& calibration_;
     ApplicationOrchestrator* orchestrator_ = nullptr;
     SystemState state_ = SystemState::Initializing;
     bool initialized_ = false;

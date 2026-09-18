@@ -90,6 +90,8 @@ public:
     bool didRampTestTimeOut() const override { return rampTestTracker_.timedOut(); }
     uint32_t getRampTestDeadTimeMs() const override { return rampTestTracker_.deadTimeMs(); }
     uint32_t getRampTestTotalMs() const override { return rampTestTracker_.totalTimeMs(); }
+    float getMaxAchievableSpeedKmh() const override { return 25.0f; }
+    bool isMaxAchievableSpeedVerified() const override { return false; }
     RampTestPhase getRampTestPhase() const { return rampTestTracker_.phase(); }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }

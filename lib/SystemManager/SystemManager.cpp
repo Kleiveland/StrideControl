@@ -7,7 +7,8 @@ SystemManager::SystemManager(
     SpeedCalibration& calibration,
     DiagnosticsService& diagnostics
 )
-    : controlRuntime_(console, calibration, diagnostics) {}
+    : controlRuntime_(console, calibration, diagnostics),
+      calibration_(calibration) {}
 
 bool SystemManager::begin(uint32_t nowMs) {
     state_ = SystemState::Initializing;
@@ -88,6 +89,14 @@ InclineVerificationCommandInput SystemManager::getInclineVerificationCommandInpu
 
 CommandExecutionStatus SystemManager::getCommandExecutionStatus() const {
     return controlRuntime_.getCommandExecutionStatus();
+}
+
+float SystemManager::getMaxAchievableSpeedKmh() const {
+    return calibration_.getMaxAchievableSpeedKmh();
+}
+
+bool SystemManager::isMaxAchievableSpeedVerified() const {
+    return calibration_.isMaxAchievableSpeedVerified();
 }
 
 const char* SystemManager::version() {

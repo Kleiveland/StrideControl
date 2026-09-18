@@ -12,6 +12,7 @@ namespace stridecontrol {
 #if defined(STRIDECONTROL_TESTBENCH)
 class TestbenchControlRuntime;
 #endif
+class SystemManager;
 
 class WebServerManager {
 public:
@@ -24,6 +25,7 @@ public:
 
     bool begin(const ITelemetryProvider* telemetryProvider = nullptr, IControlCommandStager* commandStager = nullptr);
     void attachCommandStager(IControlCommandStager* commandStager);
+    void attachSystemManager(SystemManager* systemManager);
 #if defined(STRIDECONTROL_TESTBENCH)
     void attachSimulatorRuntime(TestbenchControlRuntime* simRuntime);
 #endif
@@ -35,6 +37,7 @@ private:
     AsyncWebServer server_;
     const ITelemetryProvider* telemetryProvider_{nullptr};
     IControlCommandStager* commandStager_{nullptr};
+    SystemManager* systemManager_{nullptr};
 #if defined(STRIDECONTROL_TESTBENCH)
     TestbenchControlRuntime* simRuntime_{nullptr};
 #endif

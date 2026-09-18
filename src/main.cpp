@@ -312,6 +312,7 @@ void setup() {
     s_systemManager.begin(millis());
     s_systemManager.startControlTask(&s_orchestrator);
     s_webServerManager.attachCommandStager(&s_systemManager.getControlRuntime());
+    s_webServerManager.attachSystemManager(&s_systemManager);
 
     Serial.println("[System] Production hardware profile active.");
 #endif
