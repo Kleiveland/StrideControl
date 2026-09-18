@@ -508,6 +508,12 @@ void BleManager::handleServerConnect(const ::ble_gap_conn_desc* desc) {
     metrics_.activePeripheralConnections = occupied;
     state_.peripheralAdvertising = false;
     state_.lastEventTimestampMs = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+    if (occupied < kMaxPeripheralConnections) {
+        // Capacity remains for another peripheral client (e.g. a companion/watch app
+        // alongside an already-connected Zwift session) - request an advertising restart so
+        // it can still be discovered, since most BLE stacks auto-stop advertising on connect.
+        advertisingRestartPending_ = true;
+    }
     portEXIT_CRITICAL(&mux_);
 }
 
