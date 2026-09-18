@@ -3667,6 +3667,12 @@
                 if (stopDialogTitle) stopDialogTitle.innerText = `Økten avsluttes automatisk om ${contSecs} sekunder:`;
                 if (stopButtonsNormal) stopButtonsNormal.style.display = 'none';
                 if (stopButtonsCont) stopButtonsCont.style.display = 'flex';
+            } else if (telem.session?.state === 'Aborted') {
+                if (stopTitleEl) stopTitleEl.innerText = 'ØKT AVSLUTTET';
+                if (stopHeroLbl) stopHeroLbl.innerText = 'ØKTEN KAN IKKE FORTSETTES';
+                if (stopDialogTitle) stopDialogTitle.innerText = 'Denne økten er avsluttet. Velg neste steg:';
+                if (stopButtonsNormal) stopButtonsNormal.style.display = 'flex';
+                if (stopButtonsCont) stopButtonsCont.style.display = 'none';
             } else {
                 if (stopTitleEl) stopTitleEl.innerText = 'Pause';
                 if (stopHeroLbl) stopHeroLbl.innerText = 'TID IGJEN';
