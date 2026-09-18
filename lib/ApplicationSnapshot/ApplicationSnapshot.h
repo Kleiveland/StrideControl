@@ -9,6 +9,8 @@
 #include "../DiagnosticsService/DiagnosticsServiceTypes.h"
 #include "../BluetoothTypes/BluetoothTypes.h"
 #include "../CsafeInterface/CsafeTypes.h"
+#include "../SettingsService/SettingsTypes.h"
+#include "../WorkoutSession/WorkoutSessionTypes.h"
 
 namespace stridecontrol {
 
@@ -49,6 +51,11 @@ struct ApplicationSnapshot {
     BleState ble{};
     CommandExecutionStatus commandExecutionStatus{};
     MaintenanceSnapshot maintenance{};
+
+    // Session Telemetry (e.g. for FTMS Training Status)
+    bool sessionActive = false;
+    WorkoutSessionState sessionState = WorkoutSessionState::Idle;
+    StepRole currentRole = StepRole::WARMUP;
 };
 
 } // namespace stridecontrol

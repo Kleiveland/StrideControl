@@ -51,6 +51,7 @@ struct RscServerStateDto {
 struct FtmsServerStateDto {
     bool initialized{false};
     bool hasTreadmillDataSubscribers{false};
+    bool hasTrainingStatusSubscribers{false};
     uint32_t lastNotificationMs{0};
 };
 

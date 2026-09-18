@@ -72,6 +72,16 @@ CommandExecutionStatus ApplicationOrchestrator::readCommandExecutionStatus() con
     return CommandExecutionStatus{};
 }
 
+SessionTelemetryInput ApplicationOrchestrator::readSessionTelemetry() const {
+    if (deps_.sessionTelemetryProvider != nullptr) {
+        return deps_.sessionTelemetryProvider(
+            deps_.sessionTelemetryProviderContext
+        );
+    }
+
+    return SessionTelemetryInput{};
+}
+
 bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& deps,
                                    OrchestratorExecutionMode mode) {
     portENTER_CRITICAL(&metricsMux_);
@@ -478,6 +488,11 @@ bool ApplicationOrchestrator::executePipelineStep(const ApplicationTickContext& 
     }
 
     stagingSnapshot_.commandExecutionStatus = readCommandExecutionStatus();
+
+    const SessionTelemetryInput sessInput = readSessionTelemetry();
+    stagingSnapshot_.sessionActive = sessInput.sessionActive;
+    stagingSnapshot_.sessionState = sessInput.sessionState;
+    stagingSnapshot_.currentRole = sessInput.currentRole;
 
     // 6. Update Maintenance Odometer (Wear-Leveled RAM Accumulation)
     if (deps_.maintenanceService != nullptr) {

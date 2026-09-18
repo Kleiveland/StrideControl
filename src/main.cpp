@@ -141,6 +141,19 @@ static stridecontrol::CommandExecutionStatus provideProductionCommandExecutionSt
     const auto* mgr = static_cast<const stridecontrol::SystemManager*>(context);
     return mgr->getCommandExecutionStatus();
 }
+
+static stridecontrol::SessionTelemetryInput provideProductionSessionTelemetry(void* context) {
+    if (context == nullptr) {
+        return stridecontrol::SessionTelemetryInput{};
+    }
+    const auto* mgr = static_cast<const stridecontrol::SystemManager*>(context);
+    const stridecontrol::WorkoutSessionSnapshot sessSnap = mgr->getControlRuntime().getSessionSnapshot();
+    stridecontrol::SessionTelemetryInput input{};
+    input.sessionActive = sessSnap.active;
+    input.sessionState = sessSnap.state;
+    input.currentRole = sessSnap.currentRole;
+    return input;
+}
 #endif
 
 class ProductionTelemetryProvider : public stridecontrol::ITelemetryProvider {
@@ -308,6 +321,8 @@ void setup() {
     orchestratorDeps.inclineCommandContextProviderContext = &s_systemManager;
     orchestratorDeps.commandExecutionStatusProvider = &provideProductionCommandExecutionStatus;
     orchestratorDeps.commandExecutionStatusProviderContext = &s_systemManager;
+    orchestratorDeps.sessionTelemetryProvider = &provideProductionSessionTelemetry;
+    orchestratorDeps.sessionTelemetryProviderContext = &s_systemManager;
     orchestratorDeps.maintenanceService = &s_maintenanceService;
     orchestratorDeps.bleManager = &s_bleManager;
     orchestratorDeps.hrClient = &s_heartRateClient;

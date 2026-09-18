@@ -64,6 +64,24 @@ CommandExecutionStatus TestbenchControlRuntime::provideSimulatedCommandExecution
     return runtime->getCommandExecutionStatus();
 }
 
+SessionTelemetryInput TestbenchControlRuntime::provideSimulatedSessionTelemetry(
+    void* context
+) {
+    if (context == nullptr) {
+        return SessionTelemetryInput{};
+    }
+
+    auto* runtime =
+        static_cast<TestbenchControlRuntime*>(context);
+
+    const WorkoutSessionSnapshot sessSnap = runtime->session_.getSnapshot();
+    SessionTelemetryInput input{};
+    input.sessionActive = sessSnap.active;
+    input.sessionState = sessSnap.state;
+    input.currentRole = sessSnap.currentRole;
+    return input;
+}
+
 CommandExecutionStatus TestbenchControlRuntime::getCommandExecutionStatus() const {
     CommandExecutionStatus status{};
     portENTER_CRITICAL(&commandExecutionStatusMux_);
@@ -119,6 +137,8 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     deps.inclineCommandContextProviderContext = this;
     deps.commandExecutionStatusProvider = &TestbenchControlRuntime::provideSimulatedCommandExecutionStatus;
     deps.commandExecutionStatusProviderContext = this;
+    deps.sessionTelemetryProvider = &TestbenchControlRuntime::provideSimulatedSessionTelemetry;
+    deps.sessionTelemetryProviderContext = this;
     deps.runnerDynamics = &runnerDynamics_;
     deps.inclineVerifier = &inclineVerifier_;
     deps.diagnosticsService = &diagService_;

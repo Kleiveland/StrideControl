@@ -35,13 +35,12 @@ public:
     }
 
     void onSubscribe(NimBLECharacteristic* pCharacteristic, ble_gap_conn_desc* desc, uint16_t subValue) override {
-        (void)pCharacteristic;
         portENTER_CRITICAL(&s_ftmsAdapterMux);
         FtmsService* localOwner = owner_;
         portEXIT_CRITICAL(&s_ftmsAdapterMux);
 
         if (localOwner != nullptr && desc != nullptr) {
-            localOwner->handleSubscribe(desc->conn_handle, subValue);
+            localOwner->handleSubscribe(pCharacteristic, desc->conn_handle, subValue);
         }
     }
 
@@ -147,15 +146,39 @@ bool FtmsService::begin(::NimBLEServer* pServer) {
         pFeatureChar_->setValue(featureBytes, sizeof(featureBytes));
     }
 
-    // 4. Start GATT Service
+    // 4. Create Training Status Characteristic (0x2AD3, Read + Notify)
+    pTrainingStatusChar_ = pService_->createCharacteristic(
+        NimBLEUUID((uint16_t)0x2AD3),
+        NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY
+    );
+    if (pTrainingStatusChar_ == nullptr) {
+        s_ftmsCallbackAdapter.clearOwner(this);
+        portENTER_CRITICAL(&mux_);
+        pServer_ = nullptr;
+        pService_ = nullptr;
+        pTreadmillDataChar_ = nullptr;
+        pFeatureChar_ = nullptr;
+        portEXIT_CRITICAL(&mux_);
+        return false;
+    }
+    pTrainingStatusChar_->setCallbacks(&s_ftmsCallbackAdapter);
+    const uint8_t initialTrainingStatus[2] = {0x00, 0x01}; // Flags: 0x00, Status: 0x01 (Idle)
+    pTrainingStatusChar_->setValue(initialTrainingStatus, sizeof(initialTrainingStatus));
+
+    // 5. Start GATT Service
     pService_->start();
 
     portENTER_CRITICAL(&mux_);
     state_.initialized = true;
     state_.hasTreadmillDataSubscribers = false;
+    state_.hasTrainingStatusSubscribers = false;
     state_.lastNotificationMs = 0;
     lastNotificationMs_ = 0;
+    lastNotifiedTrainingStatus_ = 0x01;
     for (auto& sub : subscribers_) {
+        sub = BleSubscriptionEntry{};
+    }
+    for (auto& sub : trainingStatusSubscribers_) {
         sub = BleSubscriptionEntry{};
     }
     portEXIT_CRITICAL(&mux_);
@@ -171,9 +194,14 @@ void FtmsService::end() {
     }
     state_.initialized = false;
     state_.hasTreadmillDataSubscribers = false;
+    state_.hasTrainingStatusSubscribers = false;
     for (auto& sub : subscribers_) {
         sub = BleSubscriptionEntry{};
     }
+    for (auto& sub : trainingStatusSubscribers_) {
+        sub = BleSubscriptionEntry{};
+    }
+    lastNotifiedTrainingStatus_ = 0x01;
     portEXIT_CRITICAL(&mux_);
 
     s_ftmsCallbackAdapter.clearOwner(this);
@@ -183,11 +211,16 @@ void FtmsService::end() {
     pService_ = nullptr;
     pTreadmillDataChar_ = nullptr;
     pFeatureChar_ = nullptr;
+    pTrainingStatusChar_ = nullptr;
     lastNotificationMs_ = 0;
     portEXIT_CRITICAL(&mux_);
 }
 
 void FtmsService::handleSubscribe(uint16_t connectionHandle, uint16_t subValue) {
+    handleSubscribe(pTreadmillDataChar_, connectionHandle, subValue);
+}
+
+void FtmsService::handleSubscribe(NimBLECharacteristic* pCharacteristic, uint16_t connectionHandle, uint16_t subValue) {
     portENTER_CRITICAL(&mux_);
     if (!state_.initialized) {
         portEXIT_CRITICAL(&mux_);
@@ -197,43 +230,80 @@ void FtmsService::handleSubscribe(uint16_t connectionHandle, uint16_t subValue) 
     // Notification active if Bit 0 (0x01) is set
     bool active = (subValue & 0x0001) != 0;
 
-    if (active) {
-        // Update existing entry or find first empty slot
-        bool found = false;
-        for (auto& sub : subscribers_) {
-            if (sub.active && sub.connectionHandle == connectionHandle) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            for (auto& sub : subscribers_) {
-                if (!sub.active) {
-                    sub.connectionHandle = connectionHandle;
-                    sub.active = true;
+    if (pCharacteristic == pTrainingStatusChar_) {
+        if (active) {
+            bool found = false;
+            for (auto& sub : trainingStatusSubscribers_) {
+                if (sub.active && sub.connectionHandle == connectionHandle) {
                     found = true;
                     break;
                 }
             }
-        }
-    } else {
-        // Deactivate matching subscription
-        for (auto& sub : subscribers_) {
-            if (sub.connectionHandle == connectionHandle) {
-                sub = BleSubscriptionEntry{};
+            if (!found) {
+                for (auto& sub : trainingStatusSubscribers_) {
+                    if (!sub.active) {
+                        sub.connectionHandle = connectionHandle;
+                        sub.active = true;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        } else {
+            for (auto& sub : trainingStatusSubscribers_) {
+                if (sub.connectionHandle == connectionHandle) {
+                    sub = BleSubscriptionEntry{};
+                }
             }
         }
-    }
 
-    // Recalculate hasTreadmillDataSubscribers
-    bool hasSub = false;
-    for (const auto& sub : subscribers_) {
-        if (sub.active) {
-            hasSub = true;
-            break;
+        bool hasSub = false;
+        for (const auto& sub : trainingStatusSubscribers_) {
+            if (sub.active) {
+                hasSub = true;
+                break;
+            }
         }
+        state_.hasTrainingStatusSubscribers = hasSub;
+    } else {
+        if (active) {
+            // Update existing entry or find first empty slot
+            bool found = false;
+            for (auto& sub : subscribers_) {
+                if (sub.active && sub.connectionHandle == connectionHandle) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                for (auto& sub : subscribers_) {
+                    if (!sub.active) {
+                        sub.connectionHandle = connectionHandle;
+                        sub.active = true;
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Deactivate matching subscription
+            for (auto& sub : subscribers_) {
+                if (sub.connectionHandle == connectionHandle) {
+                    sub = BleSubscriptionEntry{};
+                }
+            }
+        }
+
+        // Recalculate hasTreadmillDataSubscribers
+        bool hasSub = false;
+        for (const auto& sub : subscribers_) {
+            if (sub.active) {
+                hasSub = true;
+                break;
+            }
+        }
+        state_.hasTreadmillDataSubscribers = hasSub;
     }
-    state_.hasTreadmillDataSubscribers = hasSub;
     portEXIT_CRITICAL(&mux_);
 }
 
@@ -258,6 +328,21 @@ void FtmsService::handleDisconnect(uint16_t connectionHandle) {
         }
     }
     state_.hasTreadmillDataSubscribers = hasSub;
+
+    for (auto& sub : trainingStatusSubscribers_) {
+        if (sub.connectionHandle == connectionHandle) {
+            sub = BleSubscriptionEntry{};
+        }
+    }
+
+    bool hasTrainingSub = false;
+    for (const auto& sub : trainingStatusSubscribers_) {
+        if (sub.active) {
+            hasTrainingSub = true;
+            break;
+        }
+    }
+    state_.hasTrainingStatusSubscribers = hasTrainingSub;
     portEXIT_CRITICAL(&mux_);
 }
 
@@ -347,17 +432,37 @@ size_t FtmsService::packTreadmillData(const ApplicationSnapshot& snapshot, uint8
     return cursor;
 }
 
+size_t FtmsService::packTrainingStatus(const ApplicationSnapshot& snapshot, uint8_t* outPayload, size_t maxLen) const {
+    if (outPayload == nullptr || maxLen < 2) {
+        return 0;
+    }
+    uint8_t statusValue = 0x01; // Idle
+    if (snapshot.sessionActive && snapshot.sessionState != WorkoutSessionState::Idle) {
+        switch (snapshot.currentRole) {
+            case StepRole::WARMUP:   statusValue = 0x02; break;
+            case StepRole::WORK:     statusValue = 0x04; break;
+            case StepRole::REST:     statusValue = 0x05; break;
+            case StepRole::COOLDOWN: statusValue = 0x0B; break;
+            default:                 statusValue = 0x01; break;
+        }
+    }
+    outPayload[0] = 0x00; // Flags: no string present
+    outPayload[1] = statusValue;
+    return 2;
+}
+
 void FtmsService::update(uint32_t nowMs, const ApplicationSnapshot& snapshot) {
     ::NimBLECharacteristic* localChar = nullptr;
     bool shouldNotify = false;
 
     portENTER_CRITICAL(&mux_);
-    if (!state_.initialized || !state_.hasTreadmillDataSubscribers) {
+    if (!state_.initialized) {
         portEXIT_CRITICAL(&mux_);
         return;
     }
 
-    if (static_cast<uint32_t>(nowMs - lastNotificationMs_) >= kFtmsNotificationIntervalMs) {
+    if (state_.hasTreadmillDataSubscribers &&
+        static_cast<uint32_t>(nowMs - lastNotificationMs_) >= kFtmsNotificationIntervalMs) {
         shouldNotify = true;
         localChar = pTreadmillDataChar_;
         lastNotificationMs_ = nowMs;
@@ -371,6 +476,32 @@ void FtmsService::update(uint32_t nowMs, const ApplicationSnapshot& snapshot) {
         if (len >= 4) {
             localChar->setValue(payload, len);
             localChar->notify(true);
+        }
+    }
+
+    // Training Status (0x2AD3) - notify strictly on value transition
+    uint8_t trainingPayload[2]{};
+    size_t trainingLen = packTrainingStatus(snapshot, trainingPayload, sizeof(trainingPayload));
+    if (trainingLen >= 2) {
+        const uint8_t currentStatus = trainingPayload[1];
+        ::NimBLECharacteristic* localTrainingChar = nullptr;
+        bool shouldNotifyTraining = false;
+
+        portENTER_CRITICAL(&mux_);
+        if (currentStatus != lastNotifiedTrainingStatus_) {
+            lastNotifiedTrainingStatus_ = currentStatus;
+            localTrainingChar = pTrainingStatusChar_;
+            if (state_.hasTrainingStatusSubscribers) {
+                shouldNotifyTraining = true;
+            }
+        }
+        portEXIT_CRITICAL(&mux_);
+
+        if (localTrainingChar != nullptr) {
+            localTrainingChar->setValue(trainingPayload, trainingLen);
+            if (shouldNotifyTraining) {
+                localTrainingChar->notify(true);
+            }
         }
     }
 }

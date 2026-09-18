@@ -44,7 +44,9 @@ public:
 private:
     friend class FtmsTreadmillCallbackAdapter;
     void handleSubscribe(uint16_t connectionHandle, uint16_t subValue);
+    void handleSubscribe(NimBLECharacteristic* pCharacteristic, uint16_t connectionHandle, uint16_t subValue);
     size_t packTreadmillData(const ApplicationSnapshot& snapshot, uint8_t* outPayload, size_t maxLen) const;
+    size_t packTrainingStatus(const ApplicationSnapshot& snapshot, uint8_t* outPayload, size_t maxLen) const;
 
     mutable portMUX_TYPE mux_ = portMUX_INITIALIZER_UNLOCKED;
 
@@ -52,10 +54,13 @@ private:
     ::NimBLEService* pService_{nullptr};
     ::NimBLECharacteristic* pTreadmillDataChar_{nullptr};
     ::NimBLECharacteristic* pFeatureChar_{nullptr};
+    ::NimBLECharacteristic* pTrainingStatusChar_{nullptr};
 
     BleSubscriptionEntry subscribers_[kMaxTrackedSubscribers]{};
+    BleSubscriptionEntry trainingStatusSubscribers_[kMaxTrackedSubscribers]{};
     FtmsServerStateDto state_{};
     uint32_t lastNotificationMs_{0};
+    uint8_t lastNotifiedTrainingStatus_{0x01};
 };
 
 } // namespace stridecontrol

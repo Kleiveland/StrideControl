@@ -27,6 +27,13 @@ using CsafeStateProvider = CsafeState (*)(void* context);
 using InclineCommandContextProvider = InclineVerificationCommandInput (*)(void* context);
 using CommandExecutionStatusProvider = CommandExecutionStatus (*)(void* context);
 
+struct SessionTelemetryInput {
+    bool sessionActive = false;
+    WorkoutSessionState sessionState = WorkoutSessionState::Idle;
+    StepRole currentRole = StepRole::WARMUP;
+};
+using SessionTelemetryProvider = SessionTelemetryInput (*)(void* context);
+
 /**
  * @brief Dependencies injected into ApplicationOrchestrator.
  */
@@ -41,6 +48,8 @@ struct ApplicationOrchestratorDependencies {
     void* inclineCommandContextProviderContext = nullptr;
     CommandExecutionStatusProvider commandExecutionStatusProvider = nullptr;
     void* commandExecutionStatusProviderContext = nullptr;
+    SessionTelemetryProvider sessionTelemetryProvider = nullptr;
+    void* sessionTelemetryProviderContext = nullptr;
     RunnerDynamics* runnerDynamics = nullptr;
     InclineVerifier* inclineVerifier = nullptr;
     DiagnosticsService* diagnosticsService = nullptr;
@@ -121,6 +130,7 @@ private:
     CsafeState readCsafeState() const;
     InclineVerificationCommandInput readInclineCommandContext() const;
     CommandExecutionStatus readCommandExecutionStatus() const;
+    SessionTelemetryInput readSessionTelemetry() const;
 
     using SpeedUpdateStrategy = void (*)(SpeedSensor& sensor, const ApplicationTickContext& context);
     static void hardwareSpeedStrategy(SpeedSensor& sensor, const ApplicationTickContext& context);

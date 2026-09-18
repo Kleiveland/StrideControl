@@ -113,6 +113,7 @@ private:
     static CsafeState provideSimulatedCsafe(void* context);
     static InclineVerificationCommandInput provideSimulatedInclineCommandContext(void* context);
     static CommandExecutionStatus provideSimulatedCommandExecutionStatus(void* context);
+    static SessionTelemetryInput provideSimulatedSessionTelemetry(void* context);
 
     class TargetSinkWrapper : public IWorkoutTargetSink {
     public:
