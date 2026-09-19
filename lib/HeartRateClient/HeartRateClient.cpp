@@ -1,4 +1,5 @@
 #include "HeartRateClient.h"
+#include <Arduino.h>
 #include "../BleManager/BleManager.h"
 #include <NimBLEDevice.h>
 #include <NimBLEClient.h>
@@ -202,9 +203,24 @@ void HeartRateClient::end() {
 }
 
 void HeartRateClient::updateConfig(const BleConfig& config) {
+    BleManager* localMgr = nullptr;
+    bool revertProfile = false;
     portENTER_CRITICAL(&mux_);
     config_ = config;
+    if (isDiscoveryScan_) {
+        isDiscoveryScan_ = false;
+        revertProfile = true;
+        localMgr = bleManager_;
+    }
+    if (internalState_ == HeartRateInternalState::Idle && config_.preferredHrMac[0] != '\0' && config_.autoConnectHr) {
+        internalState_ = HeartRateInternalState::CooldownWait;
+        stateEntryTimestampMs_ = millis() - HeartRateClientTiming::RECONNECT_COOLDOWN_MS;
+    }
     portEXIT_CRITICAL(&mux_);
+
+    if (revertProfile && localMgr != nullptr) {
+        localMgr->setScanProfile(BleScanProfile::Background);
+    }
 }
 
 BleConfig HeartRateClient::getConfig() const {
@@ -230,13 +246,19 @@ size_t HeartRateClient::getScanResults(BleScanResult* outResults, size_t maxResu
 void HeartRateClient::startScan() {
     BleManager* localMgr = nullptr;
     portENTER_CRITICAL(&mux_);
-    if (!state_.initialized || isShuttingDown_ || isTransitioningLifecycle_ ||
+    const bool init = state_.initialized;
+    const bool shuttingDown = isShuttingDown_;
+    const bool trans = isTransitioningLifecycle_;
+    portEXIT_CRITICAL(&mux_);
+
+    if (!init || shuttingDown || trans ||
         internalState_ == HeartRateInternalState::Connecting ||
         internalState_ == HeartRateInternalState::ConnectedStreaming) {
-        portEXIT_CRITICAL(&mux_);
         return;
     }
+    portENTER_CRITICAL(&mux_);
     scanResultCount_ = 0;
+    isDiscoveryScan_ = true;
     localMgr = bleManager_;
     portEXIT_CRITICAL(&mux_);
 
@@ -244,13 +266,15 @@ void HeartRateClient::startScan() {
         return;
     }
 
-    bool ok = localMgr->getState().isScanning || localMgr->startScan();
+    bool ok = localMgr->startScan(BleScanProfile::Discovery);
 
     portENTER_CRITICAL(&mux_);
     if (ok && !isShuttingDown_) {
         state_.connectionState = HeartRateConnectionState::Scanning;
         internalState_ = HeartRateInternalState::Scanning;
         stateEntryTimestampMs_ = millis();
+    } else {
+        isDiscoveryScan_ = false;
     }
     portEXIT_CRITICAL(&mux_);
 }
@@ -262,10 +286,15 @@ void HeartRateClient::stopScan() {
         portEXIT_CRITICAL(&mux_);
         return;
     }
+    const bool wasDiscovery = isDiscoveryScan_;
+    isDiscoveryScan_ = false;
     localMgr = bleManager_;
     portEXIT_CRITICAL(&mux_);
 
     if (localMgr != nullptr) {
+        if (wasDiscovery) {
+            localMgr->setScanProfile(BleScanProfile::Background);
+        }
         localMgr->stopScan();
     }
 
@@ -302,7 +331,11 @@ void HeartRateClient::disconnect() {
 
 void HeartRateClient::handleScanResult(const BleScanResult& result) {
     portENTER_CRITICAL(&mux_);
-    if (isShuttingDown_ || !state_.initialized || internalState_ != HeartRateInternalState::Scanning || connectPending_) {
+    if (isShuttingDown_ || !state_.initialized || internalState_ != HeartRateInternalState::Scanning) {
+        portEXIT_CRITICAL(&mux_);
+        return;
+    }
+    if (!isDiscoveryScan_ && connectPending_) {
         portEXIT_CRITICAL(&mux_);
         return;
     }
@@ -310,7 +343,7 @@ void HeartRateClient::handleScanResult(const BleScanResult& result) {
     if (result.advertisesHeartRateService && result.address[0] != '\0') {
         bool found = false;
         for (size_t i = 0; i < scanResultCount_; ++i) {
-            if (strcmp(scanResults_[i].address, result.address) == 0) {
+            if (strcasecmp(scanResults_[i].address, result.address) == 0) {
                 scanResults_[i].rssiDbm = result.rssiDbm;
                 if (result.name[0] != '\0') {
                     strncpy(scanResults_[i].name, result.name, sizeof(scanResults_[i].name) - 1);
@@ -325,11 +358,16 @@ void HeartRateClient::handleScanResult(const BleScanResult& result) {
         }
     }
 
+    // In Discovery mode, never trigger auto-connect; solely collect nearby straps for pairing UI
+    if (isDiscoveryScan_) {
+        portEXIT_CRITICAL(&mux_);
+        return;
+    }
+
+    // In Background mode, auto-connect strictly if matching saved preferredHrMac
     bool match = false;
     if (config_.preferredHrMac[0] != '\0') {
-        match = (strcmp(result.address, config_.preferredHrMac) == 0);
-    } else if (result.advertisesHeartRateService) {
-        match = true;
+        match = (strcasecmp(result.address, config_.preferredHrMac) == 0);
     }
 
     if (match) {
@@ -471,10 +509,18 @@ void HeartRateClient::update(uint32_t nowMs) {
 
     // 3b. Scan Duration Watchdog (Enforce bounded scan window; never scan continuously)
     BleManager* scanStopMgr = nullptr;
+    bool wasDiscoveryTimeout = false;
     portENTER_CRITICAL(&mux_);
+    const uint32_t scanDuration = isDiscoveryScan_
+        ? HeartRateClientTiming::DISCOVERY_SCAN_DURATION_MS
+        : HeartRateClientTiming::SCAN_DURATION_MS;
+
     if (internalState_ == HeartRateInternalState::Scanning &&
-        (nowMs - stateEntryTimestampMs_ >= HeartRateClientTiming::SCAN_DURATION_MS)) {
+        (nowMs - stateEntryTimestampMs_ >= scanDuration)) {
         scanStopMgr = bleManager_;
+        wasDiscoveryTimeout = isDiscoveryScan_;
+        isDiscoveryScan_ = false;
+
         if (config_.preferredHrMac[0] != '\0' && config_.autoConnectHr) {
             // Saved paired sensor: enter bounded cooldown before next targeted scan attempt
             internalState_ = HeartRateInternalState::CooldownWait;
@@ -489,6 +535,9 @@ void HeartRateClient::update(uint32_t nowMs) {
     portEXIT_CRITICAL(&mux_);
 
     if (scanStopMgr != nullptr) {
+        if (wasDiscoveryTimeout) {
+            scanStopMgr->setScanProfile(BleScanProfile::Background);
+        }
         scanStopMgr->stopScan();
     }
 
@@ -608,7 +657,7 @@ void HeartRateClient::update(uint32_t nowMs) {
     portEXIT_CRITICAL(&mux_);
 
     if (localMgr != nullptr && autoScan) {
-        localMgr->startScan();
+        localMgr->startScan(BleScanProfile::Background);
     }
 
     // 6. Data Freshness / Timeout

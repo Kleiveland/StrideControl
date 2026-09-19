@@ -118,6 +118,7 @@ private:
 
     bool isShuttingDown_{false};
     bool isTransitioningLifecycle_{false};
+    bool isDiscoveryScan_{false};
 };
 
 } // namespace stridecontrol

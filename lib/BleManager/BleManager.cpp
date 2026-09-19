@@ -1,4 +1,5 @@
 #include "BleManager.h"
+#include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <NimBLEScan.h>
 #include <NimBLEServer.h>
@@ -346,6 +347,7 @@ bool BleManager::begin(const BleConfig& config) {
     scan_->setAdvertisedDeviceCallbacks(&s_scanCallbackAdapter, true);
 
     portENTER_CRITICAL(&mux_);
+    currentScanProfile_ = BleScanProfile::Background;
     state_.initialized = true;
     state_.state = BleManagerState::Ready;
     internalState_ = BleCoordinatorInternalState::DualRoleActive;
@@ -721,17 +723,59 @@ bool BleManager::unregisterScanListener(BleScanCallback callback, void* context)
     return false;
 }
 
-bool BleManager::startScan() {
+void BleManager::setScanProfile(BleScanProfile profile) {
     portENTER_CRITICAL(&mux_);
     if (!state_.initialized || isShuttingDown_ || isTransitioningLifecycle_) {
         portEXIT_CRITICAL(&mux_);
+        return;
+    }
+    if (currentScanProfile_ == profile) {
+        portEXIT_CRITICAL(&mux_);
+        return;
+    }
+    currentScanProfile_ = profile;
+    const bool wasScanning = state_.isScanning;
+    ::NimBLEScan* localScan = scan_;
+    portEXIT_CRITICAL(&mux_);
+
+    if (localScan != nullptr) {
+        if (wasScanning) {
+            localScan->stop();
+        }
+        if (profile == BleScanProfile::Discovery) {
+            localScan->setInterval(160); // 100 ms (160 * 0.625 ms)
+            localScan->setWindow(80);    // 50 ms (80 * 0.625 ms) -> 50% duty cycle for fast pairing
+        } else {
+            localScan->setInterval(320); // 200 ms (320 * 0.625 ms)
+            localScan->setWindow(48);    // 30 ms (48 * 0.625 ms) -> ~15% duty cycle to protect Wi-Fi
+        }
+        if (wasScanning) {
+            bool started = localScan->start(0, nullptr, false);
+            portENTER_CRITICAL(&mux_);
+            state_.isScanning = started;
+            portEXIT_CRITICAL(&mux_);
+        }
+    }
+}
+
+bool BleManager::startScan(BleScanProfile profile) {
+    portENTER_CRITICAL(&mux_);
+    const bool init = state_.initialized;
+    const bool shuttingDown = isShuttingDown_;
+    const bool trans = isTransitioningLifecycle_;
+    const bool alreadyScanning = state_.isScanning;
+    const bool profileChanged = (currentScanProfile_ != profile);
+    portEXIT_CRITICAL(&mux_);
+
+    if (!init || shuttingDown || trans) {
         return false;
     }
-    if (state_.isScanning) {
-        portEXIT_CRITICAL(&mux_);
+
+    if (profileChanged) {
+        setScanProfile(profile);
+    } else if (alreadyScanning) {
         return true;
     }
-    portEXIT_CRITICAL(&mux_);
 
     if (scan_ == nullptr) {
         return false;
@@ -836,8 +880,10 @@ void BleManager::handleAdvertisedDevice(::NimBLEAdvertisedDevice* advertisedDevi
     }
     portEXIT_CRITICAL(&mux_);
 
+    uint8_t listenerCount = 0;
     for (const auto& entry : localListeners) {
         if (entry.callback != nullptr) {
+            listenerCount++;
             entry.callback(result, entry.context);
         }
     }

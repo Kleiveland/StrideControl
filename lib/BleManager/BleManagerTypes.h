@@ -60,6 +60,14 @@ struct BleScanResult {
 };
 
 /**
+ * @brief RF duty cycle profiles for central BLE scanning.
+ */
+enum class BleScanProfile : uint8_t {
+    Background, ///< Low RF duty cycle (window 30ms, interval 200ms -> ~15%) to protect Wi-Fi throughput
+    Discovery   ///< High responsiveness (window 50ms, interval 100ms -> 50%) for active user pairing
+};
+
+/**
  * @brief Scan callback signature for registered listeners.
  */
 using BleScanCallback = void (*)(const BleScanResult& result, void* context);

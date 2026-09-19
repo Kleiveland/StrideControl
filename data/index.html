@@ -1700,6 +1700,25 @@
             }
         }
 
+        let hrScanInterval = null;
+        let hrScanTimeout = null;
+
+        function stopHrScanUi() {
+            if (hrScanInterval) {
+                clearInterval(hrScanInterval);
+                hrScanInterval = null;
+            }
+            if (hrScanTimeout) {
+                clearTimeout(hrScanTimeout);
+                hrScanTimeout = null;
+            }
+            const btn = document.getElementById('btn-hr-scan');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerText = 'Søk etter sensor';
+            }
+        }
+
         async function fetchHrScanResults() {
             const res = await fetch('/api/v1/heartrate/scan/results', { cache: 'no-cache' });
             if (!res.ok) throw new Error('Kunne ikke hente skanneresultater');
@@ -1709,8 +1728,13 @@
         function renderHrScanList(results) {
             const list = document.getElementById('hr-pairing-list');
             if (!list) return;
+            if (!Array.isArray(results) || results.length === 0) {
+                if (!hrScanInterval) {
+                    list.innerHTML = '<div style="font-size: 22px; color: var(--text-dim); padding: 15px 5px;">Ingen sensorer funnet</div>';
+                }
+                return;
+            }
             list.innerHTML = '';
-            if (!Array.isArray(results) || results.length === 0) return;
             results.forEach(r => {
                 const item = document.createElement('div');
                 item.className = 'bt-item';
@@ -1722,6 +1746,7 @@
                     <button class="btn-dialog-act sec clickable" style="min-width: 0; padding: 0 45px; height: 75px; font-size: 28px;">Koble til</button>
                 `;
                 item.querySelector('button').addEventListener('click', () => {
+                    stopHrScanUi();
                     fetch('/api/v1/heartrate/save', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1733,11 +1758,37 @@
         }
 
         document.getElementById('btn-hr-scan')?.addEventListener('click', () => {
+            stopHrScanUi();
+
+            const scanBtn = document.getElementById('btn-hr-scan');
+            if (scanBtn) {
+                scanBtn.disabled = true;
+                scanBtn.innerText = 'Søker etter pulssensorer...';
+            }
+
+            const list = document.getElementById('hr-pairing-list');
+            if (list && (!list.children || list.children.length === 0)) {
+                list.innerHTML = '<div style="font-size: 22px; color: var(--text-dim); padding: 15px 5px;">Søker etter enheter i nærheten...</div>';
+            }
+
             fetch('/api/v1/heartrate/scan/start', { method: 'POST' })
                 .then(() => {
-                    setTimeout(() => { fetchHrScanResults().then(renderHrScanList).catch(() => {}); }, 3000);
+                    const poll = () => {
+                        fetchHrScanResults()
+                            .then(renderHrScanList)
+                            .catch(err => console.error('[HR] Polling scan results failed:', err));
+                    };
+                    poll();
+                    hrScanInterval = setInterval(poll, 1000);
+                    hrScanTimeout = setTimeout(() => {
+                        stopHrScanUi();
+                        poll();
+                    }, 8000);
                 })
-                .catch(err => console.error('[HR] Scan start failed:', err));
+                .catch(err => {
+                    console.error('[HR] Scan start failed:', err);
+                    stopHrScanUi();
+                });
         });
 
         document.getElementById('btn-hr-forget')?.addEventListener('click', () => {

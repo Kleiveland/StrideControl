@@ -10,7 +10,8 @@ namespace stridecontrol {
  */
 struct HeartRateClientTiming {
     static constexpr uint32_t DATA_TIMEOUT_MS = 5000;           ///< Time without sample before heartRateValid becomes false
-    static constexpr uint32_t SCAN_DURATION_MS = 5000;          ///< Duration of an active scan window
+    static constexpr uint32_t SCAN_DURATION_MS = 5000;          ///< Duration of an active background scan window
+    static constexpr uint32_t DISCOVERY_SCAN_DURATION_MS = 8000;///< Duration of an active discovery scan window
     static constexpr uint32_t RECONNECT_COOLDOWN_MS = 3000;     ///< Cooldown before retry after disconnect/failure
     static constexpr uint32_t BATTERY_POLL_INTERVAL_MS = 60000; ///< Interval between Battery Service (0x180F) reads
 };

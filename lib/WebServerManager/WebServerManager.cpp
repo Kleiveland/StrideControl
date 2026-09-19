@@ -1329,6 +1329,7 @@ void WebServerManager::registerRoutes() {
         SettingsService::instance().commitUsersJson();
 
         if (hrClient_ != nullptr) {
+            hrClient_->stopScan();
             BleConfig bleCfg = hrClient_->getConfig();
             strncpy(bleCfg.preferredHrMac, address, sizeof(bleCfg.preferredHrMac) - 1);
             bleCfg.preferredHrMac[sizeof(bleCfg.preferredHrMac) - 1] = '\0';

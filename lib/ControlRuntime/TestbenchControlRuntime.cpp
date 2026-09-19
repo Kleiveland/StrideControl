@@ -551,7 +551,9 @@ void TestbenchControlRuntime::runTaskLoop() {
         publishedAuthoritative_ = authoritative;
         portEXIT_CRITICAL(&snapshotMux_);
 
-        // 7. Dispatch Periodic GATT Peripheral Telemetry Updates
+        // 7. Dispatch Periodic BLE Stack, Client, and Service Telemetry Updates
+        bleManager_.update(nowMs);
+        heartRateClient_.update(nowMs);
         bleManager_.updateServices(nowMs, snapshot);
 
         // 8. Periodically check stack high-water mark (every 1000 ms)

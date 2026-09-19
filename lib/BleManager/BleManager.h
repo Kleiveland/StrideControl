@@ -86,7 +86,8 @@ public:
     bool registerScanListener(BleScanCallback callback, void* context);
     bool unregisterScanListener(BleScanCallback callback, void* context);
 
-    bool startScan();
+    void setScanProfile(BleScanProfile profile);
+    bool startScan(BleScanProfile profile = BleScanProfile::Background);
     void stopScan();
 
     BleState getState() const;
@@ -120,6 +121,7 @@ private:
     ::NimBLEScan* scan_{nullptr};
     ::NimBLEServer* server_{nullptr};
     ::NimBLEAdvertising* advertising_{nullptr};
+    BleScanProfile currentScanProfile_{BleScanProfile::Background};
 
     BleConfig config_{};
     BleState state_{};
