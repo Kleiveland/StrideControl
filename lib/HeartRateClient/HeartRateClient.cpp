@@ -205,6 +205,7 @@ void HeartRateClient::end() {
 void HeartRateClient::updateConfig(const BleConfig& config) {
     BleManager* localMgr = nullptr;
     bool revertProfile = false;
+    bool shouldDisconnect = false;
     portENTER_CRITICAL(&mux_);
     config_ = config;
     if (isDiscoveryScan_) {
@@ -212,6 +213,19 @@ void HeartRateClient::updateConfig(const BleConfig& config) {
         revertProfile = true;
         localMgr = bleManager_;
     }
+
+    const bool isCurrentlyConnected = (state_.connectionState == HeartRateConnectionState::Connected ||
+                                       internalState_ == HeartRateInternalState::ConnectedStreaming ||
+                                       internalState_ == HeartRateInternalState::Connecting);
+
+    if (isCurrentlyConnected) {
+        const char* currentAddr = (state_.connectedAddress[0] != '\0') ? state_.connectedAddress : pendingConnectAddress_;
+        if (config_.preferredHrMac[0] == '\0' || !config_.autoConnectHr ||
+            (currentAddr[0] != '\0' && strcasecmp(config_.preferredHrMac, currentAddr) != 0)) {
+            shouldDisconnect = true;
+        }
+    }
+
     if (internalState_ == HeartRateInternalState::Idle && config_.preferredHrMac[0] != '\0' && config_.autoConnectHr) {
         internalState_ = HeartRateInternalState::CooldownWait;
         stateEntryTimestampMs_ = millis() - HeartRateClientTiming::RECONNECT_COOLDOWN_MS;
@@ -220,6 +234,10 @@ void HeartRateClient::updateConfig(const BleConfig& config) {
 
     if (revertProfile && localMgr != nullptr) {
         localMgr->setScanProfile(BleScanProfile::Background);
+    }
+
+    if (shouldDisconnect) {
+        disconnect();
     }
 }
 
@@ -315,6 +333,7 @@ void HeartRateClient::disconnect() {
     }
     localClient = client_;
     internalState_ = HeartRateInternalState::Disconnecting;
+    state_.heartRateValid = false;
     portEXIT_CRITICAL(&mux_);
 
     if (localClient != nullptr && localClient->isConnected()) {
@@ -323,6 +342,9 @@ void HeartRateClient::disconnect() {
         portENTER_CRITICAL(&mux_);
         state_.connectionState = HeartRateConnectionState::Disconnected;
         state_.heartRateValid = false;
+        state_.connectedAddress[0] = '\0';
+        state_.sensorAddress[0] = '\0';
+        state_.sensorName[0] = '\0';
         internalState_ = HeartRateInternalState::Idle;
         hrChar_ = nullptr;
         portEXIT_CRITICAL(&mux_);
@@ -465,6 +487,9 @@ void HeartRateClient::update(uint32_t nowMs) {
         metrics_.disconnectEvents++;
         state_.connectionState = HeartRateConnectionState::Disconnected;
         state_.heartRateValid = false;
+        state_.connectedAddress[0] = '\0';
+        state_.sensorAddress[0] = '\0';
+        state_.sensorName[0] = '\0';
         if (config_.preferredHrMac[0] != '\0' && config_.autoConnectHr) {
             internalState_ = HeartRateInternalState::CooldownWait;
         } else {
@@ -613,7 +638,11 @@ void HeartRateClient::update(uint32_t nowMs) {
                                 metrics_.successfulConnections++;
                                 metrics_.lastRssiDbm = localRssiDbm;
                                 strncpy(state_.sensorAddress, localTargetAddress, sizeof(state_.sensorAddress) - 1);
+                                state_.sensorAddress[sizeof(state_.sensorAddress) - 1] = '\0';
                                 strncpy(state_.sensorName, localTargetName, sizeof(state_.sensorName) - 1);
+                                state_.sensorName[sizeof(state_.sensorName) - 1] = '\0';
+                                strncpy(state_.connectedAddress, localTargetAddress, sizeof(state_.connectedAddress) - 1);
+                                state_.connectedAddress[sizeof(state_.connectedAddress) - 1] = '\0';
                                 state_.batteryPercent = 0;
                                 state_.batteryPercentValid = false;
                             }
@@ -630,6 +659,9 @@ void HeartRateClient::update(uint32_t nowMs) {
         hrChar_ = nullptr;
         internalState_ = HeartRateInternalState::CooldownWait;
         state_.connectionState = HeartRateConnectionState::Failed;
+        state_.connectedAddress[0] = '\0';
+        state_.sensorAddress[0] = '\0';
+        state_.sensorName[0] = '\0';
         stateEntryTimestampMs_ = nowMs;
         portEXIT_CRITICAL(&mux_);
     }

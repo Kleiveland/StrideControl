@@ -1457,14 +1457,38 @@ void WebServerManager::registerRoutes() {
         }
 
         bool connected = false;
+        uint8_t batteryPercent = 0;
+        bool batteryValid = false;
+        String sensorName = "";
+        String liveAddress = "";
         if (hrClient_ != nullptr) {
             HeartRateState hrState = hrClient_->getState();
             connected = (hrState.connectionState == HeartRateConnectionState::Connected);
+            batteryPercent = hrState.batteryPercent;
+            batteryValid = hrState.batteryPercentValid;
+            if (hrState.sensorName[0] != '\0') {
+                sensorName = hrState.sensorName;
+            }
+            if (hrState.connectedAddress[0] != '\0') {
+                liveAddress = hrState.connectedAddress;
+            } else if (hrState.sensorAddress[0] != '\0') {
+                liveAddress = hrState.sensorAddress;
+            }
+        }
+
+        const char* finalAddress = savedAddress;
+        if (connected && liveAddress.length() > 0) {
+            finalAddress = liveAddress.c_str();
         }
 
         JsonDocument doc;
-        doc["savedAddress"] = savedAddress;
+        doc["savedAddress"] = finalAddress;
         doc["connected"] = connected;
+        doc["batteryPercent"] = batteryPercent;
+        doc["batteryValid"] = batteryValid;
+        if (sensorName.length() > 0) {
+            doc["name"] = sensorName;
+        }
         String resp;
         serializeJson(doc, resp);
         request->send(200, "application/json", resp);

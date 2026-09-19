@@ -46,6 +46,7 @@ struct HeartRateState {
 
     char sensorName[32] = {};
     char sensorAddress[18] = {};
+    char connectedAddress[18] = {};
 };
 
 /**
