@@ -1340,6 +1340,11 @@
 
     </div>
 
+    <!-- 3-2-1 Full-screen Countdown Overlay -->
+    <div id="countdown-overlay" style="display: none; position: fixed; inset: 0; background: #000; z-index: 9999; align-items: center; justify-content: center;">
+        <div id="countdown-number" style="font-size: 300px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; line-height: 1; user-select: none;"></div>
+    </div>
+
     <script>
         // GUI-004: Live Clock (Client local time, HH:MM 24-hr format)
         function updateLiveClock() {
@@ -3647,8 +3652,42 @@
             }
         }
 
+        // GUI-COUNTDOWN: Shared 3-2-1 countdown overlay (Apple Watch style)
+        let countdownActive = false;
+        let lastCsafeStateForCountdown = null;
+
+        function triggerCountdownIfNeeded(csafeState) {
+            const enteringStarting = (csafeState === 'STARTING' && lastCsafeStateForCountdown !== 'STARTING');
+            lastCsafeStateForCountdown = csafeState;
+            if (enteringStarting && !countdownActive) {
+                runCountdown();
+            }
+        }
+
+        function runCountdown() {
+            countdownActive = true;
+            const overlay = document.getElementById('countdown-overlay');
+            const numberEl = document.getElementById('countdown-number');
+            if (!overlay || !numberEl) { countdownActive = false; return; }
+            overlay.style.display = 'flex';
+            let count = 3;
+            numberEl.innerText = String(count);
+            const interval = setInterval(() => {
+                count--;
+                if (count <= 0) {
+                    clearInterval(interval);
+                    overlay.style.display = 'none';
+                    countdownActive = false;
+                } else {
+                    numberEl.innerText = String(count);
+                }
+            }, 1000);
+        }
+
         function renderAuthoritativeTelemetry(telem) {
             if (!telem || typeof telem !== 'object') return;
+
+            triggerCountdownIfNeeded(telem.csafe?.machineState);
 
             const spd = telem.speed?.kmh;
             const inc = telem.incline?.pct;
@@ -3798,7 +3837,7 @@
 
             if (!document.querySelector('.modal.active') &&
                 document.getElementById('view-interval-pre')?.classList.contains('active') &&
-                (telem.csafe?.machineState === 'Starting' || telem.csafe?.machineState === 'InUse')) {
+                (telem.csafe?.machineState === 'STARTING' || telem.csafe?.machineState === 'IN_USE')) {
                 document.querySelectorAll('.view, .view-grid, .view-flex').forEach(v => v.classList.remove('active'));
                 document.getElementById('view-interval-run')?.classList.add('active');
             }
@@ -3920,7 +3959,7 @@
             // Pre-start view Starting status
             const preHeaderEl = document.getElementById('pre-start-header-text');
             if (preHeaderEl) {
-                if (telem.csafe?.machineState === 'Starting') {
+                if (telem.csafe?.machineState === 'STARTING') {
                     preHeaderEl.innerText = 'MØLLEN STARTER... (3-2-1)';
                     preHeaderEl.style.color = 'var(--accent)';
                 } else {
@@ -3944,7 +3983,7 @@
             const stopButtonsCont = document.getElementById('stop-dialog-buttons-continuation');
             const stopHeroEl = document.querySelector('#view-interval-stop .hero-time-interval');
 
-            if (telem.session?.state === 'Suspended' && telem.csafe?.machineState === 'Starting') {
+            if (telem.session?.state === 'Suspended' && telem.csafe?.machineState === 'STARTING') {
                 if (stopTitleEl) stopTitleEl.innerText = 'MØLLEN STARTER PÅ NYTT...';
                 if (stopHeroLbl) stopHeroLbl.innerText = 'PAUSE';
                 if (stopDialogTitle) stopDialogTitle.innerText = 'Møllen teller ned (3-2-1)...';
@@ -3973,7 +4012,7 @@
 
             // GUI-006: Hotkey dimming based on belt running state
             const isBeltRunning = isTelemetryLive &&
-                telem.csafe?.machineState === 'InUse' &&
+                telem.csafe?.machineState === 'IN_USE' &&
                 telem.session?.state !== 'Stopped' &&
                 telem.session?.state !== 'Completed' &&
                 telem.session?.state !== 'Aborted';
@@ -3987,7 +4026,7 @@
             // GUI-SAFETY-001: Global Activity Interlock (DESIGN_GUIDE.md §14.1)
             const manualTopBar = document.getElementById('manual-topbar');
             if (manualTopBar) {
-                const beltIsMoving = telem.csafe?.machineState === 'InUse';
+                const beltIsMoving = telem.csafe?.machineState === 'IN_USE';
                 manualTopBar.classList.toggle('running-dim', beltIsMoving);
             }
 
@@ -3995,7 +4034,7 @@
             const isManualMode = document.getElementById('view-manual')?.classList.contains('active') === true;
             if (!intervalSessionStarted && !isManualMode &&
                 !document.getElementById('view-boot')?.classList.contains('active') &&
-                telem.csafe?.machineState === 'Starting') {
+                telem.csafe?.machineState === 'STARTING') {
                 intervalSessionStarted = true;
             }
             document.querySelectorAll('#view-boot .user-btn, #view-interval-pre .user-badge, #view-interval-stop .user-badge')
@@ -4041,8 +4080,8 @@
             }
 
             if (sessionState === 'Armed' &&
-                (lastAuthoritativeTelemetry?.csafe?.machineState === 'Starting' ||
-                 lastAuthoritativeTelemetry?.csafe?.machineState === 'InUse')) {
+                (lastAuthoritativeTelemetry?.csafe?.machineState === 'STARTING' ||
+                 lastAuthoritativeTelemetry?.csafe?.machineState === 'IN_USE')) {
                 return;
             }
 
@@ -4143,7 +4182,7 @@
 
             if (data.session && typeof data.session.state === 'string') {
                 if (!(data.session.state === 'Armed' &&
-                    (data.csafe?.machineState === 'Starting' || data.csafe?.machineState === 'InUse'))) {
+                    (data.csafe?.machineState === 'STARTING' || data.csafe?.machineState === 'IN_USE'))) {
                     syncIntervalViewOnStateChange(data.session.state);
                 }
             }
