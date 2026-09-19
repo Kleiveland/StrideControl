@@ -2017,7 +2017,10 @@
         }
 
         function renderEditor() {
-            if (dom.editor.contains(document.activeElement)) return;
+            const activeEl = document.activeElement;
+            const isEditingTextInput = activeEl && dom.editor.contains(activeEl) &&
+                activeEl.tagName === 'INPUT' && activeEl.type !== 'button' && activeEl.type !== 'submit';
+            if (isEditingTextInput) return;
 
             const x = get();
             if (!x) {
