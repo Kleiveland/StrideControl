@@ -82,6 +82,7 @@ public:
         report.hasUpcomingDragStep = telem.sessionSnapshot.hasUpcomingDragStep;
         report.avgHeartRateBpm = telem.sessionSnapshot.avgHeartRateBpm;
         report.maxHeartRateBpm = telem.sessionSnapshot.maxHeartRateBpm;
+        report.maxSpeedKmh = telem.sessionSnapshot.maxSpeedKmh;
         report.heartRateEverValid = telem.sessionSnapshot.heartRateEverValid;
         report.workoutId = telem.sessionSnapshot.workoutId;
         report.totalStepCount = telem.sessionSnapshot.totalStepCount;
@@ -201,6 +202,7 @@ public:
         report.hasUpcomingDragStep = sessSnap.hasUpcomingDragStep;
         report.avgHeartRateBpm = sessSnap.avgHeartRateBpm;
         report.maxHeartRateBpm = sessSnap.maxHeartRateBpm;
+        report.maxSpeedKmh = sessSnap.maxSpeedKmh;
         report.heartRateEverValid = sessSnap.heartRateEverValid;
         report.workoutId = sessSnap.workoutId;
         report.totalStepCount = sessSnap.totalStepCount;

@@ -42,6 +42,7 @@ bool WorkoutSession::begin(const WorkoutSessionConfig& config) {
     heartRateSampleSum_ = 0;
     heartRateSampleCount_ = 0;
     heartRateMaxBpm_ = 0;
+    maxSpeedKmh_ = 0.0f;
     heartRateEverValid_ = false;
     stepElapsedMs_ = 0;
     stepElapsedValidatedDistanceKm_ = 0.0;
@@ -149,6 +150,7 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, 
     heartRateSampleSum_ = 0;
     heartRateSampleCount_ = 0;
     heartRateMaxBpm_ = 0;
+    maxSpeedKmh_ = 0.0f;
     heartRateEverValid_ = false;
     stepElapsedMs_ = 0;
     stepElapsedValidatedDistanceKm_ = 0.0;
@@ -241,6 +243,7 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
         heartRateSampleSum_ = 0;
         heartRateSampleCount_ = 0;
         heartRateMaxBpm_ = 0;
+        maxSpeedKmh_ = 0.0f;
         heartRateEverValid_ = false;
         stepElapsedMs_ = 0;
         stepElapsedValidatedDistanceKm_ = 0.0;
@@ -747,6 +750,9 @@ void WorkoutSession::update(
                 if (applicationSnapshot.heartRate.heartRateBpm > heartRateMaxBpm_) {
                     heartRateMaxBpm_ = applicationSnapshot.heartRate.heartRateBpm;
                 }
+                if (applicationSnapshot.runner.runnerSpeedKmh > maxSpeedKmh_) {
+                    maxSpeedKmh_ = applicationSnapshot.runner.runnerSpeedKmh;
+                }
             }
         }
         snapshot_.totalElapsedTimeMs = totalElapsedTimeMs_;
@@ -755,6 +761,7 @@ void WorkoutSession::update(
         snapshot_.totalElevationMeters = totalElevationMeters_;
         snapshot_.avgHeartRateBpm = (heartRateSampleCount_ > 0) ? (heartRateSampleSum_ / heartRateSampleCount_) : 0;
         snapshot_.maxHeartRateBpm = heartRateMaxBpm_;
+        snapshot_.maxSpeedKmh = maxSpeedKmh_;
         snapshot_.heartRateEverValid = heartRateEverValid_;
         memcpy(snapshot_.actualStepDurationsMs, actualStepDurationsMs_, sizeof(snapshot_.actualStepDurationsMs));
         return;
@@ -794,6 +801,9 @@ void WorkoutSession::update(
             heartRateSampleCount_++;
             if (applicationSnapshot.heartRate.heartRateBpm > heartRateMaxBpm_) {
                 heartRateMaxBpm_ = applicationSnapshot.heartRate.heartRateBpm;
+            }
+            if (applicationSnapshot.runner.runnerSpeedKmh > maxSpeedKmh_) {
+                maxSpeedKmh_ = applicationSnapshot.runner.runnerSpeedKmh;
             }
         }
 
@@ -882,6 +892,7 @@ void WorkoutSession::update(
         snapshot_.totalElevationMeters = totalElevationMeters_;
         snapshot_.avgHeartRateBpm = (heartRateSampleCount_ > 0) ? (heartRateSampleSum_ / heartRateSampleCount_) : 0;
         snapshot_.maxHeartRateBpm = heartRateMaxBpm_;
+        snapshot_.maxSpeedKmh = maxSpeedKmh_;
         snapshot_.heartRateEverValid = heartRateEverValid_;
         snapshot_.isPartialDrag = isPartialDragCurrent_;
         snapshot_.partialDragCount = partialDragCount_;

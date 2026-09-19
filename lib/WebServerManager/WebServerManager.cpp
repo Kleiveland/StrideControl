@@ -27,6 +27,20 @@ struct HttpBodyBuffer {
     const uint8_t* data() const { return reinterpret_cast<const uint8_t*>(this + 1); }
 };
 
+const char* inclineCommissioningPhaseToString(InclineCommissioningPhase phase) {
+    switch (phase) {
+        case InclineCommissioningPhase::Idle: return "Idle";
+        case InclineCommissioningPhase::Homing: return "Homing";
+        case InclineCommissioningPhase::HomedSettled: return "HomedSettled";
+        case InclineCommissioningPhase::MeasuringPoint: return "MeasuringPoint";
+        case InclineCommissioningPhase::Complete: return "Complete";
+        case InclineCommissioningPhase::Failed: return "Failed";
+        case InclineCommissioningPhase::TimedOut: return "TimedOut";
+        case InclineCommissioningPhase::Aborted: return "Aborted";
+        default: return "Unknown";
+    }
+}
+
 void handleRequestBodyChunk(AsyncWebServerRequest* request,
                             uint8_t* data,
                             size_t len,
@@ -216,6 +230,7 @@ void WebServerManager::registerRoutes() {
         session["hasUpcomingDragStep"] = report.hasUpcomingDragStep;
         session["avgHeartRateBpm"] = report.avgHeartRateBpm;
         session["maxHeartRateBpm"] = report.maxHeartRateBpm;
+        session["maxSpeedKmh"] = report.maxSpeedKmh;
         session["heartRateEverValid"] = report.heartRateEverValid;
         session["workoutId"] = report.workoutId;
         session["totalStepCount"] = report.totalStepCount;
@@ -1325,6 +1340,140 @@ void WebServerManager::registerRoutes() {
                : "{\"error\":\"save_failed\"}");
     };
     server_.on("/api/v1/commissioning/ramptest/save", HTTP_POST, rampTestSaveHandler, nullptr, commandBodyBuffer);
+
+    // POST /api/v1/commissioning/incline/homing/start
+    auto inclineHomingStartHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::StartInclineHoming;
+        cmd.timestampMs = millis();
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/v1/commissioning/incline/homing/start", HTTP_POST, inclineHomingStartHandler);
+
+    // POST /api/v1/commissioning/incline/measure/start
+    auto inclineMeasureStartHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+
+        if (commandStager_ == nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+            return;
+        }
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received != buffer->capacity) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+            return;
+        }
+
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+
+        if (err || !doc["commandedPct"].is<float>() || !doc["direction"].is<const char*>()) {
+            request->send(400, "application/json", "{\"error\":\"Invalid or missing commandedPct or direction\"}");
+            return;
+        }
+
+        const char* dirStr = doc["direction"] | "";
+        InclineDirection dir = InclineDirection::Unknown;
+        if (strcmp(dirStr, "up") == 0 || strcmp(dirStr, "Up") == 0) {
+            dir = InclineDirection::Up;
+        } else if (strcmp(dirStr, "down") == 0 || strcmp(dirStr, "Down") == 0) {
+            dir = InclineDirection::Down;
+        } else {
+            request->send(400, "application/json", "{\"error\":\"Invalid direction, must be up or down\"}");
+            return;
+        }
+
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::StartInclineMeasurePoint;
+        cmd.timestampMs = millis();
+        cmd.data.inclineMeasurePoint.commandedPct = doc["commandedPct"].as<float>();
+        cmd.data.inclineMeasurePoint.expectedDirection = static_cast<uint8_t>(dir);
+
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/v1/commissioning/incline/measure/start", HTTP_POST, inclineMeasureStartHandler, nullptr, commandBodyBuffer);
+
+    // GET /api/v1/commissioning/incline/status
+    server_.on("/api/v1/commissioning/incline/status", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        stream->addHeader("Cache-Control", "no-cache");
+        JsonDocument doc;
+        doc["phase"] = inclineCommissioningPhaseToString(commandStager_->getInclineCommissioningPhase());
+        doc["pointCount"] = commandStager_->getInclineCommissioningPointCount();
+        doc["timedOut"] = commandStager_->didInclineCommissioningTimeOut();
+        serializeJson(doc, *stream);
+        request->send(stream);
+    });
+
+    // POST /api/v1/commissioning/incline/save
+    auto inclineSaveHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::SaveInclineCalibration;
+        cmd.timestampMs = millis();
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/v1/commissioning/incline/save", HTTP_POST, inclineSaveHandler);
+
+    // POST /api/v1/commissioning/incline/abort
+    auto inclineAbortHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::AbortInclineCommissioning;
+        cmd.timestampMs = millis();
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/v1/commissioning/incline/abort", HTTP_POST, inclineAbortHandler);
 
 #if defined(STRIDECONTROL_TESTBENCH)
     // GET /simulator.html (Testbench active universe UI)

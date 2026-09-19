@@ -62,7 +62,7 @@ struct WorkoutCommandIntent {
 struct WorkoutSessionConfig {
     float beltMovingThresholdKmh = 0.5f;                 // Minimum speed to qualify belt motion
     uint32_t defaultRestExtensionSeconds = 30;          // Standard Hvile extension in seconds
-    uint32_t continuationWindowDurationMs = 30000;      // 30-second continuation window after 2x stop
+    uint32_t continuationWindowDurationMs = 300000;     // 5-minute continuation window after 2x stop
     uint32_t speedAdjustmentPromptDurationMs = 15000;   // 15-second prompt duration during REST step
 };
 
@@ -106,6 +106,7 @@ struct WorkoutSessionSnapshot {
     double totalElevationMeters = 0.0;
     uint32_t avgHeartRateBpm = 0;
     uint8_t maxHeartRateBpm = 0;
+    float maxSpeedKmh = 0.0f;
     bool heartRateEverValid = false;
 
     // Target command intent

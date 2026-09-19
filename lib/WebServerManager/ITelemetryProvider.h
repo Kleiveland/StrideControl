@@ -38,6 +38,7 @@ struct TelemetryReport {
     bool hasUpcomingDragStep = false;
     uint32_t avgHeartRateBpm = 0;
     uint8_t maxHeartRateBpm = 0;
+    float maxSpeedKmh = 0.0f;
     bool heartRateEverValid = false;
     uint16_t workoutId = 0;
     uint8_t totalStepCount = 0;

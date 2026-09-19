@@ -113,6 +113,7 @@ private:
     uint32_t heartRateSampleSum_ = 0;
     uint32_t heartRateSampleCount_ = 0;
     uint8_t heartRateMaxBpm_ = 0;
+    float maxSpeedKmh_ = 0.0f;
     bool heartRateEverValid_ = false;
 
     // Runtime modifiers

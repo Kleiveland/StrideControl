@@ -3347,15 +3347,15 @@
             }
 
             // Fart (Snitt/Maks) - average is derivable from distance+duration (same data as
-            // pace); max speed still requires backend tracking that doesn't exist yet.
+            // pace); max speed is tracked from session telemetry.
             const sumSpdEl = document.getElementById('sum-spd-val');
             if (sumSpdEl) {
                 const totalHrs = (typeof durationMs === 'number' && durationMs > 0) ? (durationMs / 3600000) : 0;
                 const avgSpeedKmh = (typeof distKm === 'number' && distKm > 0.05 && totalHrs > 0) ? (distKm / totalHrs) : null;
                 const avgSpeedText = (typeof avgSpeedKmh === 'number') ? formatDecimalComma(avgSpeedKmh, 1) : '--';
-                const maxSpeedText = (typeof data?.maxSpeedKmh === 'number') ? formatDecimalComma(data.maxSpeedKmh, 1) : '--';
-                if (typeof data?.avgSpeedKmh === 'number' && typeof data?.maxSpeedKmh === 'number') {
-                    sumSpdEl.innerText = `${formatDecimalComma(data.avgSpeedKmh, 1)} / ${formatDecimalComma(data.maxSpeedKmh, 1)}`;
+                const maxSpeedText = (typeof data?.session?.maxSpeedKmh === 'number') ? formatDecimalComma(data.session.maxSpeedKmh, 1) : '--';
+                if (typeof data?.avgSpeedKmh === 'number' && typeof data?.session?.maxSpeedKmh === 'number') {
+                    sumSpdEl.innerText = `${formatDecimalComma(data.avgSpeedKmh, 1)} / ${formatDecimalComma(data.session.maxSpeedKmh, 1)}`;
                 } else {
                     sumSpdEl.innerText = `${avgSpeedText} / ${maxSpeedText}`;
                 }
