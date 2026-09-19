@@ -1274,8 +1274,8 @@
                 </div>
 
                 <div class="bottom-action-grid-fixed">
-                    <button id="saveEditor" class="btn-bottom-locked confirm nav-btn" data-target="view-interval-pre">Lagre</button>
-                    <button id="cancelEditor" class="btn-bottom-locked cancel nav-btn" data-target="view-interval-pre">Avbryt</button>
+                    <button id="saveEditor" class="btn-bottom-locked confirm">Lagre</button>
+                    <button id="cancelEditor" class="btn-bottom-locked cancel">Avbryt</button>
                 </div>
             </div>
         </div>
@@ -1369,6 +1369,7 @@
         let activeUser = null;
         let isSensorConnected = true;
         let maxAchievableSpeedKmh = 25.0; // Physical speed ceiling; fallback until API responds
+        let viewBeforeSetup = null;
 
         function isValidUserName(name) {
             if (!name || typeof name !== 'string') return false;
@@ -1469,6 +1470,10 @@
         document.querySelectorAll('.modal-open').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const modalId = e.currentTarget.getAttribute('data-modal');
+                if (modalId === 'modal-setup') {
+                    const activeView = document.querySelector('.view.active, .view-flex.active, .view-grid.active');
+                    if (activeView) viewBeforeSetup = activeView.id;
+                }
                 const modalEl = document.getElementById(modalId);
                 if (modalEl) modalEl.classList.add('active');
             });
@@ -2822,6 +2827,27 @@
                 console.error('[Editor] Save failed:', err);
                 showGlobalToast('FEIL VED LAGRING');
             });
+
+            const setupModal = document.getElementById('modal-setup');
+            if (setupModal) setupModal.classList.add('active');
+        });
+
+        document.getElementById('cancelEditor')?.addEventListener('click', () => {
+            document.querySelectorAll('#view-interval-editor input').forEach(inp => inp.blur());
+            if (activeUserProfile && Array.isArray(activeUserProfile.workouts) && activeUserProfile.workouts.length > 0) {
+                workoutLibrary = activeUserProfile.workouts.map(convertBackendWorkoutToModel);
+                let selectedWk = null;
+                if (activeUserProfile.selectedWorkoutId) {
+                    selectedWk = workoutLibrary.find(w => w.numericId === activeUserProfile.selectedWorkoutId);
+                }
+                if (!selectedWk) {
+                    selectedWk = workoutLibrary[0];
+                }
+                model = selectedWk;
+                renderApp();
+            }
+            const setupModal = document.getElementById('modal-setup');
+            if (setupModal) setupModal.classList.add('active');
         });
 
         function applyUserProfile(user) {
@@ -3099,9 +3125,21 @@
 
         // Wire Hotkey & Setup Event Listeners
         function initSettingsAndHotkeysUI() {
+            function restoreViewBeforeSetup() {
+                if (viewBeforeSetup) {
+                    const target = document.getElementById(viewBeforeSetup);
+                    if (target) {
+                        document.querySelectorAll('.view, .view-grid, .view-flex').forEach(v => v.classList.remove('active'));
+                        target.classList.add('active');
+                    }
+                    viewBeforeSetup = null;
+                }
+            }
+
             // Save buttons in #modal-setup and #modal-hotkeys-edit
             document.getElementById('btn-save-setup')?.addEventListener('click', () => {
                 saveActiveUserSettings();
+                restoreViewBeforeSetup();
             });
             document.getElementById('btn-save-hotkeys')?.addEventListener('click', () => {
                 saveActiveUserSettings();
@@ -3111,6 +3149,7 @@
             document.querySelector('#modal-setup .cancel')?.addEventListener('click', () => {
                 document.querySelectorAll('#modal-hotkeys-edit input').forEach(inp => inp.blur());
                 if (activeUserProfile) applyUserProfile(activeUserProfile);
+                restoreViewBeforeSetup();
             });
             document.querySelector('#modal-hotkeys-edit .cancel')?.addEventListener('click', () => {
                 document.querySelectorAll('#modal-hotkeys-edit input').forEach(inp => inp.blur());
