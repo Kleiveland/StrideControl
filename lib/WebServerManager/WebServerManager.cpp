@@ -401,6 +401,18 @@ void WebServerManager::registerRoutes() {
                 return;
             }
 
+            // Preserve preferredHrMac server-side if incoming candidate has it empty,
+            // preventing general settings saves (speed/incline/workouts) from clobbering HR pairing.
+            const SystemSettings* active = SettingsService::instance().getActiveSettings();
+            if (active != nullptr) {
+                for (size_t u = 0; u < MAX_USERS; ++u) {
+                    if (candidate->users[u].preferredHrMac[0] == '\0' && active->users[u].preferredHrMac[0] != '\0') {
+                        strncpy(candidate->users[u].preferredHrMac, active->users[u].preferredHrMac, sizeof(candidate->users[u].preferredHrMac) - 1);
+                        candidate->users[u].preferredHrMac[sizeof(candidate->users[u].preferredHrMac) - 1] = '\0';
+                    }
+                }
+            }
+
             bool saveOk = SettingsService::instance().updateSystemSettings(*candidate, errBuf, sizeof(errBuf));
             if (!saveOk) {
                 JsonDocument errDoc;

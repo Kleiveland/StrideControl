@@ -1674,7 +1674,6 @@
 
 
         let hrSavedAddress = '';
-        let hrConnectedAddress = '';
 
         function formatDeviceName(name, maxLen = 16) {
             if (!name) return '';
@@ -1690,40 +1689,59 @@
         }
 
         function renderHrStatus(data) {
-            hrSavedAddress = (data && (data.savedAddress || data.connectedAddress)) || '';
-            hrConnectedAddress = (data && data.connected && (data.connectedAddress || data.savedAddress)) || '';
+            hrSavedAddress = (data && data.savedAddress) || '';
             const statusLine = document.getElementById('hr-status-line');
             const addrEl = document.getElementById('hr-status-address');
             const dotEl = document.getElementById('hr-status-dot');
             const forgetBtn = document.getElementById('btn-hr-forget');
+            const list = document.getElementById('hr-pairing-list');
             if (!statusLine || !addrEl || !dotEl || !forgetBtn) return;
 
-            const isConnected = !!(data && data.connected && (hrSavedAddress || hrConnectedAddress));
+            const isConnected = !!(data && data.connected && hrSavedAddress);
             if (isConnected) {
-                const activeMac = (hrConnectedAddress || hrSavedAddress).trim().toUpperCase();
                 statusLine.style.display = 'flex';
                 statusLine.classList.add('connected');
-                statusLine.dataset.address = activeMac;
                 dotEl.className = 'bt-dot green';
-                const rawName = data.name || hrSavedAddress || hrConnectedAddress;
+                const rawName = data.name || hrSavedAddress;
                 const nameText = formatDeviceName(rawName, 16);
                 const batteryText = (data.batteryValid && typeof data.batteryPercent === 'number')
                     ? ` · ${data.batteryPercent}%`
                     : '';
                 addrEl.innerText = nameText + batteryText;
                 forgetBtn.style.display = 'block';
+
+                if (list && list.innerHTML.includes('Ingen sensor tilkoblet')) {
+                    list.innerHTML = '';
+                }
             } else {
                 statusLine.style.display = 'none';
                 statusLine.classList.remove('connected');
-                delete statusLine.dataset.address;
                 dotEl.className = 'bt-dot dim';
                 addrEl.innerText = '';
                 forgetBtn.style.display = 'none';
+
+                // Requirement 3: When disconnected and not scanning/connecting, show low-key empty state message
+                if (list && !hrScanInterval && !hrConnectPollInterval && list.querySelectorAll('.bt-item').length === 0) {
+                    list.innerHTML = '<div style="font-size: 28px; color: var(--text-dim); padding: 30px 10px; text-align: center;">Ingen sensor tilkoblet</div>';
+                }
             }
         }
 
         let hrScanInterval = null;
         let hrScanTimeout = null;
+        let hrConnectPollInterval = null;
+        let hrConnectTimeout = null;
+
+        function stopHrConnectPolling() {
+            if (hrConnectPollInterval) {
+                clearInterval(hrConnectPollInterval);
+                hrConnectPollInterval = null;
+            }
+            if (hrConnectTimeout) {
+                clearTimeout(hrConnectTimeout);
+                hrConnectTimeout = null;
+            }
+        }
 
         function stopHrScanUi() {
             if (hrScanInterval) {
@@ -1741,6 +1759,86 @@
             }
         }
 
+        function startHrConnectingUi(btn, address) {
+            stopHrScanUi();
+            stopHrConnectPolling();
+
+            if (btn) {
+                btn.disabled = true;
+                btn.innerText = 'Kobler til...';
+            }
+            document.querySelectorAll('#hr-pairing-list .btn-dialog-act').forEach(b => {
+                b.disabled = true;
+            });
+
+            fetch('/api/v1/heartrate/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address: address })
+            })
+            .then(() => {
+                // Keep local user models in sync
+                if (systemSettings && Array.isArray(systemSettings.users) && activeUserProfile) {
+                    const u = systemSettings.users.find(user => user.id === activeUserProfile.id);
+                    if (u) u.preferredHrMac = address;
+                    activeUserProfile.preferredHrMac = address;
+                }
+
+                const startTime = Date.now();
+                const pollConnect = async () => {
+                    try {
+                        const statusData = await fetchHrStatus();
+                        if (statusData && statusData.connected) {
+                            stopHrConnectPolling();
+                            renderHrStatus(statusData);
+                            fetchHrScanResults()
+                                .then(renderHrScanList)
+                                .catch(() => {});
+                            return;
+                        }
+                    } catch (err) {
+                        console.error('[HR] Connect polling error:', err);
+                    }
+
+                    if (Date.now() - startTime >= 10000) {
+                        stopHrConnectPolling();
+                        if (btn) {
+                            btn.disabled = false;
+                            btn.innerText = 'Koble til';
+                        }
+                        document.querySelectorAll('#hr-pairing-list .btn-dialog-act').forEach(b => {
+                            b.disabled = false;
+                        });
+                        fetchHrStatus().then(renderHrStatus).catch(() => {});
+                    }
+                };
+
+                pollConnect();
+                hrConnectPollInterval = setInterval(pollConnect, 1000);
+                hrConnectTimeout = setTimeout(() => {
+                    stopHrConnectPolling();
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.innerText = 'Koble til';
+                    }
+                    document.querySelectorAll('#hr-pairing-list .btn-dialog-act').forEach(b => {
+                        b.disabled = false;
+                    });
+                }, 10500);
+            })
+            .catch(err => {
+                console.error('[HR] Save failed:', err);
+                stopHrConnectPolling();
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerText = 'Koble til';
+                }
+                document.querySelectorAll('#hr-pairing-list .btn-dialog-act').forEach(b => {
+                    b.disabled = false;
+                });
+            });
+        }
+
         async function fetchHrScanResults() {
             const res = await fetch('/api/v1/heartrate/scan/results', { cache: 'no-cache' });
             if (!res.ok) throw new Error('Kunne ikke hente skanneresultater');
@@ -1751,23 +1849,12 @@
             const list = document.getElementById('hr-pairing-list');
             if (!list) return;
 
-            const excludeAddresses = new Set();
-            if (hrSavedAddress) {
-                excludeAddresses.add(hrSavedAddress.trim().toUpperCase());
-            }
-            if (hrConnectedAddress) {
-                excludeAddresses.add(hrConnectedAddress.trim().toUpperCase());
-            }
-            const statusLine = document.getElementById('hr-status-line');
-            if (statusLine && statusLine.classList.contains('connected') && statusLine.dataset.address) {
-                excludeAddresses.add(statusLine.dataset.address.trim().toUpperCase());
-            }
-
+            const activeAddr = (hrSavedAddress || '').trim().toUpperCase();
             const filtered = Array.isArray(results)
                 ? results.filter(r => {
                     if (!r || !r.address) return false;
                     const cand = r.address.trim().toUpperCase();
-                    return !excludeAddresses.has(cand);
+                    return activeAddr ? (cand !== activeAddr) : true;
                 })
                 : [];
 
@@ -1790,16 +1877,9 @@
                     </div>
                     <button class="btn-dialog-act sec clickable" style="min-width: 0; padding: 0 45px; height: 75px; font-size: 28px;">Koble til</button>
                 `;
-                item.querySelector('button').addEventListener('click', () => {
-                    stopHrScanUi();
-                    fetch('/api/v1/heartrate/save', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ address: r.address })
-                    }).then(() => {
-                        fetchHrStatus().then(renderHrStatus).catch(() => {});
-                        setTimeout(() => { fetchHrStatus().then(renderHrStatus).catch(() => {}); }, 2500);
-                    });
+                const btn = item.querySelector('button');
+                btn.addEventListener('click', () => {
+                    startHrConnectingUi(btn, r.address);
                 });
                 list.appendChild(item);
             });
@@ -1807,11 +1887,17 @@
 
         document.getElementById('btn-hr-scan')?.addEventListener('click', () => {
             stopHrScanUi();
+            stopHrConnectPolling();
 
             const scanBtn = document.getElementById('btn-hr-scan');
             if (scanBtn) {
                 scanBtn.disabled = true;
                 scanBtn.innerText = 'Søker etter pulssensorer...';
+            }
+
+            const list = document.getElementById('hr-pairing-list');
+            if (list && list.innerHTML.includes('Ingen sensor tilkoblet')) {
+                list.innerHTML = '';
             }
 
             fetch('/api/v1/heartrate/scan/start', { method: 'POST' })
@@ -1838,8 +1924,17 @@
         });
 
         document.getElementById('btn-hr-forget')?.addEventListener('click', () => {
+            stopHrConnectPolling();
             fetch('/api/v1/heartrate/forget', { method: 'POST' })
-                .then(() => { fetchHrStatus().then(renderHrStatus).catch(() => {}); })
+                .then(() => {
+                    if (systemSettings && Array.isArray(systemSettings.users) && activeUserProfile) {
+                        const u = systemSettings.users.find(user => user.id === activeUserProfile.id);
+                        if (u) u.preferredHrMac = '';
+                        activeUserProfile.preferredHrMac = '';
+                    }
+                    hrSavedAddress = '';
+                    fetchHrStatus().then(renderHrStatus).catch(() => {});
+                })
                 .catch(err => console.error('[HR] Forget failed:', err));
         });
 
@@ -3194,6 +3289,12 @@
 
             // Build an isolated candidate - never mutate targetUser/activeUserProfile until confirmed saved
             const candidateUser = { ...targetUser };
+
+            // Ensure preferredHrMac is refreshed from live hrSavedAddress if available
+            if (hrSavedAddress) {
+                candidateUser.preferredHrMac = hrSavedAddress;
+                targetUser.preferredHrMac = hrSavedAddress;
+            }
 
             // Read DOM inputs into candidateUser only (not targetUser, not activeUserProfile)
             const inpHvile = document.getElementById('inp-hvile');
