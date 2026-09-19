@@ -202,7 +202,7 @@
 
         .screen-manual { padding: 40px; grid-template-rows: 140px 1fr auto 1fr 140px; row-gap: 0; }
         .manual-util-bar { position: absolute; top: 200px; left: 40px; right: 40px; display: flex; flex-direction: row; justify-content: space-between; align-items: center; z-index: 10; height: 70px; }
-        .manual-util-bar.running-dim { opacity: 0.20; pointer-events: none; }
+        .manual-util-bar.running-dim, .running-dim { opacity: 0.20; pointer-events: none; }
         .zone-manual-time { display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; transform: translateY(-10px); }
         .hero-lbl-scaled { height: 46px; line-height: 46px; font-size: 38px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin-bottom: 6px; display: flex; align-items: center; justify-content: center; }
         .hero-time-manual { font-size: 145px; font-weight: 800; line-height: 0.85; font-variant-numeric: tabular-nums; color: #fff; }
@@ -1370,6 +1370,7 @@
         let isSensorConnected = true;
         let maxAchievableSpeedKmh = 25.0; // Physical speed ceiling; fallback until API responds
         let viewBeforeSetup = null;
+        let intervalSessionStarted = false;
 
         function isValidUserName(name) {
             if (!name || typeof name !== 'string') return false;
@@ -1436,6 +1437,9 @@
                         isManualTarget = false;
                     }
                     if (isManualTarget !== null) {
+                        if (isManualTarget === true) {
+                            intervalSessionStarted = false;
+                        }
                         fetch('/api/v1/control/mode', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -1534,6 +1538,7 @@
         const btnFinalizeSession = document.getElementById('btn-finalize-session');
         if (btnFinalizeSession) {
             btnFinalizeSession.addEventListener('click', () => {
+                intervalSessionStarted = false;
                 fetch('/api/v1/control/workout/finalize', { method: 'POST' })
                 .then(res => {
                     if (!res.ok) {
@@ -1568,6 +1573,7 @@
         const btnFinalizeContinuation = document.getElementById('btn-finalize-continuation');
         if (btnFinalizeContinuation) {
             btnFinalizeContinuation.addEventListener('click', () => {
+                intervalSessionStarted = false;
                 fetch('/api/v1/control/workout/finalize', { method: 'POST' })
                 .then(res => {
                     if (!res.ok) {
@@ -3527,24 +3533,26 @@
                 if (extendRestRunBtn) extendRestRunBtn.style.display = 'none';
             }
 
-            if (telem.session?.speedAdjustmentPromptActive === true) {
-                const delta = telem.session.suggestedSpeedDeltaKmh ?? 0;
-                const verb = delta > 0 ? 'Øke' : 'Redusere';
-                const deltaAbs = Math.abs(delta).toFixed(1).replace('.', ',');
-                const promptTextEl = document.getElementById('speed-shift-prompt-text');
-                if (promptTextEl) {
-                    promptTextEl.textContent = `${verb} farten med ${deltaAbs} km/t på kommende drag i denne gruppen?`;
-                }
-                const p1El = document.getElementById('view-interval-pause-1');
-                if (p1El && document.querySelector('.view-flex.active')?.id !== 'view-interval-pause-1') {
-                    document.querySelectorAll('.view, .view-grid, .view-flex').forEach(v => v.classList.remove('active'));
-                    p1El.classList.add('active');
-                }
-            } else if (document.querySelector('.view-flex.active')?.id === 'view-interval-pause-1') {
-                const p2El = document.getElementById('view-interval-pause-2');
-                if (p2El) {
-                    document.querySelectorAll('.view, .view-grid, .view-flex').forEach(v => v.classList.remove('active'));
-                    p2El.classList.add('active');
+            if (!document.querySelector('.modal.active')) {
+                if (telem.session?.speedAdjustmentPromptActive === true) {
+                    const delta = telem.session.suggestedSpeedDeltaKmh ?? 0;
+                    const verb = delta > 0 ? 'Øke' : 'Redusere';
+                    const deltaAbs = Math.abs(delta).toFixed(1).replace('.', ',');
+                    const promptTextEl = document.getElementById('speed-shift-prompt-text');
+                    if (promptTextEl) {
+                        promptTextEl.textContent = `${verb} farten med ${deltaAbs} km/t på kommende drag i denne gruppen?`;
+                    }
+                    const p1El = document.getElementById('view-interval-pause-1');
+                    if (p1El && document.querySelector('.view-flex.active')?.id !== 'view-interval-pause-1') {
+                        document.querySelectorAll('.view, .view-grid, .view-flex').forEach(v => v.classList.remove('active'));
+                        p1El.classList.add('active');
+                    }
+                } else if (document.querySelector('.view-flex.active')?.id === 'view-interval-pause-1') {
+                    const p2El = document.getElementById('view-interval-pause-2');
+                    if (p2El) {
+                        document.querySelectorAll('.view, .view-grid, .view-flex').forEach(v => v.classList.remove('active'));
+                        p2El.classList.add('active');
+                    }
                 }
             }
 
@@ -3735,6 +3743,16 @@
                 const beltIsMoving = typeof spd === 'number' && spd > 0.0;
                 manualTopBar.classList.toggle('running-dim', beltIsMoving);
             }
+
+            // Lock user selection after Interval session starts
+            const isManualMode = document.getElementById('view-manual')?.classList.contains('active') === true;
+            if (!intervalSessionStarted && !isManualMode &&
+                !document.getElementById('view-boot')?.classList.contains('active') &&
+                telem.csafe?.machineState === 'Starting') {
+                intervalSessionStarted = true;
+            }
+            document.querySelectorAll('#view-boot .user-btn, #view-interval-pre .user-badge, #view-interval-stop .user-badge')
+                .forEach(el => el.classList.toggle('running-dim', intervalSessionStarted));
         }
 
         function syncIntervalViewOnStateChange(sessionState) {
