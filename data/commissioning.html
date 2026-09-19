@@ -282,7 +282,7 @@
         if (data.maintenance) {
             updateMaintenanceUI(data.maintenance);
         }
-        return typeof data.actualSpeedKmh === 'number' ? data.actualSpeedKmh : 0.0;
+        return typeof data.speed?.kmh === 'number' ? data.speed.kmh : 0.0;
     }
 
     async function startZoneTest(zone, direction, startSpeedKmh, targetSpeedKmh) {
