@@ -118,6 +118,7 @@ public:
 
 private:
     static void taskEntry(void* param);
+    static void bleTaskEntry(void* param);
     static CsafeState provideSimulatedCsafe(void* context);
     static InclineVerificationCommandInput provideSimulatedInclineCommandContext(void* context);
     static CommandExecutionStatus provideSimulatedCommandExecutionStatus(void* context);
@@ -166,6 +167,7 @@ private:
     };
 
     void runTaskLoop();
+    void runBleTask();
     void processQueuedCommands(uint32_t nowMs);
 
     QueueHandle_t commandQueue_ = nullptr;
@@ -217,6 +219,9 @@ private:
     std::atomic<bool> taskRunning_{false};
     std::atomic<bool> stopRequested_{false};
 
+    TaskHandle_t bleTaskHandle_ = nullptr;
+    SemaphoreHandle_t bleExitSem_ = nullptr;
+
     bool initialized_ = false;
     CsafeMachineState previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
     bool csafeStateInitialized_ = false;
@@ -232,6 +237,11 @@ private:
     static constexpr uint32_t kTaskStackSize = 8192;
     static constexpr UBaseType_t kTaskPriority = 5;
     static constexpr BaseType_t kTaskCore = 1; // Moved off Core 0 to reduce WiFi/BT radio task contention
+
+    static constexpr uint32_t kBleTaskExitTimeoutMs = 3000;
+    static constexpr uint32_t kBleTaskStackSize = 4096;
+    static constexpr UBaseType_t kBleTaskPriority = 3;
+    static constexpr BaseType_t kBleTaskCore = 0; // PRO_CPU_NUM
 };
 
 } // namespace stridecontrol

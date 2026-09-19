@@ -316,7 +316,7 @@ bool TestbenchControlRuntime::startControlTask() {
     if (!initialized_) {
         return false;
     }
-    if (taskRunning_ || taskHandle_ != nullptr) {
+    if (taskRunning_ || taskHandle_ != nullptr || bleTaskHandle_ != nullptr) {
         return true;
     }
 
@@ -340,7 +340,7 @@ bool TestbenchControlRuntime::startControlTask() {
         this,
         kTaskPriority,
         &taskHandle_,
-        kTaskCore // Pinned strictly to Core 0 (PRO_CPU)
+        kTaskCore // Pinned to Core 1 (APP_CPU)
     );
 
     if (result != pdPASS) {
@@ -350,11 +350,42 @@ bool TestbenchControlRuntime::startControlTask() {
         return false;
     }
 
+    // Spawn Core 0 Dedicated BLE Lifecycle Task
+    if (SettingsService::instance().getBleStackEnabled()) {
+        if (bleExitSem_ == nullptr) {
+            bleExitSem_ = xSemaphoreCreateBinary();
+        } else {
+            xSemaphoreTake(bleExitSem_, 0);
+        }
+
+        if (bleExitSem_ != nullptr) {
+            BaseType_t bleResult = xTaskCreatePinnedToCore(
+                bleTaskEntry,
+                "TbBleTask",
+                kBleTaskStackSize,
+                this,
+                kBleTaskPriority,
+                &bleTaskHandle_,
+                kBleTaskCore
+            );
+
+            if (bleResult != pdPASS) {
+                // Rollback Core 1 real-time task
+                stopControlTask(1000);
+                if (bleExitSem_ != nullptr) {
+                    vSemaphoreDelete(bleExitSem_);
+                    bleExitSem_ = nullptr;
+                }
+                return false;
+            }
+        }
+    }
+
     return true;
 }
 
 bool TestbenchControlRuntime::stopControlTask(uint32_t timeoutMs) {
-    if (!taskRunning_ && taskHandle_ == nullptr) {
+    if (!taskRunning_ && taskHandle_ == nullptr && bleTaskHandle_ == nullptr) {
         return true;
     }
 
@@ -386,7 +417,26 @@ bool TestbenchControlRuntime::stopControlTask(uint32_t timeoutMs) {
         diagService_.reportFault(FaultCode::SystemWatchdogWarning, millis());
     }
 
-    return cleanExit;
+    // Signal Core 0 BLE Task to terminate cleanly
+    bool cleanBleExit = true;
+    if (bleTaskHandle_ != nullptr) {
+        xTaskNotifyGive(bleTaskHandle_);
+
+        cleanBleExit = (bleExitSem_ != nullptr &&
+                        xSemaphoreTake(bleExitSem_, pdMS_TO_TICKS(kBleTaskExitTimeoutMs)) == pdTRUE);
+
+        if (cleanBleExit) {
+            vTaskDelete(bleTaskHandle_);
+            bleTaskHandle_ = nullptr;
+            vSemaphoreDelete(bleExitSem_);
+            bleExitSem_ = nullptr;
+        } else {
+            // BLE exit timed out: Preserve bleTaskHandle_ and bleExitSem_ to prevent use-after-free
+            return false;
+        }
+    }
+
+    return cleanExit && cleanBleExit;
 }
 
 bool TestbenchControlRuntime::isTaskRunning() const {
@@ -551,9 +601,7 @@ void TestbenchControlRuntime::runTaskLoop() {
         publishedAuthoritative_ = authoritative;
         portEXIT_CRITICAL(&snapshotMux_);
 
-        // 7. Dispatch Periodic BLE Stack, Client, and Service Telemetry Updates
-        bleManager_.update(nowMs);
-        heartRateClient_.update(nowMs);
+        // 7. Dispatch Periodic BLE Service Telemetry Updates (GATT characteristic broadcast)
         bleManager_.updateServices(nowMs, snapshot);
 
         // 8. Periodically check stack high-water mark (every 1000 ms)
@@ -572,6 +620,36 @@ void TestbenchControlRuntime::runTaskLoop() {
     if (exitSem_ != nullptr) {
         xSemaphoreGive(exitSem_);
     }
+    vTaskSuspend(NULL);
+}
+
+void TestbenchControlRuntime::bleTaskEntry(void* param) {
+    auto* self = static_cast<TestbenchControlRuntime*>(param);
+    if (self != nullptr) {
+        self->runBleTask();
+    }
+}
+
+void TestbenchControlRuntime::runBleTask() {
+    const bool bleEnabled = SettingsService::instance().getBleStackEnabled();
+
+    // Periodic Execution Loop (Cadence ~20ms, non-deterministic)
+    while (ulTaskNotifyTake(pdTRUE, 0) == 0) {
+        if (bleEnabled) {
+            const uint32_t nowMs = millis();
+            bleManager_.update(nowMs);
+            heartRateClient_.update(nowMs);
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+
+    // Signal confirmation semaphore and self-suspend
+    SemaphoreHandle_t sem = bleExitSem_;
+    if (sem != nullptr) {
+        xSemaphoreGive(sem);
+    }
+
+    // STRICT RULE: After xSemaphoreGive(), perform NO further member access
     vTaskSuspend(NULL);
 }
 
