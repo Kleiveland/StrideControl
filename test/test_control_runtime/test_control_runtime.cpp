@@ -559,7 +559,7 @@ void test_csafe_first_stop_inuse_to_paused_suspends_session() {
     runtime.end();
 }
 
-// CSAFE Stop Hierarchy Test 2: Paused -> Ready triggers 2nd physical stop (continuation window active, 30s)
+// CSAFE Stop Hierarchy Test 2: Paused -> Ready triggers 2nd physical stop (continuation window active, 300s)
 void test_csafe_second_stop_paused_to_ready_enters_continuation() {
     s_console.begin(ConsoleExecutionMode::SoftwareSink);
     ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
@@ -585,7 +585,7 @@ void test_csafe_second_stop_paused_to_ready_enters_continuation() {
     TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, runtime.getSessionSnapshot().state);
     TEST_ASSERT_EQUAL(2, runtime.getSessionSnapshot().physicalStopCount);
     TEST_ASSERT_TRUE(runtime.getSessionSnapshot().continuationWindowActive);
-    TEST_ASSERT_EQUAL_UINT32(30000, runtime.getSessionSnapshot().continuationWindowRemainingMs);
+    TEST_ASSERT_EQUAL_UINT32(300000, runtime.getSessionSnapshot().continuationWindowRemainingMs);
 
     runtime.end();
 }
@@ -692,7 +692,9 @@ void test_csafe_initial_and_reconnection_baselining_no_spurious_stop() {
 void test_continuation_window_expires_after_30s() {
     s_console.begin(ConsoleExecutionMode::SoftwareSink);
     ControlRuntime runtime(s_console, s_calibration, s_diagnostics);
-    TEST_ASSERT_TRUE(runtime.begin());
+    WorkoutSessionConfig cfg;
+    cfg.continuationWindowDurationMs = 30000;
+    TEST_ASSERT_TRUE(runtime.begin(cfg));
     TEST_ASSERT_TRUE(runtime.armWorkout(&s_testWorkout, 1000));
 
     // Run -> Stop 1 -> Stop 2

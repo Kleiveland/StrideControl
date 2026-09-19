@@ -471,13 +471,13 @@ void test_session_stop_hierarchy_1x_2x_3x() {
     TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, session.getSnapshot().state);
     TEST_ASSERT_EQUAL_UINT8(1, session.getSnapshot().physicalStopCount);
 
-    // 2nd stop within pause -> 30s continuation window opened, targets reset
+    // 2nd stop within pause -> 5-min continuation window opened, targets reset
     session.registerPhysicalStop(4000);
     snap = session.getSnapshot();
     TEST_ASSERT_EQUAL(WorkoutSessionState::Suspended, snap.state);
     TEST_ASSERT_EQUAL_UINT8(2, snap.physicalStopCount);
     TEST_ASSERT_TRUE(snap.continuationWindowActive);
-    TEST_ASSERT_EQUAL_UINT32(30000, snap.continuationWindowRemainingMs);
+    TEST_ASSERT_EQUAL_UINT32(300000, snap.continuationWindowRemainingMs);
     TEST_ASSERT_FALSE(session.getPendingCommandIntent().hasSpeedTarget);
 
     // 3rd stop -> Immediately finalizes session
@@ -490,7 +490,9 @@ void test_session_stop_hierarchy_1x_2x_3x() {
 // 18. Stop hierarchy: 2x Stop continuation window expiry
 void test_session_continuation_window_expiry() {
     WorkoutSession session;
-    session.begin();
+    WorkoutSessionConfig cfg;
+    cfg.continuationWindowDurationMs = 30000;
+    session.begin(cfg);
     ExpandedWorkout ew = createTestExpandedWorkout();
     session.armWorkout(&ew, 1000);
     session.update(makeAppSnapshot(9.0f, 0.0), 1000);

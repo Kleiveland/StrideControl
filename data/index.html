@@ -3636,7 +3636,9 @@
             const isContinuationActive = telem.session?.continuationWindowActive === true;
             const contRemainingMs = telem.session?.continuationWindowRemainingMs || 0;
             const contSecs = Math.max(0, Math.ceil(contRemainingMs / 1000));
-            const contTimeStr = `00:${contSecs.toString().padStart(2, '0')}`;
+            const contMins = Math.floor(contSecs / 60);
+            const contSecsRem = contSecs % 60;
+            const contTimeStr = `${contMins.toString().padStart(2, '0')}:${contSecsRem.toString().padStart(2, '0')}`;
 
             const stopTitleEl = document.getElementById('stop-view-title');
             const stopHeroLbl = document.getElementById('stop-hero-lbl');
