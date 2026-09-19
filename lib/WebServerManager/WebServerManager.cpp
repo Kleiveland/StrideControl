@@ -1224,10 +1224,41 @@ void WebServerManager::registerRoutes() {
         BleScanResult results[HeartRateClient::kMaxScanResults];
         size_t count = hrClient_->getScanResults(results, HeartRateClient::kMaxScanResults);
 
+        char connectedMac[18] = {};
+        HeartRateState hrState = hrClient_->getState();
+        if (hrState.connectionState == HeartRateConnectionState::Connected) {
+            const char* liveAddr = (hrState.connectedAddress[0] != '\0')
+                ? hrState.connectedAddress
+                : hrState.sensorAddress;
+            if (liveAddr[0] == '\0') {
+                const auto* settings = SettingsService::instance().getActiveSettings();
+                if (settings != nullptr) {
+                    uint8_t targetUserId = 1;
+                    if (telemetryProvider_ != nullptr) {
+                        TelemetryReport r{};
+                        if (telemetryProvider_->getTelemetry(r) && r.hasActiveUser && r.activeUserId != 0) {
+                            targetUserId = r.activeUserId;
+                        }
+                    }
+                    for (size_t u = 0; u < MAX_USERS; ++u) {
+                        if (settings->users[u].id == targetUserId) {
+                            liveAddr = settings->users[u].preferredHrMac;
+                            break;
+                        }
+                    }
+                }
+            }
+            strncpy(connectedMac, liveAddr, sizeof(connectedMac) - 1);
+            connectedMac[sizeof(connectedMac) - 1] = '\0';
+        }
+
         JsonDocument doc;
         JsonArray arr = doc.to<JsonArray>();
         for (size_t i = 0; i < count; ++i) {
             if (results[i].advertisesHeartRateService && results[i].address[0] != '\0') {
+                if (connectedMac[0] != '\0' && strcasecmp(results[i].address, connectedMac) == 0) {
+                    continue;
+                }
                 JsonObject obj = arr.add<JsonObject>();
                 obj["address"] = results[i].address;
                 obj["name"] = results[i].name;

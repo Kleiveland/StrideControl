@@ -1674,6 +1674,7 @@
 
 
         let hrSavedAddress = '';
+        let hrConnectedAddress = '';
 
         function formatDeviceName(name, maxLen = 16) {
             if (!name) return '';
@@ -1689,19 +1690,22 @@
         }
 
         function renderHrStatus(data) {
-            hrSavedAddress = (data && data.savedAddress) || '';
+            hrSavedAddress = (data && (data.savedAddress || data.connectedAddress)) || '';
+            hrConnectedAddress = (data && data.connected && (data.connectedAddress || data.savedAddress)) || '';
             const statusLine = document.getElementById('hr-status-line');
             const addrEl = document.getElementById('hr-status-address');
             const dotEl = document.getElementById('hr-status-dot');
             const forgetBtn = document.getElementById('btn-hr-forget');
             if (!statusLine || !addrEl || !dotEl || !forgetBtn) return;
 
-            const isConnected = !!(data && data.connected && hrSavedAddress);
+            const isConnected = !!(data && data.connected && (hrSavedAddress || hrConnectedAddress));
             if (isConnected) {
+                const activeMac = (hrConnectedAddress || hrSavedAddress).trim().toUpperCase();
                 statusLine.style.display = 'flex';
                 statusLine.classList.add('connected');
+                statusLine.dataset.address = activeMac;
                 dotEl.className = 'bt-dot green';
-                const rawName = data.name || hrSavedAddress;
+                const rawName = data.name || hrSavedAddress || hrConnectedAddress;
                 const nameText = formatDeviceName(rawName, 16);
                 const batteryText = (data.batteryValid && typeof data.batteryPercent === 'number')
                     ? ` · ${data.batteryPercent}%`
@@ -1711,6 +1715,7 @@
             } else {
                 statusLine.style.display = 'none';
                 statusLine.classList.remove('connected');
+                delete statusLine.dataset.address;
                 dotEl.className = 'bt-dot dim';
                 addrEl.innerText = '';
                 forgetBtn.style.display = 'none';
@@ -1745,16 +1750,35 @@
         function renderHrScanList(results) {
             const list = document.getElementById('hr-pairing-list');
             if (!list) return;
+
+            const excludeAddresses = new Set();
+            if (hrSavedAddress) {
+                excludeAddresses.add(hrSavedAddress.trim().toUpperCase());
+            }
+            if (hrConnectedAddress) {
+                excludeAddresses.add(hrConnectedAddress.trim().toUpperCase());
+            }
+            const statusLine = document.getElementById('hr-status-line');
+            if (statusLine && statusLine.classList.contains('connected') && statusLine.dataset.address) {
+                excludeAddresses.add(statusLine.dataset.address.trim().toUpperCase());
+            }
+
             const filtered = Array.isArray(results)
-                ? results.filter(r => !hrSavedAddress || r.address.toUpperCase() !== hrSavedAddress.toUpperCase())
+                ? results.filter(r => {
+                    if (!r || !r.address) return false;
+                    const cand = r.address.trim().toUpperCase();
+                    return !excludeAddresses.has(cand);
+                })
                 : [];
+
+            list.innerHTML = '';
             if (filtered.length === 0) {
                 if (!hrScanInterval) {
                     list.innerHTML = '<div style="font-size: 28px; color: var(--text-dim); padding: 30px 10px; text-align: center;">Ingen sensorer funnet</div>';
                 }
                 return;
             }
-            list.innerHTML = '';
+
             filtered.forEach(r => {
                 const item = document.createElement('div');
                 item.className = 'bt-item';
@@ -1793,9 +1817,12 @@
             fetch('/api/v1/heartrate/scan/start', { method: 'POST' })
                 .then(() => {
                     const poll = () => {
-                        fetchHrScanResults()
-                            .then(renderHrScanList)
-                            .catch(err => console.error('[HR] Polling scan results failed:', err));
+                        Promise.all([fetchHrScanResults(), fetchHrStatus()])
+                            .then(([scanResults, statusData]) => {
+                                renderHrStatus(statusData);
+                                renderHrScanList(scanResults);
+                            })
+                            .catch(err => console.error('[HR] Scan polling failed:', err));
                     };
                     poll();
                     hrScanInterval = setInterval(poll, 1000);
