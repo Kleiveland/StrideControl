@@ -736,28 +736,7 @@ void WorkoutSession::update(
     // 3. CompletionPending -> Training activity preserved while waiting for physical stop or finalization
     if (snapshot_.state == WorkoutSessionState::CompletionPending) {
         if (beltMoving) {
-            totalElapsedTimeMs_ += dtMs;
-            if (applicationSnapshot.runner.speedCreditEnabled) {
-                activeRunningTimeMs_ += dtMs;
-            }
-            if (distDelta > 0.0) {
-                totalValidatedDistanceKm_ += distDelta;
-                const float physicalInclinePct = applicationSnapshot.incline.estimatedInclinePct;
-                if (physicalInclinePct > 0.0f) {
-                    totalElevationMeters_ += distDelta * 10.0 * static_cast<double>(physicalInclinePct);
-                }
-            }
-            if (applicationSnapshot.heartRate.heartRateValid && applicationSnapshot.heartRate.heartRateBpm > 0) {
-                heartRateEverValid_ = true;
-                heartRateSampleSum_ += applicationSnapshot.heartRate.heartRateBpm;
-                heartRateSampleCount_++;
-                if (applicationSnapshot.heartRate.heartRateBpm > heartRateMaxBpm_) {
-                    heartRateMaxBpm_ = applicationSnapshot.heartRate.heartRateBpm;
-                }
-                if (applicationSnapshot.runner.runnerSpeedKmh > maxSpeedKmh_) {
-                    maxSpeedKmh_ = applicationSnapshot.runner.runnerSpeedKmh;
-                }
-            }
+            // Stats frozen during coast-down; no metric accumulation.
         }
         snapshot_.totalElapsedTimeMs = totalElapsedTimeMs_;
         snapshot_.activeRunningTimeMs = activeRunningTimeMs_;
