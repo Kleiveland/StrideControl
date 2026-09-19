@@ -645,8 +645,10 @@ void WorkoutSession::update(
         }
     }
 
-    // Check speed adjustment prompt timeout
-    if (snapshot_.speedAdjustmentPromptActive) {
+    // Check speed adjustment prompt timeout - frozen while Suspended, matching the step clock's
+    // own pause behavior, so the prompt cannot silently expire while the user can't interact
+    // with it.
+    if (snapshot_.speedAdjustmentPromptActive && snapshot_.state == WorkoutSessionState::Running) {
         if (nowMs >= speedAdjustmentPromptExpiresMs_) {
             rejectSpeedAdjustmentShift();
         }
