@@ -167,7 +167,7 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     portEXIT_CRITICAL(&commandExecutionStatusMux_);
     lastReportedAbortedRequestId_ = 0;
 
-    composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 0, 0.0f, true);
+    composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
     rampTestTracker_.reset();
     inclineTracker_.reset();
 
