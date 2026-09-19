@@ -3696,6 +3696,10 @@
         }
 
         function syncIntervalViewOnStateChange(sessionState) {
+            if (document.querySelector('.modal.active')) {
+                return; // Do not swap the active view while a modal (e.g. Setup) is open on top of it -
+                        // the modal-close handler relies on the underlying view being left untouched.
+            }
             if (!sessionState || typeof sessionState !== 'string') return;
 
             // 15-minute continuous-Suspended timeout: force the launcher screen (Screen 8) so the
