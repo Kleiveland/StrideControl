@@ -912,6 +912,15 @@ bool WorkoutSession::resume(uint32_t nowMs) {
     snapshot_.suspended = false;
     lastUpdateTimestampMs_ = nowMs; // Freezes out paused time
     lowSpeedDebounceActive_ = false;
+
+    if (snapshot_.currentStep.role == StepRole::WORK) {
+        // Extend this drag's target duration by the estimated time needed to ramp back up to
+        // target speed from a stopped belt, so the pause doesn't shorten the real, full-pace
+        // running time of the drag.
+        const uint32_t rampMs = estimateSpeedRampMs(0.0f, snapshot_.currentStep.targetSpeedKmh);
+        runtimeStepTargetDurationMs_ += rampMs;
+    }
+
     emitStepCommandIntent(snapshot_.currentStep, restartReissuePending_);
     restartReissuePending_ = false;
     return true;
