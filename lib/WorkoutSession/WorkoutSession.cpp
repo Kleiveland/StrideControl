@@ -447,6 +447,10 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
     emitStepCommandIntent(snapshot_.currentStep, false);
 }
 
+static constexpr uint32_t kMaxCommandEntryMs = 2000; // Worst-case time to key in a 2-digit
+    // target + up to 5 tenths pulses via ConsoleInterface's Instant Speed + digit entry +
+    // Enter + relay-pulse sequence, computed from actual timing constants (see design notes).
+
 uint32_t WorkoutSession::estimateSpeedRampMs(float fromKmh, float toKmh) const {
     if (std::abs(toKmh - fromKmh) < 0.01f) return 0;
     const stridecontrol::RampCalibrationConfig cfg = stridecontrol::SettingsService::instance().getRampCalibrationConfig();
@@ -473,7 +477,7 @@ uint32_t WorkoutSession::estimateSpeedRampMs(float fromKmh, float toKmh) const {
             totalMs += spanKmh * rate;
         }
     }
-    totalMs += static_cast<float>(safeCfg.deadTimeMs);
+    totalMs += static_cast<float>(kMaxCommandEntryMs);
     totalMs *= safeCfg.loadMultiplier;
     return static_cast<uint32_t>(totalMs);
 }
@@ -859,7 +863,11 @@ void WorkoutSession::update(
                         }
                     }
                     if (canAdvance) {
-                        advanceStep(nowMs, currentRunnerDist);
+                        if (preFireTargetStepIndex_ != UINT8_MAX && preFireTargetStepIndex_ < workout_->totalSteps) {
+                            startStep(preFireTargetStepIndex_, nowMs, currentRunnerDist);
+                        } else {
+                            advanceStep(nowMs, currentRunnerDist);
+                        }
                     }
                 }
             }
@@ -984,7 +992,7 @@ bool WorkoutSession::skipToNextDrag(uint32_t nowMs) {
     emitStepCommandIntent(workout_->steps[targetStepIndex], true);
     snapshot_.rampPreFireActive = true;
     preFireSent_ = true;
-    stepElapsedMs_ = runtimeStepTargetDurationMs_;
+    runtimeStepTargetDurationMs_ = stepElapsedMs_;
     snapshot_.stepRemainingMs = 0;
     return true;
 }
