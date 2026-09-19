@@ -3598,6 +3598,13 @@
                 }
             }
 
+            if (!document.querySelector('.modal.active') &&
+                document.getElementById('view-interval-pre')?.classList.contains('active') &&
+                (telem.csafe?.machineState === 'Starting' || telem.csafe?.machineState === 'InUse')) {
+                document.querySelectorAll('.view, .view-grid, .view-flex').forEach(v => v.classList.remove('active'));
+                document.getElementById('view-interval-run')?.classList.add('active');
+            }
+
             if (telem.session?.rampPreFireActive === true) {
                 if (!rampPreFireToastShown) {
                     const speedChanging = telem.session.rampPreFireSpeedChanging === true;
@@ -3768,7 +3775,7 @@
 
             // GUI-006: Hotkey dimming based on belt running state
             const isBeltRunning = isTelemetryLive &&
-                typeof spd === 'number' && spd > 0.05 &&
+                telem.csafe?.machineState === 'InUse' &&
                 telem.session?.state !== 'Stopped' &&
                 telem.session?.state !== 'Completed' &&
                 telem.session?.state !== 'Aborted';
@@ -3782,7 +3789,7 @@
             // GUI-SAFETY-001: Global Activity Interlock (DESIGN_GUIDE.md §14.1)
             const manualTopBar = document.getElementById('manual-topbar');
             if (manualTopBar) {
-                const beltIsMoving = typeof spd === 'number' && spd > 0.0;
+                const beltIsMoving = telem.csafe?.machineState === 'InUse';
                 manualTopBar.classList.toggle('running-dim', beltIsMoving);
             }
 
@@ -3832,6 +3839,12 @@
             }
 
             if (document.querySelector('.modal.active')) {
+                return;
+            }
+
+            if (sessionState === 'Armed' &&
+                (lastAuthoritativeTelemetry?.csafe?.machineState === 'Starting' ||
+                 lastAuthoritativeTelemetry?.csafe?.machineState === 'InUse')) {
                 return;
             }
 
@@ -3931,7 +3944,10 @@
             }
 
             if (data.session && typeof data.session.state === 'string') {
-                syncIntervalViewOnStateChange(data.session.state);
+                if (!(data.session.state === 'Armed' &&
+                    (data.csafe?.machineState === 'Starting' || data.csafe?.machineState === 'InUse'))) {
+                    syncIntervalViewOnStateChange(data.session.state);
+                }
             }
 
             if (!activeUserProfile && data.session?.hasActiveUser && systemSettings?.users) {
