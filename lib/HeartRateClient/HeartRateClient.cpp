@@ -110,6 +110,7 @@ bool HeartRateClient::begin(const BleConfig& config, BleManager* bleManager) {
 
     isTransitioningLifecycle_ = true;
     config_ = config;
+    scanResultCount_ = 0;
     bleManager_ = bleManager;
     portEXIT_CRITICAL(&mux_);
 
@@ -206,6 +207,26 @@ void HeartRateClient::updateConfig(const BleConfig& config) {
     portEXIT_CRITICAL(&mux_);
 }
 
+BleConfig HeartRateClient::getConfig() const {
+    portENTER_CRITICAL(&mux_);
+    BleConfig cfg = config_;
+    portEXIT_CRITICAL(&mux_);
+    return cfg;
+}
+
+size_t HeartRateClient::getScanResults(BleScanResult* outResults, size_t maxResults) const {
+    if (outResults == nullptr || maxResults == 0) {
+        return 0;
+    }
+    portENTER_CRITICAL(&mux_);
+    size_t countToCopy = (scanResultCount_ < maxResults) ? scanResultCount_ : maxResults;
+    for (size_t i = 0; i < countToCopy; ++i) {
+        outResults[i] = scanResults_[i];
+    }
+    portEXIT_CRITICAL(&mux_);
+    return countToCopy;
+}
+
 void HeartRateClient::startScan() {
     BleManager* localMgr = nullptr;
     portENTER_CRITICAL(&mux_);
@@ -215,6 +236,7 @@ void HeartRateClient::startScan() {
         portEXIT_CRITICAL(&mux_);
         return;
     }
+    scanResultCount_ = 0;
     localMgr = bleManager_;
     portEXIT_CRITICAL(&mux_);
 
@@ -283,6 +305,24 @@ void HeartRateClient::handleScanResult(const BleScanResult& result) {
     if (isShuttingDown_ || !state_.initialized || internalState_ != HeartRateInternalState::Scanning || connectPending_) {
         portEXIT_CRITICAL(&mux_);
         return;
+    }
+
+    if (result.advertisesHeartRateService && result.address[0] != '\0') {
+        bool found = false;
+        for (size_t i = 0; i < scanResultCount_; ++i) {
+            if (strcmp(scanResults_[i].address, result.address) == 0) {
+                scanResults_[i].rssiDbm = result.rssiDbm;
+                if (result.name[0] != '\0') {
+                    strncpy(scanResults_[i].name, result.name, sizeof(scanResults_[i].name) - 1);
+                    scanResults_[i].name[sizeof(scanResults_[i].name) - 1] = '\0';
+                }
+                found = true;
+                break;
+            }
+        }
+        if (!found && scanResultCount_ < kMaxScanResults) {
+            scanResults_[scanResultCount_++] = result;
+        }
     }
 
     bool match = false;

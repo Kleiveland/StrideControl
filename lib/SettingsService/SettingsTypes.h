@@ -77,6 +77,7 @@ struct UserProfile {
     float dragSpeedKmh = 15.0f;
     std::array<float, 8> speedQuickKeys{};
     std::array<uint8_t, 8> inclineQuickKeys{};
+    char preferredHrMac[18] = ""; // Empty = no linked sensor for this user
     std::array<WorkoutDefinition, MAX_WORKOUTS_PER_USER> workouts{};
     uint8_t workoutCount = 0;
     uint16_t selectedWorkoutId = 0;

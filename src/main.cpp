@@ -277,6 +277,7 @@ void setup() {
 
 #if defined(STRIDECONTROL_TESTBENCH)
     s_webServerManager.attachSimulatorRuntime(&s_testbenchRuntime);
+    s_webServerManager.attachHeartRateClient(&s_testbenchRuntime.getHeartRateClient());
 
     // 5. Start Dedicated Core 0 Testbench Control Task
     const bool taskOk = s_testbenchRuntime.startControlTask();
@@ -338,6 +339,7 @@ void setup() {
     s_systemManager.startControlTask(&s_orchestrator);
     s_webServerManager.attachCommandStager(&s_systemManager.getControlRuntime());
     s_webServerManager.attachSystemManager(&s_systemManager);
+    s_webServerManager.attachHeartRateClient(&s_heartRateClient);
 
     Serial.println("[System] Production hardware profile active.");
 #endif

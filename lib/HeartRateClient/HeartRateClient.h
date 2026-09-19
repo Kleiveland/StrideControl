@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <cstring>
+#include <array>
 #include <freertos/FreeRTOS.h>
 #include "../BluetoothTypes/BluetoothTypes.h"
 #include "../SettingsService/SettingsServiceTypes.h"
@@ -64,10 +65,14 @@ public:
 
     void update(uint32_t nowMs);
     void updateConfig(const BleConfig& config);
+    BleConfig getConfig() const;
 
     void startScan();
     void stopScan();
     void disconnect();
+
+    static constexpr size_t kMaxScanResults = 10;
+    size_t getScanResults(BleScanResult* outResults, size_t maxResults) const;
 
     HeartRateState getState() const;
     HeartRateClientMetrics getMetrics() const;
@@ -90,6 +95,8 @@ private:
     BleManager* bleManager_{nullptr};
 
     BleConfig config_{};
+    std::array<BleScanResult, kMaxScanResults> scanResults_{};
+    size_t scanResultCount_{0};
     HeartRateState state_{};
     HeartRateClientMetrics metrics_{};
     HeartRateInternalState internalState_{HeartRateInternalState::Idle};

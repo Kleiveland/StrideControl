@@ -9,6 +9,7 @@
 #include <algorithm>
 #include "../CsafeInterface/CsafeTypes.h"
 #include "SystemManager.h"
+#include "../HeartRateClient/HeartRateClient.h"
 
 #if defined(STRIDECONTROL_TESTBENCH)
 #include "TestbenchControlRuntime.h"
@@ -151,6 +152,10 @@ void WebServerManager::attachCommandStager(IControlCommandStager* commandStager)
 
 void WebServerManager::attachSystemManager(SystemManager* systemManager) {
     systemManager_ = systemManager;
+}
+
+void WebServerManager::attachHeartRateClient(HeartRateClient* hrClient) {
+    hrClient_ = hrClient;
 }
 
 #if defined(STRIDECONTROL_TESTBENCH)
@@ -1201,6 +1206,221 @@ void WebServerManager::registerRoutes() {
         request->send(ok ? 200 : 500, "application/json", ok ? "{\"status\":\"saved\"}" : "{\"error\":\"save_failed\"}");
     };
     server_.on("/api/v1/config/ble", HTTP_POST, bleConfigPostHandler, nullptr, commandBodyBuffer);
+
+    server_.on("/api/v1/heartrate/scan/start", HTTP_POST, [this](AsyncWebServerRequest* request) {
+        if (hrClient_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"heart_rate_client_unavailable\"}");
+            return;
+        }
+        hrClient_->startScan();
+        request->send(200, "application/json", "{\"status\":\"ok\"}");
+    });
+
+    server_.on("/api/v1/heartrate/scan/results", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        if (hrClient_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"heart_rate_client_unavailable\"}");
+            return;
+        }
+        BleScanResult results[HeartRateClient::kMaxScanResults];
+        size_t count = hrClient_->getScanResults(results, HeartRateClient::kMaxScanResults);
+
+        JsonDocument doc;
+        JsonArray arr = doc.to<JsonArray>();
+        for (size_t i = 0; i < count; ++i) {
+            if (results[i].advertisesHeartRateService && results[i].address[0] != '\0') {
+                JsonObject obj = arr.add<JsonObject>();
+                obj["address"] = results[i].address;
+                obj["name"] = results[i].name;
+                obj["rssiDbm"] = results[i].rssiDbm;
+            }
+        }
+
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        stream->addHeader("Access-Control-Allow-Origin", "*");
+        stream->addHeader("Cache-Control", "no-cache");
+        serializeJson(doc, *stream);
+        request->send(stream);
+    });
+
+    auto hrSaveHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+            return;
+        }
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received != buffer->capacity) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+            return;
+        }
+
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+
+        if (err || !doc.containsKey("address")) {
+            request->send(400, "application/json", "{\"error\":\"Invalid JSON or missing address\"}");
+            return;
+        }
+
+        const char* address = doc["address"] | "";
+        if (address[0] == '\0') {
+            request->send(400, "application/json", "{\"error\":\"Empty address\"}");
+            return;
+        }
+
+        uint8_t targetUserId = 0;
+        if (doc.containsKey("userId")) {
+            targetUserId = doc["userId"].as<uint8_t>();
+        } else if (telemetryProvider_ != nullptr) {
+            TelemetryReport r{};
+            if (telemetryProvider_->getTelemetry(r) && r.hasActiveUser && r.activeUserId != 0) {
+                targetUserId = r.activeUserId;
+            }
+        }
+        if (targetUserId == 0) {
+            const auto* settings = SettingsService::instance().getActiveSettings();
+            if (settings != nullptr) {
+                targetUserId = settings->users[0].id;
+            } else {
+                targetUserId = 1;
+            }
+        }
+
+        SystemSettingsPtr candidate = makeSystemSettings();
+        const SystemSettings* active = SettingsService::instance().getActiveSettings();
+        if (active != nullptr) {
+            *candidate = *active;
+        }
+
+        bool userFound = false;
+        for (size_t i = 0; i < MAX_USERS; ++i) {
+            if (candidate->users[i].id == targetUserId) {
+                strncpy(candidate->users[i].preferredHrMac, address, sizeof(candidate->users[i].preferredHrMac) - 1);
+                candidate->users[i].preferredHrMac[sizeof(candidate->users[i].preferredHrMac) - 1] = '\0';
+                userFound = true;
+                break;
+            }
+        }
+
+        if (!userFound) {
+            request->send(404, "application/json", "{\"error\":\"User not found\"}");
+            return;
+        }
+
+        char errBuf[128] = {};
+        if (!SettingsService::instance().updateSystemSettings(*candidate, errBuf, sizeof(errBuf))) {
+            JsonDocument errDoc;
+            errDoc["error"] = errBuf[0] ? errBuf : "Failed to persist settings";
+            String resp;
+            serializeJson(errDoc, resp);
+            request->send(500, "application/json", resp);
+            return;
+        }
+        SettingsService::instance().commitUsersJson();
+
+        if (hrClient_ != nullptr) {
+            BleConfig bleCfg = hrClient_->getConfig();
+            strncpy(bleCfg.preferredHrMac, address, sizeof(bleCfg.preferredHrMac) - 1);
+            bleCfg.preferredHrMac[sizeof(bleCfg.preferredHrMac) - 1] = '\0';
+            bleCfg.autoConnectHr = true;
+            hrClient_->updateConfig(bleCfg);
+        }
+
+        request->send(200, "application/json", "{\"status\":\"ok\"}");
+    };
+    server_.on("/api/v1/heartrate/save", HTTP_POST, hrSaveHandler, nullptr, commandBodyBuffer);
+
+    auto hrForgetHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+
+        uint8_t targetUserId = 0;
+        if (request->_tempObject) {
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received > 0 && buffer->received <= buffer->capacity) {
+                JsonDocument doc;
+                if (!deserializeJson(doc, buffer->data(), buffer->received)) {
+                    if (doc.containsKey("userId")) {
+                        targetUserId = doc["userId"].as<uint8_t>();
+                    }
+                }
+            }
+            free(buffer);
+            request->_tempObject = nullptr;
+        }
+
+        if (targetUserId == 0 && telemetryProvider_ != nullptr) {
+            TelemetryReport r{};
+            if (telemetryProvider_->getTelemetry(r) && r.hasActiveUser && r.activeUserId != 0) {
+                targetUserId = r.activeUserId;
+            }
+        }
+        if (targetUserId == 0) {
+            const auto* settings = SettingsService::instance().getActiveSettings();
+            if (settings != nullptr) {
+                targetUserId = settings->users[0].id;
+            } else {
+                targetUserId = 1;
+            }
+        }
+
+        SystemSettingsPtr candidate = makeSystemSettings();
+        const SystemSettings* active = SettingsService::instance().getActiveSettings();
+        if (active != nullptr) {
+            *candidate = *active;
+        }
+
+        bool userFound = false;
+        for (size_t i = 0; i < MAX_USERS; ++i) {
+            if (candidate->users[i].id == targetUserId) {
+                candidate->users[i].preferredHrMac[0] = '\0';
+                userFound = true;
+                break;
+            }
+        }
+
+        if (!userFound) {
+            request->send(404, "application/json", "{\"error\":\"User not found\"}");
+            return;
+        }
+
+        char errBuf[128] = {};
+        if (!SettingsService::instance().updateSystemSettings(*candidate, errBuf, sizeof(errBuf))) {
+            JsonDocument errDoc;
+            errDoc["error"] = errBuf[0] ? errBuf : "Failed to persist settings";
+            String resp;
+            serializeJson(errDoc, resp);
+            request->send(500, "application/json", resp);
+            return;
+        }
+        SettingsService::instance().commitUsersJson();
+
+        if (hrClient_ != nullptr) {
+            BleConfig bleCfg = hrClient_->getConfig();
+            bleCfg.preferredHrMac[0] = '\0';
+            bleCfg.autoConnectHr = false;
+            hrClient_->updateConfig(bleCfg);
+            hrClient_->disconnect();
+        }
+
+        request->send(200, "application/json", "{\"status\":\"ok\"}");
+    };
+    server_.on("/api/v1/heartrate/forget", HTTP_POST, hrForgetHandler, nullptr, commandBodyBuffer);
 
     // POST /api/v1/commissioning/ramptest/start
     auto rampTestStartHandler = [this](AsyncWebServerRequest* request) {

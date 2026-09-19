@@ -121,6 +121,10 @@ public:
 
     void requestInclineCommissioningAction(bool confirmHomed, bool zeroImu);
 
+    HeartRateClient* getHeartRateClient() const { return deps_.hrClient; }
+    const BleConfig& getBleConfig() const { return deps_.bleConfig; }
+    void updateBleConfig(const BleConfig& cfg);
+
 private:
     static void taskEntry(void* param);
     void runLoop();

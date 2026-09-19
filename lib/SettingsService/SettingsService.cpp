@@ -478,6 +478,7 @@ void SettingsService::populateFactoryDefaults(SystemSettings& s) {
         u.dragSpeedKmh = 15.0f;
         u.speedQuickKeys = defaultSpeedKeys;
         u.inclineQuickKeys = defaultInclineKeys;
+        u.preferredHrMac[0] = '\0';
 
         u.workoutCount = 3;
         populateDefaultWorkout321(u.workouts[0]);
@@ -660,6 +661,7 @@ void SettingsService::serializeSettingsJson(const SystemSettings& s, Print& outp
         uObj["name"] = u.name;
         uObj["hvileSpeedKmh"] = u.hvileSpeedKmh;
         uObj["dragSpeedKmh"] = u.dragSpeedKmh;
+        uObj["preferredHrMac"] = u.preferredHrMac;
 
         JsonArray spdKeys = uObj["speedQuickKeys"].to<JsonArray>();
         for (float k : u.speedQuickKeys) spdKeys.add(k);
@@ -750,6 +752,9 @@ bool SettingsService::deserializeSettingsJson(const uint8_t* jsonBytes, size_t l
 
         u.hvileSpeedKmh = uObj["hvileSpeedKmh"] | 6.0f;
         u.dragSpeedKmh = uObj["dragSpeedKmh"] | 15.0f;
+        const char* hrMacStr = uObj["preferredHrMac"] | "";
+        strncpy(u.preferredHrMac, hrMacStr, sizeof(u.preferredHrMac) - 1);
+        u.preferredHrMac[sizeof(u.preferredHrMac) - 1] = '\0';
 
         JsonArrayConst spdKeys = uObj["speedQuickKeys"].as<JsonArrayConst>();
         for (size_t k = 0; k < 8 && k < spdKeys.size(); ++k) {
@@ -967,6 +972,10 @@ bool SettingsService::loadFactorySeedFromUsersJson(SystemSettings& target) {
         }
         strncpy(u.name, name, sizeof(u.name) - 1);
         u.name[sizeof(u.name) - 1] = '\0';
+
+        const char* seedMac = uObj["preferredHrMac"] | "";
+        strncpy(u.preferredHrMac, seedMac, sizeof(u.preferredHrMac) - 1);
+        u.preferredHrMac[sizeof(u.preferredHrMac) - 1] = '\0';
 
         JsonObjectConst presetsObj = uObj["presets"];
         if (presetsObj.isNull()) return false;
@@ -1258,6 +1267,7 @@ bool SettingsService::commitUsersJson() {
 
         JsonObject userObj = usersArray.add<JsonObject>();
         userObj["name"] = user.name;
+        userObj["preferredHrMac"] = user.preferredHrMac;
 
         JsonObject presets = userObj["presets"].to<JsonObject>();
         presets["hvile"] = user.hvileSpeedKmh;

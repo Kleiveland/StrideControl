@@ -105,6 +105,7 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     if (initialized_) {
         return true;
     }
+    bleConfig_ = bleConfig;
 
     // 1. Initialize sensor drivers in SoftwareObservation mode
     speedSensor_.begin(SpeedSensorConfig{}, SpeedObservationMode::SoftwareObservation);
@@ -717,9 +718,24 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual, cmdNowMs);
                 break;
-            case ControlCommandType::SelectUser:
-                session_.selectUser(cmd.data.selectUser.userId);
+            case ControlCommandType::SelectUser: {
+                const uint8_t selectedId = cmd.data.selectUser.userId;
+                session_.selectUser(selectedId);
+                const auto* settings = SettingsService::instance().getActiveSettings();
+                if (settings != nullptr) {
+                    for (size_t i = 0; i < MAX_USERS; ++i) {
+                        if (settings->users[i].id == selectedId) {
+                            const char* mac = settings->users[i].preferredHrMac;
+                            strncpy(bleConfig_.preferredHrMac, mac, sizeof(bleConfig_.preferredHrMac) - 1);
+                            bleConfig_.preferredHrMac[sizeof(bleConfig_.preferredHrMac) - 1] = '\0';
+                            bleConfig_.autoConnectHr = (mac[0] != '\0');
+                            heartRateClient_.updateConfig(bleConfig_);
+                            break;
+                        }
+                    }
+                }
                 break;
+            }
             case ControlCommandType::StartInclineHoming: {
                 if (session_.isActive()) {
                     Serial.println("[TestbenchControlRuntime] Cannot start incline homing: session already active");

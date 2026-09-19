@@ -611,10 +611,32 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::SetGuiMode:
                 session_.setDesiredGuiMode(cmd.data.guiMode.userId, cmd.data.guiMode.isManual, cmdNowMs);
                 break;
-            case ControlCommandType::SelectUser:
-                session_.selectUser(cmd.data.selectUser.userId);
+            case ControlCommandType::SelectUser: {
+                const uint8_t selectedId = cmd.data.selectUser.userId;
+                session_.selectUser(selectedId);
                 publishSnapshots();
+
+                if (orchestrator_ != nullptr) {
+                    HeartRateClient* hrClient = orchestrator_->getHeartRateClient();
+                    if (hrClient != nullptr) {
+                        const auto* settings = SettingsService::instance().getActiveSettings();
+                        if (settings != nullptr) {
+                            for (size_t i = 0; i < MAX_USERS; ++i) {
+                                if (settings->users[i].id == selectedId) {
+                                    BleConfig bleCfg = orchestrator_->getBleConfig();
+                                    const char* mac = settings->users[i].preferredHrMac;
+                                    strncpy(bleCfg.preferredHrMac, mac, sizeof(bleCfg.preferredHrMac) - 1);
+                                    bleCfg.preferredHrMac[sizeof(bleCfg.preferredHrMac) - 1] = '\0';
+                                    bleCfg.autoConnectHr = (mac[0] != '\0');
+                                    orchestrator_->updateBleConfig(bleCfg);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
                 break;
+            }
             case ControlCommandType::StartInclineHoming: {
                 if (session_.isActive()) {
                     Serial.println("[ControlRuntime] Cannot start incline homing: session already active");

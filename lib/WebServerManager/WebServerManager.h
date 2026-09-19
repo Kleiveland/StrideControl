@@ -13,6 +13,7 @@ namespace stridecontrol {
 class TestbenchControlRuntime;
 #endif
 class SystemManager;
+class HeartRateClient;
 
 class WebServerManager {
 public:
@@ -26,6 +27,7 @@ public:
     bool begin(const ITelemetryProvider* telemetryProvider = nullptr, IControlCommandStager* commandStager = nullptr);
     void attachCommandStager(IControlCommandStager* commandStager);
     void attachSystemManager(SystemManager* systemManager);
+    void attachHeartRateClient(HeartRateClient* hrClient);
 #if defined(STRIDECONTROL_TESTBENCH)
     void attachSimulatorRuntime(TestbenchControlRuntime* simRuntime);
 #endif
@@ -38,6 +40,7 @@ private:
     const ITelemetryProvider* telemetryProvider_{nullptr};
     IControlCommandStager* commandStager_{nullptr};
     SystemManager* systemManager_{nullptr};
+    HeartRateClient* hrClient_{nullptr};
 #if defined(STRIDECONTROL_TESTBENCH)
     TestbenchControlRuntime* simRuntime_{nullptr};
 #endif

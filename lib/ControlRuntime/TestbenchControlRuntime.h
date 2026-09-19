@@ -103,6 +103,9 @@ public:
 
     TreadmillSimulatorComposite& getComposite() { return composite_; }
     const TreadmillSimulatorComposite& getComposite() const { return composite_; }
+    HeartRateClient& getHeartRateClient() { return heartRateClient_; }
+    const HeartRateClient& getHeartRateClient() const { return heartRateClient_; }
+    const BleConfig& getBleConfig() const { return bleConfig_; }
 
     static const char* version();
 
@@ -184,6 +187,7 @@ private:
     DiagnosticsService diagService_;
     ApplicationOrchestrator orchestrator_;
     BleManager bleManager_;
+    BleConfig bleConfig_{};
     HeartRateClient heartRateClient_;
     RscService rscService_;
     FtmsService ftmsService_;

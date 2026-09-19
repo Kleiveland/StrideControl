@@ -648,4 +648,11 @@ void ApplicationOrchestrator::runLoop() {
     vTaskDelete(nullptr);
 }
 
+void ApplicationOrchestrator::updateBleConfig(const BleConfig& cfg) {
+    deps_.bleConfig = cfg;
+    if (deps_.hrClient != nullptr) {
+        deps_.hrClient->updateConfig(cfg);
+    }
+}
+
 } // namespace stridecontrol
