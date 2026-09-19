@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #ifndef STRIDECONTROL_INCLINECALIBRATIONTYPES_H
 #define STRIDECONTROL_INCLINECALIBRATIONTYPES_H
 
@@ -24,6 +24,10 @@ enum class CalibrationSource : uint8_t {
 struct InclineCalibrationPoint {
     float measuredActualInclinePct = 0.0f; // Actual incline measured via IMU during commissioning (X-axis)
     float treadmillCommandPct = 0.0f;      // Treadmill console command that produced it (Y-axis)
+
+    InclineCalibrationPoint() = default;
+    constexpr InclineCalibrationPoint(float measured, float command)
+        : measuredActualInclinePct(measured), treadmillCommandPct(command) {}
 };
 
 static constexpr uint8_t kMaxInclineCalibrationPoints = 10; // Mirrors kMaxSpeedCalibrationPoints

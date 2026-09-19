@@ -39,6 +39,8 @@ struct TreadmillCommand {
   uint32_t requestId = 0;
   CommandType type = CommandType::PressButton;
   float value = 0.0f;
+  float currentValue = 0.0f; // Best-known current speed/incline, used to decide whether a
+                             // fast pulse-only path can be used instead of full digit entry.
   ButtonId button = ButtonId::Unknown;
 };
 

@@ -414,6 +414,17 @@ struct ConsoleInterface::Impl {
     if (speed) {
       norm = std::round(c.value * 10.0f) / 10.0f;
       if (norm < 0.8f || norm > 25.0f) { err = "Speed out of range"; return false; }
+
+      const float delta = norm - c.currentValue;
+      if (std::abs(delta) <= 0.5f && c.currentValue > 0.0f) {
+        // Fast path: close enough to reach with pure relay pulses, no digit re-entry needed.
+        const int pulses = static_cast<int>(std::round(std::abs(delta) * 10.0f));
+        for (int i = 0; i < pulses; i++) {
+          addStepToPlan(plan, count, delta > 0 ? ButtonId::SpeedPlus : ButtonId::SpeedMinus,
+                        config.timing.relayHoldMs, config.timing.relayPauseMs);
+        }
+        return true;
+      }
     } else {
       if (c.value < 0.0f || c.value > 15.0f || std::round(c.value) != c.value) { err = "Incline must be integer 0-15"; return false; }
       norm = c.value;
@@ -492,7 +503,7 @@ struct ConsoleInterface::Impl {
       active.store(false); return;
     }
 
-    if (c.type == CommandType::PressButton || c.type == CommandType::PressSpeedPlus || c.type == CommandType::PressSpeedMinus) {
+    if (!bus || c.type == CommandType::PressButton || c.type == CommandType::PressSpeedPlus || c.type == CommandType::PressSpeedMinus) {
       for (uint8_t i = 0; i < n && !abortRequested.load(); i++) {
         if (p[i].button == ButtonId::SpeedPlus || p[i].button == ButtonId::SpeedMinus) {
           emitEvent(c, CommandStatus::StepStarted, ConsoleOutcome::NormalSingle, p[i].button, i + 1, n, 1, 0, AckMetrics{}, "Relay pulse", norm);

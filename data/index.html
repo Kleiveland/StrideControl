@@ -729,11 +729,11 @@
         .bt-list-scroll { display: flex; flex-direction: column; gap: 14px; max-height: 560px; overflow-y: auto; padding-right: 10px; }
         .bt-item { display: flex; justify-content: space-between; align-items: center; background: #181818; border: 2px solid var(--border); border-radius: 18px; padding: 18px 30px; min-height: 110px; }
         .bt-item.connected { border-color: #383838; background: #1d1d1d; }
-        .bt-info { display: flex; align-items: center; gap: 20px; }
-        .bt-dot { width: 22px; height: 22px; border-radius: 50%; }
+        .bt-info { display: flex; align-items: center; gap: 20px; min-width: 0; }
+        .bt-dot { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; }
         .bt-dot.green { background: var(--success); box-shadow: 0 0 10px rgba(48, 209, 88, 0.4); }
         .bt-dot.dim { background: #444; }
-        .bt-name { font-size: 38px; font-weight: 700; color: #fff; }
+        .bt-name { font-size: 38px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .battery-icon { position: relative; width: 62px; height: 28px; border: 2px solid var(--text-dim); border-radius: 6px; display: flex; align-items: center; justify-content: center; margin-left: 10px; }
         .battery-icon::after { content: ''; position: absolute; right: -6px; top: 50%; transform: translateY(-50%); width: 4px; height: 12px; background: var(--text-dim); border-radius: 0 3px 3px 0; }
         .battery-level { position: absolute; left: 2px; top: 2px; bottom: 2px; background: var(--success); border-radius: 3px; z-index: 1; }
@@ -1148,16 +1148,16 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; flex: 1; margin-top: 25px; margin-bottom: 25px;">
                     
                     <div style="background: #0f0f0f; border: 2px solid var(--border); border-radius: 22px; padding: 30px 35px; display: flex; flex-direction: column; gap: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #222; padding-bottom: 15px;">
+                        <div style="border-bottom: 2px solid #222; padding-bottom: 15px;">
                             <span style="font-size: 28px; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 1px;">Tilkoblede Pulsmålere</span>
-                            <button class="btn-dialog-act sec clickable" id="btn-hr-scan" style="min-width: 0; padding: 0 30px; height: 55px; font-size: 20px; border-radius: 12px; border-bottom-width: 4px;">Søk etter sensor</button>
                         </div>
-                        <div id="hr-status-line" class="bt-item" style="min-height: 85px; padding: 12px 25px;">
+                        <button class="btn-dialog-act sec clickable" id="btn-hr-scan">Søk etter sensor</button>
+                        <div id="hr-status-line" class="bt-item" style="display: none;">
                             <div class="bt-info">
                                 <div class="bt-dot dim" id="hr-status-dot"></div>
-                                <div class="bt-name" id="hr-status-address" style="font-size: 28px;"></div>
+                                <div class="bt-name" id="hr-status-address"></div>
                             </div>
-                            <button class="btn-dialog-act no clickable" id="btn-hr-forget" style="min-width: 0; padding: 0 35px; height: 60px; font-size: 22px; border-radius: 12px; border-bottom-width: 4px; display: none;">Glem</button>
+                            <button class="btn-dialog-act no clickable" id="btn-hr-forget" style="min-width: 0; padding: 0 45px; height: 75px; font-size: 28px; display: none;">Glem</button>
                         </div>
                         <div class="bt-list-scroll" id="hr-pairing-list">
                             <!-- Populated dynamically -->
@@ -1673,6 +1673,15 @@
         }
 
 
+        let hrSavedAddress = '';
+
+        function formatDeviceName(name, maxLen = 16) {
+            if (!name) return '';
+            const str = String(name).trim();
+            if (str.length <= maxLen) return str;
+            return str.substring(0, maxLen - 1) + '…';
+        }
+
         async function fetchHrStatus() {
             const res = await fetch('/api/v1/heartrate/status', { cache: 'no-cache' });
             if (!res.ok) throw new Error('Kunne ikke hente pulsstatus');
@@ -1680,20 +1689,28 @@
         }
 
         function renderHrStatus(data) {
+            hrSavedAddress = (data && data.savedAddress) || '';
             const statusLine = document.getElementById('hr-status-line');
             const addrEl = document.getElementById('hr-status-address');
             const dotEl = document.getElementById('hr-status-dot');
             const forgetBtn = document.getElementById('btn-hr-forget');
-            if (!addrEl || !dotEl || !forgetBtn) return;
+            if (!statusLine || !addrEl || !dotEl || !forgetBtn) return;
 
-            const isConnected = !!(data && data.connected);
+            const isConnected = !!(data && data.connected && hrSavedAddress);
             if (isConnected) {
-                if (statusLine) statusLine.classList.add('connected');
+                statusLine.style.display = 'flex';
+                statusLine.classList.add('connected');
                 dotEl.className = 'bt-dot green';
-                addrEl.innerText = data.savedAddress || '';
+                const rawName = data.name || hrSavedAddress;
+                const nameText = formatDeviceName(rawName, 16);
+                const batteryText = (data.batteryValid && typeof data.batteryPercent === 'number')
+                    ? ` · ${data.batteryPercent}%`
+                    : '';
+                addrEl.innerText = nameText + batteryText;
                 forgetBtn.style.display = 'block';
             } else {
-                if (statusLine) statusLine.classList.remove('connected');
+                statusLine.style.display = 'none';
+                statusLine.classList.remove('connected');
                 dotEl.className = 'bt-dot dim';
                 addrEl.innerText = '';
                 forgetBtn.style.display = 'none';
@@ -1728,20 +1745,24 @@
         function renderHrScanList(results) {
             const list = document.getElementById('hr-pairing-list');
             if (!list) return;
-            if (!Array.isArray(results) || results.length === 0) {
+            const filtered = Array.isArray(results)
+                ? results.filter(r => !hrSavedAddress || r.address.toUpperCase() !== hrSavedAddress.toUpperCase())
+                : [];
+            if (filtered.length === 0) {
                 if (!hrScanInterval) {
-                    list.innerHTML = '<div style="font-size: 22px; color: var(--text-dim); padding: 15px 5px;">Ingen sensorer funnet</div>';
+                    list.innerHTML = '<div style="font-size: 28px; color: var(--text-dim); padding: 30px 10px; text-align: center;">Ingen sensorer funnet</div>';
                 }
                 return;
             }
             list.innerHTML = '';
-            results.forEach(r => {
+            filtered.forEach(r => {
                 const item = document.createElement('div');
                 item.className = 'bt-item';
+                const displayName = formatDeviceName(r.name || r.address, 16);
                 item.innerHTML = `
                     <div class="bt-info">
                         <div class="bt-dot dim"></div>
-                        <div class="bt-name">${r.name || r.address} (${r.rssiDbm} dBm)</div>
+                        <div class="bt-name">${displayName}</div>
                     </div>
                     <button class="btn-dialog-act sec clickable" style="min-width: 0; padding: 0 45px; height: 75px; font-size: 28px;">Koble til</button>
                 `;
@@ -1751,7 +1772,10 @@
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ address: r.address })
-                    }).then(() => { fetchHrStatus().then(renderHrStatus).catch(() => {}); });
+                    }).then(() => {
+                        fetchHrStatus().then(renderHrStatus).catch(() => {});
+                        setTimeout(() => { fetchHrStatus().then(renderHrStatus).catch(() => {}); }, 2500);
+                    });
                 });
                 list.appendChild(item);
             });
@@ -1764,11 +1788,6 @@
             if (scanBtn) {
                 scanBtn.disabled = true;
                 scanBtn.innerText = 'Søker etter pulssensorer...';
-            }
-
-            const list = document.getElementById('hr-pairing-list');
-            if (list && (!list.children || list.children.length === 0)) {
-                list.innerHTML = '<div style="font-size: 22px; color: var(--text-dim); padding: 15px 5px;">Søker etter enheter i nærheten...</div>';
             }
 
             fetch('/api/v1/heartrate/scan/start', { method: 'POST' })

@@ -117,6 +117,7 @@ bool TreadmillController::submitSpeedTarget(
     cmd.requestId = reqId;
     cmd.type = CommandType::SetSpeed;
     cmd.value = calResult.treadmillCommandKmh;
+    cmd.currentValue = snapshot_.acceptedPhysicalSpeedTargetKmh;
     cmd.button = ButtonId::Unknown;
 
     if (!console_.submit(cmd, 0)) {
