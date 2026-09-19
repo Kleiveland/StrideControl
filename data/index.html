@@ -1150,27 +1150,17 @@
                     <div style="background: #0f0f0f; border: 2px solid var(--border); border-radius: 22px; padding: 30px 35px; display: flex; flex-direction: column; gap: 20px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #222; padding-bottom: 15px;">
                             <span style="font-size: 28px; font-weight: 800; color: #fff; text-transform: uppercase; letter-spacing: 1px;">Tilkoblede Pulsmålere</span>
-                            <span style="font-size: 20px; color: var(--success); font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">● Søker...</span>
+                            <button class="btn-dialog-act sec clickable" id="btn-hr-scan" style="min-width: 0; padding: 0 30px; height: 55px; font-size: 20px; border-radius: 12px; border-bottom-width: 4px;">Søk etter sensor</button>
                         </div>
-                        <div class="bt-list-scroll">
-                            <div class="bt-item connected" id="bt-item-polar">
-                                <div class="bt-info">
-                                    <div class="bt-dot green"></div>
-                                    <div class="bt-name">Polar H10 (ID: 8C21A)</div>
-                                    <div class="battery-icon">
-                                        <div class="battery-level" style="width: 90%;"></div>
-                                        <span class="battery-text">90%</span>
-                                    </div>
-                                </div>
-                                <button class="btn-dialog-act no clickable" id="btn-toggle-polar" style="min-width: 0; padding: 0 45px; height: 75px; font-size: 28px;">Koble fra</button>
+                        <div id="hr-status-line" class="bt-item" style="min-height: 85px; padding: 12px 25px;">
+                            <div class="bt-info">
+                                <div class="bt-dot dim" id="hr-status-dot"></div>
+                                <div class="bt-name" id="hr-status-address" style="font-size: 28px;"></div>
                             </div>
-                            <div class="bt-item">
-                                <div class="bt-info">
-                                    <div class="bt-dot dim"></div>
-                                    <div class="bt-name">Garmin HRM-Pro (ID: 14092)</div>
-                                </div>
-                                <button class="btn-dialog-act sec clickable" style="min-width: 0; padding: 0 45px; height: 75px; font-size: 28px;">Koble til</button>
-                            </div>
+                            <button class="btn-dialog-act no clickable" id="btn-hr-forget" style="min-width: 0; padding: 0 35px; height: 60px; font-size: 22px; border-radius: 12px; border-bottom-width: 4px; display: none;">Glem</button>
+                        </div>
+                        <div class="bt-list-scroll" id="hr-pairing-list">
+                            <!-- Populated dynamically -->
                         </div>
                     </div>
 
@@ -1477,6 +1467,7 @@
                 if (modalId === 'modal-setup') {
                     const activeView = document.querySelector('.view.active, .view-flex.active, .view-grid.active');
                     if (activeView) viewBeforeSetup = activeView.id;
+                    fetchHrStatus().then(renderHrStatus).catch(() => {});
                 }
                 const modalEl = document.getElementById(modalId);
                 if (modalEl) modalEl.classList.add('active');
@@ -1682,26 +1673,77 @@
         }
 
 
-        const btnTogglePolar = document.getElementById('btn-toggle-polar');
-        btnTogglePolar.addEventListener('click', () => {
-            isSensorConnected = !isSensorConnected;
-            const manPulsVal = document.getElementById('man-puls-val');
-            const intPulsVal = document.getElementById('int-run-puls');
+        async function fetchHrStatus() {
+            const res = await fetch('/api/v1/heartrate/status', { cache: 'no-cache' });
+            if (!res.ok) throw new Error('Kunne ikke hente pulsstatus');
+            return await res.json();
+        }
 
-            if (!isSensorConnected) {
-                btnTogglePolar.innerText = 'Koble til';
-                document.querySelector('#bt-item-polar .bt-dot').className = 'bt-dot dim';
+        function renderHrStatus(data) {
+            const statusLine = document.getElementById('hr-status-line');
+            const addrEl = document.getElementById('hr-status-address');
+            const dotEl = document.getElementById('hr-status-dot');
+            const forgetBtn = document.getElementById('btn-hr-forget');
+            if (!addrEl || !dotEl || !forgetBtn) return;
 
-                manPulsVal.innerText = '--';
-                if (intPulsVal) intPulsVal.querySelector('.tele-val').innerText = '--';
-                showGlobalToast('PULSSIGNAL MISTET');
+            const isConnected = !!(data && data.connected);
+            if (isConnected) {
+                if (statusLine) statusLine.classList.add('connected');
+                dotEl.className = 'bt-dot green';
+                addrEl.innerText = data.savedAddress || '';
+                forgetBtn.style.display = 'block';
             } else {
-                btnTogglePolar.innerText = 'Koble fra';
-                document.querySelector('#bt-item-polar .bt-dot').className = 'bt-dot green';
-                manPulsVal.innerText = '164';
-                if (intPulsVal) intPulsVal.querySelector('.tele-val').innerText = '172';
-                showGlobalToast('PULSSENSOR TILKOBLET');
+                if (statusLine) statusLine.classList.remove('connected');
+                dotEl.className = 'bt-dot dim';
+                addrEl.innerText = '';
+                forgetBtn.style.display = 'none';
             }
+        }
+
+        async function fetchHrScanResults() {
+            const res = await fetch('/api/v1/heartrate/scan/results', { cache: 'no-cache' });
+            if (!res.ok) throw new Error('Kunne ikke hente skanneresultater');
+            return await res.json();
+        }
+
+        function renderHrScanList(results) {
+            const list = document.getElementById('hr-pairing-list');
+            if (!list) return;
+            list.innerHTML = '';
+            if (!Array.isArray(results) || results.length === 0) return;
+            results.forEach(r => {
+                const item = document.createElement('div');
+                item.className = 'bt-item';
+                item.innerHTML = `
+                    <div class="bt-info">
+                        <div class="bt-dot dim"></div>
+                        <div class="bt-name">${r.name || r.address} (${r.rssiDbm} dBm)</div>
+                    </div>
+                    <button class="btn-dialog-act sec clickable" style="min-width: 0; padding: 0 45px; height: 75px; font-size: 28px;">Koble til</button>
+                `;
+                item.querySelector('button').addEventListener('click', () => {
+                    fetch('/api/v1/heartrate/save', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ address: r.address })
+                    }).then(() => { fetchHrStatus().then(renderHrStatus).catch(() => {}); });
+                });
+                list.appendChild(item);
+            });
+        }
+
+        document.getElementById('btn-hr-scan')?.addEventListener('click', () => {
+            fetch('/api/v1/heartrate/scan/start', { method: 'POST' })
+                .then(() => {
+                    setTimeout(() => { fetchHrScanResults().then(renderHrScanList).catch(() => {}); }, 3000);
+                })
+                .catch(err => console.error('[HR] Scan start failed:', err));
+        });
+
+        document.getElementById('btn-hr-forget')?.addEventListener('click', () => {
+            fetch('/api/v1/heartrate/forget', { method: 'POST' })
+                .then(() => { fetchHrStatus().then(renderHrStatus).catch(() => {}); })
+                .catch(err => console.error('[HR] Forget failed:', err));
         });
 
         window.adjVal = function(id, delta, decimals) {

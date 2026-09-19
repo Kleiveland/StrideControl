@@ -1422,6 +1422,54 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/v1/heartrate/forget", HTTP_POST, hrForgetHandler, nullptr, commandBodyBuffer);
 
+    // GET /api/v1/heartrate/status
+    auto hrStatusHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            return;
+        }
+
+        uint8_t targetUserId = 0;
+        if (telemetryProvider_ != nullptr) {
+            TelemetryReport r{};
+            if (telemetryProvider_->getTelemetry(r) && r.hasActiveUser && r.activeUserId != 0) {
+                targetUserId = r.activeUserId;
+            }
+        }
+        if (targetUserId == 0) {
+            const auto* settings = SettingsService::instance().getActiveSettings();
+            if (settings != nullptr) {
+                targetUserId = settings->users[0].id;
+            } else {
+                targetUserId = 1;
+            }
+        }
+
+        const char* savedAddress = "";
+        const SystemSettings* active = SettingsService::instance().getActiveSettings();
+        if (active != nullptr) {
+            for (size_t i = 0; i < MAX_USERS; ++i) {
+                if (active->users[i].id == targetUserId) {
+                    savedAddress = active->users[i].preferredHrMac;
+                    break;
+                }
+            }
+        }
+
+        bool connected = false;
+        if (hrClient_ != nullptr) {
+            HeartRateState hrState = hrClient_->getState();
+            connected = (hrState.connectionState == HeartRateConnectionState::Connected);
+        }
+
+        JsonDocument doc;
+        doc["savedAddress"] = savedAddress;
+        doc["connected"] = connected;
+        String resp;
+        serializeJson(doc, resp);
+        request->send(200, "application/json", resp);
+    };
+    server_.on("/api/v1/heartrate/status", HTTP_GET, hrStatusHandler);
+
     // POST /api/v1/commissioning/ramptest/start
     auto rampTestStartHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {
