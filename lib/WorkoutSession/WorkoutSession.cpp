@@ -785,9 +785,9 @@ void WorkoutSession::update(
             if (applicationSnapshot.heartRate.heartRateBpm > heartRateMaxBpm_) {
                 heartRateMaxBpm_ = applicationSnapshot.heartRate.heartRateBpm;
             }
-            if (applicationSnapshot.runner.runnerSpeedKmh > maxSpeedKmh_) {
-                maxSpeedKmh_ = applicationSnapshot.runner.runnerSpeedKmh;
-            }
+        }
+        if (applicationSnapshot.runner.runnerSpeedKmh > maxSpeedKmh_) {
+            maxSpeedKmh_ = applicationSnapshot.runner.runnerSpeedKmh;
         }
 
         // Active step progression
