@@ -76,7 +76,9 @@ public:
     uint8_t getPreFireTargetStepIndex() const { return preFireTargetStepIndex_; }
     bool isPreFireActive() const { return snapshot_.rampPreFireActive; }
     uint8_t getCurrentStepIndex() const { return snapshot_.currentStepIndex; }
+    const WorkoutSessionConfig& getConfig() const { return config_; }
 
+    static constexpr uint16_t kFreeRunWorkoutId = 65535;
     static const char* version();
 
 private:
@@ -168,8 +170,6 @@ private:
     bool beltHasStoppedSinceSuspend_ = false;
     uint8_t desiredGuiUserId_ = 0;
     bool desiredGuiIsManual_ = false;
-
-    static constexpr uint16_t kFreeRunWorkoutId = 65535;
     static constexpr uint32_t kFreeRunDurationSeconds = 36000; // 10 hours - effectively indefinite
 };
 

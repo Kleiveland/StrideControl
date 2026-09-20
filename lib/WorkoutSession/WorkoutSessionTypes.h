@@ -141,6 +141,7 @@ struct WorkoutSessionSnapshot {
     // Diagnostics & Sequence
     uint32_t snapshotTimestampMs = 0;
     uint32_t snapshotSequence = 0;
+    bool freshSessionStarted = false;
 };
 
 const char* workoutSessionStateName(WorkoutSessionState state);

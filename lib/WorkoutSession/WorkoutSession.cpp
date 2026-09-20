@@ -288,6 +288,7 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
     snapshot_.completionPending = false;
     snapshot_.workoutId = freeRunWorkout_.workoutId;
     snapshot_.totalStepCount = freeRunWorkout_.totalSteps;
+    snapshot_.freshSessionStarted = !continuingPausedSession;
 
     const double distanceForStepStart = (lastRunnerDistanceKm_ >= 0.0) ? lastRunnerDistanceKm_ : 0.0;
     startStep(0, nowMs, distanceForStepStart);
@@ -669,6 +670,7 @@ void WorkoutSession::update(
 
     snapshot_.snapshotTimestampMs = nowMs;
     snapshot_.snapshotSequence++;
+    snapshot_.freshSessionStarted = false;
 
     const bool csafeValid = applicationSnapshot.csafe.initialized &&
                             applicationSnapshot.csafe.online &&
@@ -710,6 +712,7 @@ void WorkoutSession::update(
         if (confirmedRunning) {
             snapshot_.state = WorkoutSessionState::Running;
             snapshot_.suspended = false;
+            snapshot_.freshSessionStarted = true;
             startStep(0, nowMs, currentRunnerDist);
         }
         return;
