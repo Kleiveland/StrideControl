@@ -694,7 +694,21 @@ struct ConsoleInterface::Impl {
   void panelTask() {
     ButtonId cand = ButtonId::Unknown, rep = ButtonId::Unknown;
     uint32_t since = 0, seen = 0, pressed = 0; uint8_t co1 = 0xFF, co2 = 0xFF;
+    bool lastEstopActive = false; // Initialize to false to ensure edge triggers on boot if already active
     for (;;) {
+      // Assume active-high for emergency stop (key pulled = circuit open = internal pullup makes it HIGH)
+      bool currentEstopActive = (digitalRead(config.pins.estopIn) == HIGH);
+      if (currentEstopActive != lastEstopActive) {
+        lastEstopActive = currentEstopActive;
+        ICommandIntentSink* sink = nullptr;
+        portENTER_CRITICAL(&sinkMux);
+        sink = commandSink;
+        portEXIT_CRITICAL(&sinkMux);
+        if (sink) {
+          sink->onEmergencyStop(currentEstopActive);
+        }
+      }
+
       if (active.load()) { cand = rep = ButtonId::Unknown; vTaskDelay(pdMS_TO_TICKS(10)); continue; }
       uint8_t o1, o2; readAtomic(o1, o2); uint32_t now = millis(); ButtonId ob = decodePhysical(o1, o2);
       if (ob != ButtonId::Unknown) {
@@ -746,6 +760,7 @@ bool ConsoleInterface::begin(const ConsoleConfig& c, ConsoleExecutionMode mode) 
   pinMode(c.pins.speedPlusRelay, OUTPUT_OPEN_DRAIN); digitalWrite(c.pins.speedPlusRelay, HIGH);
   pinMode(c.pins.speedMinusRelay, OUTPUT_OPEN_DRAIN); digitalWrite(c.pins.speedMinusRelay, HIGH);
   pinMode(c.pins.buzzerIn, INPUT_PULLUP);
+  pinMode(c.pins.estopIn, INPUT_PULLUP);
   for (int p : c.pins.o1) pinMode(p, INPUT);
   for (int p : c.pins.o2) pinMode(p, INPUT);
   digitalWrite(c.pins.txsOe, HIGH);
