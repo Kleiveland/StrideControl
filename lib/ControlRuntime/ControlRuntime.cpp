@@ -252,16 +252,52 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
             csafeStateInitialized_ = false;
         }
 
-        // 3rd Physical Stop Detection: Button press during continuation window when CSAFE is Ready
+        // 3rd Physical Stop Detection and Keypad Routing
         PhysicalButtonEvent btnEvent{};
         while (console_.receivePhysicalButtonEvent(btnEvent)) {
-            if (btnEvent.button == ButtonId::Stop &&
-                btnEvent.action == PhysicalButtonAction::Pressed &&
-                session_.getSnapshot().continuationWindowActive &&
-                csafeValid &&
-                snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
-                const uint32_t stopTimestampMs = (btnEvent.timestampMs != 0) ? btnEvent.timestampMs : nowMs;
-                session_.registerPhysicalStop(stopTimestampMs);
+            if (btnEvent.action != PhysicalButtonAction::Pressed) {
+                continue;
+            }
+            const uint32_t eventTs = (btnEvent.timestampMs != 0) ? btnEvent.timestampMs : nowMs;
+
+            if (btnEvent.button == ButtonId::Stop) {
+                if (session_.getSnapshot().continuationWindowActive &&
+                    csafeValid &&
+                    snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
+                    session_.registerPhysicalStop(eventTs);
+                }
+            } else if (btnEvent.button == ButtonId::QuickStart) {
+                if (!rampTestTracker_.active()) {
+                    controller_.submitSpeedTarget(1.0f, eventTs);
+                }
+            } else if (btnEvent.button == ButtonId::SpeedPlus || btnEvent.button == ButtonId::SpeedMinus) {
+                if (rampTestTracker_.active()) continue;
+                float delta = (btnEvent.button == ButtonId::SpeedPlus) ? 0.1f : -0.1f;
+                float currentSpd = controller_.getSnapshot().acceptedPhysicalSpeedTargetKmh;
+                TargetContext ctx;
+                if (session_.isActive()) {
+                    ctx.origin = TargetOrigin::SessionManualAdjustment;
+                    ctx.sessionGeneration = session_.getSessionGeneration();
+                    ctx.stepIndex = session_.getCurrentStepIndex();
+                } else {
+                    ctx.origin = TargetOrigin::StandaloneManual;
+                }
+                ctx.timestampMs = eventTs;
+                dispatcher_.stepSpeedTarget(delta, currentSpd, ctx);
+                session_.reportWorkSpeedAdjustment(currentSpd + delta);
+            } else if (btnEvent.button == ButtonId::InclinePlus || btnEvent.button == ButtonId::InclineMinus) {
+                float delta = (btnEvent.button == ButtonId::InclinePlus) ? 0.5f : -0.5f;
+                float currentInc = controller_.getSnapshot().acceptedInclineTargetPct;
+                TargetContext ctx;
+                if (session_.isActive()) {
+                    ctx.origin = TargetOrigin::SessionManualAdjustment;
+                    ctx.sessionGeneration = session_.getSessionGeneration();
+                    ctx.stepIndex = session_.getCurrentStepIndex();
+                } else {
+                    ctx.origin = TargetOrigin::StandaloneManual;
+                }
+                ctx.timestampMs = eventTs;
+                dispatcher_.stepInclineTarget(delta, currentInc, ctx);
             }
         }
 
