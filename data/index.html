@@ -1431,10 +1431,10 @@
                     } else if (intervalTargets.includes(target)) {
                         isManualTarget = false;
                     }
+                    if (isManualTarget === true || target === 'view-boot') {
+                        intervalSessionStarted = false;
+                    }
                     if (isManualTarget !== null) {
-                        if (isManualTarget === true) {
-                            intervalSessionStarted = false;
-                        }
                         fetch('/api/v1/control/mode', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
