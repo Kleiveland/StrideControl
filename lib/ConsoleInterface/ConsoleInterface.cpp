@@ -755,7 +755,7 @@ bool ConsoleInterface::begin(const ConsoleConfig& c, ConsoleExecutionMode mode) 
   
   if (xTaskCreatePinnedToCore(Impl::buzzerTaskRouter, "ConsoleBuzzer", 4096, impl_, 4, &impl_->buzzerTaskHandle, 0) != pdPASS ||
       xTaskCreatePinnedToCore(Impl::panelTaskRouter, "ConsolePanel", 4096, impl_, 2, &impl_->panelTaskHandle, 1) != pdPASS ||
-      xTaskCreatePinnedToCore(Impl::commandTaskRouter, "ConsoleCommand", 8192, impl_, 18, &impl_->commandTaskHandle, 1) != pdPASS) {
+      xTaskCreatePinnedToCore(Impl::commandTaskRouter, "ConsoleCommand", 8192, impl_, kConsoleCommandTaskPriority, &impl_->commandTaskHandle, 1) != pdPASS) {
     end(); return false;
   }
   impl_->ready.store(true); return true;

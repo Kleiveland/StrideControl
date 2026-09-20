@@ -1,8 +1,12 @@
 #pragma once
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
 #include "ConsoleTypes.h"
 
 namespace stridecontrol {
+
+// Priority must remain strictly BELOW ApplicationOrchestrator (priority 5) on Core 1
+static constexpr UBaseType_t kConsoleCommandTaskPriority = 4;
 
 struct ButtonMapping {
   ButtonId button = ButtonId::Unknown;
