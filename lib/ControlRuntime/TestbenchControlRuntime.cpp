@@ -643,8 +643,7 @@ void TestbenchControlRuntime::runTaskLoop() {
         publishedAuthoritative_ = authoritative;
         portEXIT_CRITICAL(&snapshotMux_);
 
-        // 7. Dispatch Periodic BLE Service Telemetry Updates (GATT characteristic broadcast)
-        bleManager_.updateServices(nowMs, snapshot);
+        // 7. (Moved BLE Service Telemetry Updates to Core 0 runBleTask)
 
         // 8. Periodically check stack high-water mark (every 1000 ms)
         if (nowMs - lastHeadroomCheckMs >= 1000) {
@@ -681,6 +680,8 @@ void TestbenchControlRuntime::runBleTask() {
             const uint32_t nowMs = millis();
             bleManager_.update(nowMs);
             heartRateClient_.update(nowMs);
+            ApplicationSnapshot snap = getSnapshot();
+            bleManager_.updateServices(nowMs, snap);
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }
