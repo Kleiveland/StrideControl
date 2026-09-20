@@ -567,38 +567,19 @@ void TestbenchControlRuntime::runTaskLoop() {
                         session_.registerPhysicalStop(eventTs);
                     }
                 } else if (btnEvent.button == ButtonId::QuickStart) {
-                    if (!rampTestTracker_.active()) {
-                        composite_.stageQuickStart(eventTs);
-                        composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
-                    }
+                    // Physical QuickStart is handled by treadmill hardware independently.
+                    // Observed passively via CSAFE InUse and belt movement in WorkoutSession::update().
                 } else if (btnEvent.button == ButtonId::SpeedPlus || btnEvent.button == ButtonId::SpeedMinus) {
                     if (rampTestTracker_.active()) continue;
-                    float delta = (btnEvent.button == ButtonId::SpeedPlus) ? 0.1f : -0.1f;
-                    float currentSpd = composite_.getVirtualTreadmill().getTargetSpeedKmh();
-                    TargetContext ctx;
-                    if (session_.isActive()) {
-                        ctx.origin = TargetOrigin::SessionManualAdjustment;
-                        ctx.sessionGeneration = session_.getSessionGeneration();
-                        ctx.stepIndex = session_.getCurrentStepIndex();
-                    } else {
-                        ctx.origin = TargetOrigin::StandaloneManual;
-                    }
-                    ctx.timestampMs = eventTs;
-                    dispatcher_.stepSpeedTarget(delta, currentSpd, ctx);
-                    session_.reportWorkSpeedAdjustment(currentSpd + delta);
+                    const float delta = (btnEvent.button == ButtonId::SpeedPlus) ? 0.1f : -0.1f;
+                    const float acceptedTarget = composite_.getVirtualTreadmill().getTargetSpeedKmh();
+                    static constexpr float kBeltMovingThresholdKmh = 0.5f;
+                    const float currentSpd = (acceptedTarget > kBeltMovingThresholdKmh) ? acceptedTarget : snapshot.speed.speedKmh;
+                    const float newSpeed = (currentSpd + delta > 0.0f) ? (currentSpd + delta) : 0.0f;
+                    session_.reportWorkSpeedAdjustment(newSpeed);
                 } else if (btnEvent.button == ButtonId::InclinePlus || btnEvent.button == ButtonId::InclineMinus) {
-                    float delta = (btnEvent.button == ButtonId::InclinePlus) ? 0.5f : -0.5f;
-                    float currentInc = composite_.getVirtualTreadmill().getTargetInclinePct();
-                    TargetContext ctx;
-                    if (session_.isActive()) {
-                        ctx.origin = TargetOrigin::SessionManualAdjustment;
-                        ctx.sessionGeneration = session_.getSessionGeneration();
-                        ctx.stepIndex = session_.getCurrentStepIndex();
-                    } else {
-                        ctx.origin = TargetOrigin::StandaloneManual;
-                    }
-                    ctx.timestampMs = eventTs;
-                    dispatcher_.stepInclineTarget(delta, currentInc, ctx);
+                    // Physical incline adjustment is handled by treadmill hardware independently.
+                    // Observed passively via snapshot.incline.estimatedInclinePct; no outbound command.
                 }
             }
 
@@ -756,7 +737,14 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 if (rampTestTracker_.active()) {
                     break;
                 }
-                const float currentSimSpd = composite_.getVirtualTreadmill().getTargetSpeedKmh();
+                const float acceptedTarget = composite_.getVirtualTreadmill().getTargetSpeedKmh();
+                // Anchor on the actual, observed belt speed whenever the accepted target isn't yet a
+                // confirmed, sane baseline (e.g. 0.0 right after startup while the belt may already be
+                // moving) - never invent a target relative to a value we haven't actually confirmed.
+                const float observedSpd = composite_.getVirtualTreadmill().getActualSpeedKmh();
+                // 0.5 km/h matches the established beltMovingThresholdKmh convention from WorkoutSessionConfig / RunnerDynamicsConfig
+                static constexpr float kBeltMovingThresholdKmh = 0.5f;
+                const float currentSpd = (acceptedTarget > kBeltMovingThresholdKmh) ? acceptedTarget : observedSpd;
                 TargetContext ctx;
                 if (session_.isActive()) {
                     ctx.origin = TargetOrigin::SessionManualAdjustment;
@@ -766,8 +754,8 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                     ctx.origin = TargetOrigin::StandaloneManual;
                 }
                 ctx.timestampMs = cmdNowMs;
-                dispatcher_.stepSpeedTarget(cmd.data.stepSpeed.deltaSpeedKmh, currentSimSpd, ctx);
-                session_.reportWorkSpeedAdjustment(currentSimSpd + cmd.data.stepSpeed.deltaSpeedKmh);
+                dispatcher_.stepSpeedTarget(cmd.data.stepSpeed.deltaSpeedKmh, currentSpd, ctx);
+                session_.reportWorkSpeedAdjustment(currentSpd + cmd.data.stepSpeed.deltaSpeedKmh);
                 break;
             }
             case ControlCommandType::StepIncline: {

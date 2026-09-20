@@ -272,37 +272,19 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
                     session_.registerPhysicalStop(eventTs);
                 }
             } else if (btnEvent.button == ButtonId::QuickStart) {
-                if (!rampTestTracker_.active()) {
-                    controller_.submitSpeedTarget(1.0f, eventTs);
-                }
+                // Physical QuickStart is handled by treadmill hardware independently.
+                // Observed passively via CSAFE InUse and belt movement in WorkoutSession::update().
             } else if (btnEvent.button == ButtonId::SpeedPlus || btnEvent.button == ButtonId::SpeedMinus) {
                 if (rampTestTracker_.active()) continue;
-                float delta = (btnEvent.button == ButtonId::SpeedPlus) ? 0.1f : -0.1f;
-                float currentSpd = controller_.getSnapshot().acceptedPhysicalSpeedTargetKmh;
-                TargetContext ctx;
-                if (session_.isActive()) {
-                    ctx.origin = TargetOrigin::SessionManualAdjustment;
-                    ctx.sessionGeneration = session_.getSessionGeneration();
-                    ctx.stepIndex = session_.getCurrentStepIndex();
-                } else {
-                    ctx.origin = TargetOrigin::StandaloneManual;
-                }
-                ctx.timestampMs = eventTs;
-                dispatcher_.stepSpeedTarget(delta, currentSpd, ctx);
-                session_.reportWorkSpeedAdjustment(currentSpd + delta);
+                const float delta = (btnEvent.button == ButtonId::SpeedPlus) ? 0.1f : -0.1f;
+                const float acceptedTarget = controller_.getSnapshot().acceptedPhysicalSpeedTargetKmh;
+                static constexpr float kBeltMovingThresholdKmh = 0.5f;
+                const float currentSpd = (acceptedTarget > kBeltMovingThresholdKmh) ? acceptedTarget : snapshot.speed.speedKmh;
+                const float newSpeed = (currentSpd + delta > 0.0f) ? (currentSpd + delta) : 0.0f;
+                session_.reportWorkSpeedAdjustment(newSpeed);
             } else if (btnEvent.button == ButtonId::InclinePlus || btnEvent.button == ButtonId::InclineMinus) {
-                float delta = (btnEvent.button == ButtonId::InclinePlus) ? 0.5f : -0.5f;
-                float currentInc = controller_.getSnapshot().acceptedInclineTargetPct;
-                TargetContext ctx;
-                if (session_.isActive()) {
-                    ctx.origin = TargetOrigin::SessionManualAdjustment;
-                    ctx.sessionGeneration = session_.getSessionGeneration();
-                    ctx.stepIndex = session_.getCurrentStepIndex();
-                } else {
-                    ctx.origin = TargetOrigin::StandaloneManual;
-                }
-                ctx.timestampMs = eventTs;
-                dispatcher_.stepInclineTarget(delta, currentInc, ctx);
+                // Physical incline adjustment is handled by treadmill hardware independently.
+                // Observed passively via snapshot.incline.estimatedInclinePct; no outbound command.
             }
         }
 
@@ -567,7 +549,14 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 if (rampTestTracker_.active()) {
                     break;
                 }
-                const float currentSpd = controller_.getSnapshot().acceptedPhysicalSpeedTargetKmh;
+                const float acceptedTarget = controller_.getSnapshot().acceptedPhysicalSpeedTargetKmh;
+                // Anchor on the actual, observed belt speed whenever the accepted target isn't yet a
+                // confirmed, sane baseline (e.g. 0.0 right after startup while the belt may already be
+                // moving) - never invent a target relative to a value we haven't actually confirmed.
+                const float observedSpd = (orchestrator_ != nullptr) ? orchestrator_->getSnapshot().speed.speedKmh : 0.0f;
+                // 0.5 km/h matches the established beltMovingThresholdKmh convention from WorkoutSessionConfig / RunnerDynamicsConfig
+                static constexpr float kBeltMovingThresholdKmh = 0.5f;
+                const float currentSpd = (acceptedTarget > kBeltMovingThresholdKmh) ? acceptedTarget : observedSpd;
                 TargetContext ctx;
                 if (session_.isActive()) {
                     ctx.origin = TargetOrigin::SessionManualAdjustment;
