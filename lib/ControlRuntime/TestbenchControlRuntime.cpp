@@ -540,6 +540,11 @@ void TestbenchControlRuntime::runTaskLoop() {
                              snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
                         session_.registerPhysicalStop(nowMs);
                     }
+                    // Physical Stop 3: InUse -> Ready (Direct reset / E-Stop pulled)
+                    else if (previousCsafeQualifiedState_ == CsafeMachineState::InUse &&
+                             snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
+                        session_.registerPhysicalStop(nowMs);
+                    }
                     previousCsafeQualifiedState_ = snapshot.csafe.qualifiedState;
                 }
             } else {
