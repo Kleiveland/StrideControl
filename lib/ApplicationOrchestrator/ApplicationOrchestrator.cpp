@@ -248,29 +248,41 @@ bool ApplicationOrchestrator::end(uint32_t timeoutMs) {
 
     // Step 3: If Core 1 exit times out, do NOT signal BLE task, delete semaphores, or reset storage
     if (!cleanRtExit) {
+        TaskHandle_t taskToDelete = nullptr;
         portENTER_CRITICAL(&metricsMux_);
         if (taskHandle_ != nullptr) {
-            // Forcefully delete timed out Core 1 task to avoid dangling memory access
-            vTaskDelete(taskHandle_);
+            taskToDelete = taskHandle_;
             taskHandle_ = nullptr;
-            if (deps_.diagnosticsService != nullptr) {
-                deps_.diagnosticsService->reportFault(FaultCode::SystemWatchdogWarning, millis());
-            }
         }
         running_ = false;
         initialized_ = false;
         portEXIT_CRITICAL(&metricsMux_);
+
+        // Perform scheduler and external service calls OUTSIDE the spinlock
+        if (taskToDelete != nullptr) {
+            // Forcefully delete timed out Core 1 task to avoid dangling memory access
+            vTaskDelete(taskToDelete);
+            if (deps_.diagnosticsService != nullptr) {
+                deps_.diagnosticsService->reportFault(FaultCode::SystemWatchdogWarning, millis());
+            }
+        }
         return false;
     }
 
+    TaskHandle_t cleanTaskToDelete = nullptr;
     portENTER_CRITICAL(&metricsMux_);
     if (taskHandle_ != nullptr) {
-        vTaskDelete(taskHandle_);
+        cleanTaskToDelete = taskHandle_;
         taskHandle_ = nullptr;
     }
     running_ = false;
     initialized_ = false;
     portEXIT_CRITICAL(&metricsMux_);
+
+    // Safely delete the task OUTSIDE the spinlock
+    if (cleanTaskToDelete != nullptr) {
+        vTaskDelete(cleanTaskToDelete);
+    }
 
     // Step 4: Signal Core 0 BLE Lifecycle Task to terminate cleanly
     bool cleanBleExit = true;
