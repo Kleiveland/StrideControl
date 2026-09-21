@@ -100,6 +100,7 @@ bool ApplicationOrchestrator::begin(const ApplicationOrchestratorDependencies& d
     loopCount_ = 0;
     deadlineMissCount_ = 0;
     overrunCount_ = 0;
+    pipelineErrorCount_ = 0;
     sequenceNumber_ = 0;
     portEXIT_CRITICAL(&metricsMux_);
 
@@ -375,6 +376,13 @@ uint32_t ApplicationOrchestrator::getOverrunCount() const {
     return val;
 }
 
+uint32_t ApplicationOrchestrator::getPipelineErrorCount() const {
+    portENTER_CRITICAL(&metricsMux_);
+    const uint32_t val = pipelineErrorCount_;
+    portEXIT_CRITICAL(&metricsMux_);
+    return val;
+}
+
 uint32_t ApplicationOrchestrator::getMinFreeStackBytes() const {
     portENTER_CRITICAL(&metricsMux_);
     const uint32_t val = minFreeStackBytes_;
@@ -580,6 +588,9 @@ bool ApplicationOrchestrator::step(const ApplicationTickContext& context) {
     // Execute pipeline into stagingSnapshot_
     if (!executePipelineStep(context)) {
         // Atomic rollback: no state committed
+        portENTER_CRITICAL(&metricsMux_);
+        pipelineErrorCount_++;
+        portEXIT_CRITICAL(&metricsMux_);
         return false;
     }
 
@@ -618,13 +629,19 @@ void ApplicationOrchestrator::runLoop() {
         context.nowMs = nowMs;
         context.loopDeltaMs = loopDeltaMs;
 
-        executePipelineStep(context);
-
-        portENTER_CRITICAL(&snapshotMux_);
-        sequenceNumber_++;
-        stagingSnapshot_.sequenceNumber = sequenceNumber_;
-        publishedSnapshot_ = stagingSnapshot_;
-        portEXIT_CRITICAL(&snapshotMux_);
+        if (executePipelineStep(context)) {
+            portENTER_CRITICAL(&snapshotMux_);
+            sequenceNumber_++;
+            stagingSnapshot_.sequenceNumber = sequenceNumber_;
+            publishedSnapshot_ = stagingSnapshot_;
+            portEXIT_CRITICAL(&snapshotMux_);
+        } else {
+            // Pipeline step failed this cycle - keep the last known-good publishedSnapshot_ instead of
+            // overwriting it with a partial/zeroed one. Track this for diagnostics.
+            portENTER_CRITICAL(&metricsMux_);
+            pipelineErrorCount_++;
+            portEXIT_CRITICAL(&metricsMux_);
+        }
 
         const uint32_t executionDurationMs = millis() - nowMs;
         portENTER_CRITICAL(&metricsMux_);

@@ -115,6 +115,7 @@ public:
     uint32_t getLoopCount() const;
     uint32_t getDeadlineMissCount() const;
     uint32_t getOverrunCount() const;
+    uint32_t getPipelineErrorCount() const;
     uint32_t getMinFreeStackBytes() const;
 
     static const char* version();
@@ -178,6 +179,7 @@ private:
     uint32_t loopCount_ = 0;
     uint32_t deadlineMissCount_ = 0;
     uint32_t overrunCount_ = 0;
+    uint32_t pipelineErrorCount_ = 0;
     uint32_t minFreeStackBytes_ = 8192;
 
     static constexpr uint32_t kPeriodMs = 20; // 50 Hz
