@@ -749,6 +749,59 @@
             z-index: 200;
         }
         .step-picker-modal.open { display: flex; }
+
+        /* Safety / E-Stop Fullscreen Overlay */
+        .estop-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.88);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            z-index: 9998;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .estop-card {
+            background: #161a22;
+            border-radius: 20px;
+            padding: 44px 56px;
+            max-width: 580px;
+            width: 90%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.7);
+        }
+        .estop-stop-sign {
+            width: 104px;
+            height: 104px;
+            flex-shrink: 0;
+        }
+        .estop-title {
+            font-size: 32px;
+            font-weight: 800;
+            color: #ffffff;
+            margin-top: 24px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+        .estop-divider {
+            width: 56px;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.18);
+            border-radius: 2px;
+            margin: 20px 0;
+        }
+        .estop-instruction {
+            font-size: 18px;
+            font-weight: 600;
+            color: #cbd5e1;
+            line-height: 1.6;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
     </style>
 </head>
 <body>
@@ -1343,6 +1396,26 @@
     <!-- 3-2-1 Full-screen Countdown Overlay -->
     <div id="countdown-overlay" style="display: none; position: fixed; inset: 0; background: #000; z-index: 9999; align-items: center; justify-content: center;">
         <div id="countdown-number" style="font-size: 300px; font-weight: 800; color: #fff; font-variant-numeric: tabular-nums; line-height: 1; user-select: none;"></div>
+    </div>
+
+    <!-- Safety / E-Stop Fullscreen Overlay -->
+    <div id="estop-overlay" class="estop-overlay">
+        <div class="estop-card">
+            <svg class="estop-stop-sign" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                <!-- Red Octagon Body -->
+                <polygon points="29.3,5 70.7,5 95,29.3 95,70.7 70.7,95 29.3,95 5,70.7 5,29.3" fill="#dc2626" />
+                <!-- Inner White Border Ring -->
+                <polygon points="30.5,9 69.5,9 91,30.5 91,69.5 69.5,91 30.5,91 9,69.5 9,30.5" fill="none" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" />
+                <!-- Centered STOP Text -->
+                <text x="50" y="58" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-size="22" font-weight="900" font-family="'Barlow Condensed', -apple-system, sans-serif" letter-spacing="1.5">STOP</text>
+            </svg>
+            <div class="estop-title">NØDSTOPP UTLØST</div>
+            <div class="estop-divider"></div>
+            <div class="estop-instruction">
+                TRYKK PLASTDELEN INN IGJEN,<br>
+                TRYKK DERETTER QUICK START FOR Å FORTSETTE
+            </div>
+        </div>
     </div>
 
     <script>
@@ -4332,6 +4405,12 @@
                 showPersistentToast('Mistet kontakt. Kobler til... Farten endres ikke.');
             } else {
                 hidePersistentToast();
+            }
+
+            const isEstop = (data.estopActive === true) || (data.session?.isEmergencyStopped === true);
+            const estopOverlay = document.getElementById('estop-overlay');
+            if (estopOverlay) {
+                estopOverlay.style.display = isEstop ? 'flex' : 'none';
             }
 
             if (data.authority !== true) {

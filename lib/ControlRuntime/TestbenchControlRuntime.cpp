@@ -267,9 +267,10 @@ bool TestbenchControlRuntime::triggerStop(uint32_t nowMs) {
     return stageCommand(cmd);
 }
 
-bool TestbenchControlRuntime::triggerEmergencyStop(uint32_t nowMs) {
+bool TestbenchControlRuntime::triggerEmergencyStop(bool active, uint32_t nowMs) {
     const uint32_t ts = nowMs != 0 ? nowMs : millis();
-    return composite_.stageEmergencyStop(ts);
+    console_.triggerEmergencyStop(active);
+    return composite_.stageEmergencyStop(active, ts);
 }
 
 bool TestbenchControlRuntime::setSimSpeedTarget(float speedKmh, uint32_t nowMs) {
@@ -512,6 +513,21 @@ void TestbenchControlRuntime::runTaskLoop() {
             snapshot.heartRate.connectionState = HeartRateConnectionState::Connected;
         }
 
+        // E-Stop Detection (authoritative hardware GPIO 18, independent of snapshot authority)
+        const bool currentEstop = console_.isEmergencyStopActive();
+        if (currentEstop != previousEstopActive_) {
+            previousEstopActive_ = currentEstop;
+            if (currentEstop) {
+                session_.registerEmergencyStop(nowMs);
+                DiagnosticsLog::instance().addEntryf("[Safety] Emergency Stop engaged at %lu ms", static_cast<unsigned long>(nowMs));
+                Serial.printf("[Safety] Emergency Stop engaged at %lu ms\n", static_cast<unsigned long>(nowMs));
+            } else {
+                session_.registerEmergencyStopCleared();
+                DiagnosticsLog::instance().addEntryf("[Safety] Emergency Stop cleared at %lu ms", static_cast<unsigned long>(nowMs));
+                Serial.printf("[Safety] Emergency Stop cleared at %lu ms\n", static_cast<unsigned long>(nowMs));
+            }
+        }
+
         // 4. Evaluate authority
         const bool authoritative = ControlRuntime::isSnapshotAuthoritative(snapshot, nowMs, &wasAuthoritative_);
         if (authoritative) {
@@ -530,20 +546,27 @@ void TestbenchControlRuntime::runTaskLoop() {
                     previousCsafeQualifiedState_ = snapshot.csafe.qualifiedState;
                     csafeStateInitialized_ = true;
                 } else if (snapshot.csafe.qualifiedState != previousCsafeQualifiedState_) {
+                    const bool estopEngaged = currentEstop || session_.getSnapshot().isEmergencyStopped;
                     // Physical Stop 1: InUse -> Paused
                     if (previousCsafeQualifiedState_ == CsafeMachineState::InUse &&
                         snapshot.csafe.qualifiedState == CsafeMachineState::Paused) {
-                        session_.registerPhysicalStop(nowMs);
+                        if (!estopEngaged) {
+                            session_.registerPhysicalStop(nowMs);
+                        }
                     }
                     // Physical Stop 2: Paused -> Ready
                     else if (previousCsafeQualifiedState_ == CsafeMachineState::Paused &&
                              snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
-                        session_.registerPhysicalStop(nowMs);
+                        if (!estopEngaged) {
+                            session_.registerPhysicalStop(nowMs);
+                        }
                     }
-                    // Physical Stop 3: InUse -> Ready (Direct reset / E-Stop pulled)
+                    // Physical Stop 3: InUse -> Ready (Direct reset / intentional stop)
                     else if (previousCsafeQualifiedState_ == CsafeMachineState::InUse &&
                              snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
-                        session_.registerPhysicalStop(nowMs);
+                        if (!estopEngaged) {
+                            session_.registerPhysicalStop(nowMs);
+                        }
                     }
                     previousCsafeQualifiedState_ = snapshot.csafe.qualifiedState;
                 }
@@ -561,7 +584,9 @@ void TestbenchControlRuntime::runTaskLoop() {
                 const uint32_t eventTs = (btnEvent.timestampMs != 0) ? btnEvent.timestampMs : nowMs;
 
                 if (btnEvent.button == ButtonId::Stop) {
-                    if (session_.getSnapshot().continuationWindowActive &&
+                    const bool estopEngaged = currentEstop || session_.getSnapshot().isEmergencyStopped;
+                    if (!estopEngaged &&
+                        session_.getSnapshot().continuationWindowActive &&
                         csafeValid &&
                         snapshot.csafe.qualifiedState == CsafeMachineState::Ready) {
                         session_.registerPhysicalStop(eventTs);
@@ -573,8 +598,8 @@ void TestbenchControlRuntime::runTaskLoop() {
                     if (rampTestTracker_.active()) continue;
                     const float delta = (btnEvent.button == ButtonId::SpeedPlus) ? 0.1f : -0.1f;
                     const float acceptedTarget = composite_.getVirtualTreadmill().getTargetSpeedKmh();
-                    static constexpr float kBeltMovingThresholdKmh = 0.5f;
-                    const float currentSpd = (acceptedTarget > kBeltMovingThresholdKmh) ? acceptedTarget : snapshot.speed.speedKmh;
+                    const float beltMovingThreshold = session_.getConfig().beltMovingThresholdKmh;
+                    const float currentSpd = (acceptedTarget > beltMovingThreshold) ? acceptedTarget : snapshot.speed.speedKmh;
                     const float newSpeed = (currentSpd + delta > 0.0f) ? (currentSpd + delta) : 0.0f;
                     session_.reportWorkSpeedAdjustment(newSpeed);
                 } else if (btnEvent.button == ButtonId::InclinePlus || btnEvent.button == ButtonId::InclineMinus) {
@@ -742,9 +767,18 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 // confirmed, sane baseline (e.g. 0.0 right after startup while the belt may already be
                 // moving) - never invent a target relative to a value we haven't actually confirmed.
                 const float observedSpd = composite_.getVirtualTreadmill().getActualSpeedKmh();
-                // 0.5 km/h matches the established beltMovingThresholdKmh convention from WorkoutSessionConfig / RunnerDynamicsConfig
-                static constexpr float kBeltMovingThresholdKmh = 0.5f;
-                const float currentSpd = (acceptedTarget > kBeltMovingThresholdKmh) ? acceptedTarget : observedSpd;
+                const float beltMovingThreshold = session_.getConfig().beltMovingThresholdKmh;
+                const bool usedObserved = (acceptedTarget <= beltMovingThreshold);
+                const float currentSpd = usedObserved ? observedSpd : acceptedTarget;
+
+                DiagnosticsLog::instance().addEntryf(
+                    "[StepSpeed] delta=%.2f: accepted=%.2f, observed=%.2f, threshold=%.2f -> baseline=%.2f (%s)",
+                    cmd.data.stepSpeed.deltaSpeedKmh, acceptedTarget, observedSpd, beltMovingThreshold, currentSpd,
+                    usedObserved ? "FALLBACK to observedSpd" : "used acceptedTarget");
+                Serial.printf(
+                    "[StepSpeed] delta=%.2f: accepted=%.2f, observed=%.2f, threshold=%.2f -> baseline=%.2f (%s)\n",
+                    cmd.data.stepSpeed.deltaSpeedKmh, acceptedTarget, observedSpd, beltMovingThreshold, currentSpd,
+                    usedObserved ? "FALLBACK to observedSpd" : "used acceptedTarget");
                 TargetContext ctx;
                 if (session_.isActive()) {
                     ctx.origin = TargetOrigin::SessionManualAdjustment;

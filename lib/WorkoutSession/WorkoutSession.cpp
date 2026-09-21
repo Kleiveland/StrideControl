@@ -164,6 +164,8 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, 
     physicalStopCount_ = 0;
     continuationWindowExpiresMs_ = 0;
     isEmergencyStopped_ = false;
+    wasEmergencyStopped_ = false;
+    snapshot_.wasEmergencyStopped = false;
     eStopRestartPending_ = false;
     beltHasStoppedSinceSuspend_ = false;
 
@@ -222,7 +224,10 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
         physicalStopCount_ = 0;
         continuationWindowExpiresMs_ = 0;
         isEmergencyStopped_ = false;
+        wasEmergencyStopped_ = false;
+        snapshot_.wasEmergencyStopped = false;
         eStopRestartPending_ = false;
+        restartReissuePending_ = false;
         lowSpeedDebounceActive_ = false;
         snapshot_.physicalStopCount = 0;
         snapshot_.continuationWindowActive = false;
@@ -256,6 +261,8 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
         physicalStopCount_ = 0;
         continuationWindowExpiresMs_ = 0;
         isEmergencyStopped_ = false;
+        wasEmergencyStopped_ = false;
+        snapshot_.wasEmergencyStopped = false;
         eStopRestartPending_ = false;
         pendingShiftPrompt_ = false;
         netWorkSpeedDeltaKmh_ = 0.0f;
@@ -587,9 +594,11 @@ void WorkoutSession::registerPhysicalStop(uint32_t nowMs) {
 
 void WorkoutSession::registerEmergencyStop(uint32_t nowMs) {
     isEmergencyStopped_ = true;
+    wasEmergencyStopped_ = true;
     eStopRestartPending_ = true;
     restartReissuePending_ = true;
     snapshot_.isEmergencyStopped = true;
+    snapshot_.wasEmergencyStopped = true;
     suspend(nowMs);
     clearPendingCommandIntent();
 }
@@ -924,7 +933,10 @@ bool WorkoutSession::resume(uint32_t nowMs) {
         runtimeStepTargetDurationMs_ += rampMs;
     }
 
-    emitStepCommandIntent(snapshot_.currentStep, restartReissuePending_);
+    const bool forceReissue = wasEmergencyStopped_ || restartReissuePending_;
+    emitStepCommandIntent(snapshot_.currentStep, forceReissue);
+    wasEmergencyStopped_ = false;
+    snapshot_.wasEmergencyStopped = false;
     restartReissuePending_ = false;
     return true;
 }

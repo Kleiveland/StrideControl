@@ -128,6 +128,7 @@ private:
     uint8_t physicalStopCount_ = 0;
     uint32_t continuationWindowExpiresMs_ = 0;
     bool isEmergencyStopped_ = false;
+    bool wasEmergencyStopped_ = false;
     bool eStopRestartPending_ = false;
 
     // Remaining-drag speed adjustment

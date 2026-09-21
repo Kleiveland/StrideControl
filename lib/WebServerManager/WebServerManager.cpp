@@ -207,6 +207,7 @@ void WebServerManager::registerRoutes() {
         doc["timestampMs"] = report.timestampMs;
         doc["authority"] = report.authority;
         doc["connectionWarningActive"] = report.connectionWarningActive;
+        doc["estopActive"] = report.estopActive;
 
         JsonObject speed = doc["speed"].to<JsonObject>();
         speed["kmh"] = report.actualSpeedKmh;
@@ -223,6 +224,7 @@ void WebServerManager::registerRoutes() {
 
         JsonObject session = doc["session"].to<JsonObject>();
         session["state"] = report.sessionState;
+        session["isEmergencyStopped"] = report.isEmergencyStopped;
         session["stepIndex"] = report.stepIndex;
         session["stepRemainingMs"] = report.stepRemainingMs;
         session["stepElapsedMs"] = report.stepElapsedMs;
@@ -1864,8 +1866,25 @@ void WebServerManager::registerRoutes() {
                 cmd.type = ControlCommandType::Stop;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "EmergencyStop") == 0) {
+#if defined(STRIDECONTROL_TESTBENCH)
+                if (simRuntime_ != nullptr) {
+                    ok = simRuntime_->triggerEmergencyStop(true, millis());
+                    request->send(ok ? 200 : 503, "application/json", ok ? "{\"status\":\"estop_triggered\"}" : "{\"error\":\"failed\"}");
+                    return;
+                }
+#endif
                 cmd.type = ControlCommandType::Stop;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
+            } else if (strcmp(btn, "EmergencyStopRelease") == 0 || strcmp(btn, "ResetEmergencyStop") == 0) {
+#if defined(STRIDECONTROL_TESTBENCH)
+                if (simRuntime_ != nullptr) {
+                    ok = simRuntime_->triggerEmergencyStop(false, millis());
+                    request->send(ok ? 200 : 503, "application/json", ok ? "{\"status\":\"estop_released\"}" : "{\"error\":\"failed\"}");
+                    return;
+                }
+#endif
+                request->send(200, "application/json", "{\"status\":\"ok\"}");
+                return;
             } else if (strcmp(btn, "SpeedPlus") == 0) {
                 cmd.type = ControlCommandType::StepSpeed;
                 cmd.data.stepSpeed.deltaSpeedKmh = 0.5f;
@@ -1890,6 +1909,16 @@ void WebServerManager::registerRoutes() {
                 cmd.type = ControlCommandType::SetIncline;
                 cmd.data.target.inclinePct = val;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
+            } else if (strcmp(btn, "SetBeltSpeedDirect") == 0 || strcmp(btn, "SpinBeltDirect") == 0) {
+#if defined(STRIDECONTROL_TESTBENCH)
+                if (simRuntime_ != nullptr) {
+                    simRuntime_->setSimBeltSpeedDirect(val);
+                    request->send(200, "application/json", "{\"status\":\"belt_spun\"}");
+                    return;
+                }
+#endif
+                request->send(503, "application/json", "{\"error\":\"testbench_only\"}");
+                return;
             } else {
                 request->send(400, "application/json", "{\"error\":\"Unknown button or command\"}");
                 return;

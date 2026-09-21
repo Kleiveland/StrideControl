@@ -126,6 +126,7 @@ struct WorkoutSessionSnapshot {
     bool continuationWindowActive = false;
     uint32_t continuationWindowRemainingMs = 0;
     bool isEmergencyStopped = false;
+    bool wasEmergencyStopped = false;
 
     // Remaining-drag speed adjustment
     bool speedAdjustmentPromptActive = false;

@@ -13,6 +13,8 @@ struct TelemetryReport {
     uint32_t timestampMs = 0;
     bool authority = false;
     bool connectionWarningActive = false;
+    bool estopActive = false;
+    bool isEmergencyStopped = false;
     float actualSpeedKmh = 0.0f;
     float actualInclinePct = 0.0f;
     CsafeState csafe{};

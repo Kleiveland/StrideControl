@@ -135,6 +135,16 @@ void TreadmillSimulatorComposite::applyDiscreteEvent(const StagedDiscreteEvent& 
 
         case StagedDiscreteEvent::Type::EmergencyStop:
             consoleAdapter_.onEmergencyStop(true);
+            if (console_ != nullptr) {
+                console_->triggerEmergencyStop(true);
+            }
+            break;
+
+        case StagedDiscreteEvent::Type::EmergencyStopRelease:
+            consoleAdapter_.onEmergencyStop(false);
+            if (console_ != nullptr) {
+                console_->triggerEmergencyStop(false);
+            }
             break;
 
         case StagedDiscreteEvent::Type::SpeedPlus:
@@ -190,9 +200,9 @@ bool TreadmillSimulatorComposite::stageStop(uint32_t nowMs) {
     return mailbox_.enqueueEvent(ev);
 }
 
-bool TreadmillSimulatorComposite::stageEmergencyStop(uint32_t nowMs) {
+bool TreadmillSimulatorComposite::stageEmergencyStop(bool active, uint32_t nowMs) {
     StagedDiscreteEvent ev{};
-    ev.type = StagedDiscreteEvent::Type::EmergencyStop;
+    ev.type = active ? StagedDiscreteEvent::Type::EmergencyStop : StagedDiscreteEvent::Type::EmergencyStopRelease;
     ev.timestampMs = nowMs;
     return mailbox_.enqueueEvent(ev);
 }

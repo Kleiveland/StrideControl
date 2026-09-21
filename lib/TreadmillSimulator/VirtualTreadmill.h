@@ -173,6 +173,7 @@ public:
 
     // Stimulus and command inputs
     void setTargetSpeedKmh(float speedKmh);
+    void setDirectBeltSpeedKmh(float speedKmh);
     void setTargetInclinePct(float inclinePct);
     void setEmergencyStop(bool active);
     void setRunnerLocation(VirtualRunnerLocation location);
@@ -233,6 +234,7 @@ private:
     // Physical state
     float actualSpeedKmh_ = 0.0f;
     float targetSpeedKmh_ = 0.0f;
+    float directBeltSpeedKmh_ = 0.0f;
     float actualInclinePct_ = 0.0f;
     float targetInclinePct_ = 0.0f;
     double odometerKm_ = 0.0;

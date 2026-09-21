@@ -47,6 +47,8 @@ public:
         report.timestampMs = telem.snapshot.timestampMs;
         report.authority = telem.authoritative;
         report.connectionWarningActive = runtime_.isConnectionWarningActive();
+        report.estopActive = runtime_.isEmergencyStopActive();
+        report.isEmergencyStopped = telem.sessionSnapshot.isEmergencyStopped;
         report.actualSpeedKmh = telem.snapshot.speed.speedKmh;
         report.actualInclinePct = telem.snapshot.incline.estimatedInclinePct;
         report.csafe = telem.snapshot.csafe;
@@ -177,6 +179,8 @@ public:
         report.timestampMs = snap.timestampMs;
         report.authority = stridecontrol::ControlRuntime::isSnapshotAuthoritative(snap, nowMs);
         report.connectionWarningActive = systemManager_.getControlRuntime().isConnectionWarningActive();
+        report.estopActive = systemManager_.getControlRuntime().isEmergencyStopActive();
+        report.isEmergencyStopped = sessSnap.isEmergencyStopped;
         report.actualSpeedKmh = snap.speed.speedKmh;
         report.actualInclinePct = snap.incline.estimatedInclinePct;
         report.csafe = snap.csafe;

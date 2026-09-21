@@ -105,6 +105,7 @@ public:
     bool didInclineCommissioningTimeOut() const override { return inclineTracker_.timedOut(); }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
+    bool isEmergencyStopActive() const { return console_.isEmergencyStopActive(); }
 
     static const char* version();
 
@@ -157,6 +158,7 @@ private:
 
     CsafeMachineState previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
     bool csafeStateInitialized_ = false;
+    bool previousEstopActive_ = false;
 
     RampTestTracker rampTestTracker_;
     InclineCommissioningTracker inclineTracker_;

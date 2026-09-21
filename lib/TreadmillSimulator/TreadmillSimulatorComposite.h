@@ -24,6 +24,7 @@ struct StagedDiscreteEvent {
         QuickStart,
         Stop,
         EmergencyStop,
+        EmergencyStopRelease,
         SpeedPlus,
         SpeedMinus,
         InclinePlus,
@@ -86,12 +87,13 @@ public:
     // Stimulus staging
     bool stageQuickStart(uint32_t nowMs = 0);
     bool stageStop(uint32_t nowMs = 0);
-    bool stageEmergencyStop(uint32_t nowMs = 0);
+    bool stageEmergencyStop(bool active = true, uint32_t nowMs = 0);
     bool stageSpeedTarget(float speedKmh, uint32_t nowMs = 0);
     bool stageInclineTarget(float inclinePct, uint32_t nowMs = 0);
     bool stageSpeedStep(bool positive, uint32_t nowMs = 0);
     bool stageInclineStep(bool positive, uint32_t nowMs = 0);
     void stageRunner(VirtualRunnerMode mode, uint16_t cadenceSpm = 180, float magnitudeG = 0.35f, bool valid = true);
+    void setDirectBeltSpeedKmh(float speedKmh) { treadmill_.setDirectBeltSpeedKmh(speedKmh); }
 
     uint32_t getDroppedEventsCount() const;
 

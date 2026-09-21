@@ -62,12 +62,13 @@ public:
     // Simulator stimulus staging APIs
     bool triggerQuickStart(uint32_t nowMs = 0);
     bool triggerStop(uint32_t nowMs = 0);
-    bool triggerEmergencyStop(uint32_t nowMs = 0);
+    bool triggerEmergencyStop(bool active = true, uint32_t nowMs = 0);
     bool setSimSpeedTarget(float speedKmh, uint32_t nowMs = 0);
     bool setSimInclineTarget(float inclinePct, uint32_t nowMs = 0);
     bool stepSimSpeed(bool positive, uint32_t nowMs = 0);
     bool stepSimIncline(bool positive, uint32_t nowMs = 0);
     void setSimRunner(VirtualRunnerMode mode, uint16_t cadenceSpm = 180, float magnitudeG = 0.35f, bool valid = true);
+    void setSimBeltSpeedDirect(float speedKmh) { composite_.setDirectBeltSpeedKmh(speedKmh); }
     void setSimHeartRateFromSpeed(bool enabled);
 
     bool startControlTask();
@@ -100,6 +101,7 @@ public:
     bool didInclineCommissioningTimeOut() const override { return inclineTracker_.timedOut(); }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
+    bool isEmergencyStopActive() const { return console_.isEmergencyStopActive(); }
 
     TreadmillSimulatorComposite& getComposite() { return composite_; }
     const TreadmillSimulatorComposite& getComposite() const { return composite_; }
@@ -225,6 +227,7 @@ private:
     bool initialized_ = false;
     CsafeMachineState previousCsafeQualifiedState_ = CsafeMachineState::Unknown;
     bool csafeStateInitialized_ = false;
+    bool previousEstopActive_ = false;
     uint32_t lostAuthorityCount_ = 0;
     uint32_t authorityLostSinceMs_ = 0; // 0 means "not currently in a lost-authority streak"
     static constexpr uint32_t kAuthorityLossWarningThresholdMs = 5000;

@@ -83,6 +83,7 @@ struct ConsoleInterface::Impl {
   std::atomic<bool> ready{false};
   std::atomic<bool> active{false};
   std::atomic<bool> abortRequested{false};
+  std::atomic<bool> estopActive{false};
 
   volatile BuzzerEdge edgeRing[BUZZER_EDGE_CAPACITY]{};
   volatile uint16_t edgeHead = 0, edgeTail = 0;
@@ -700,6 +701,7 @@ struct ConsoleInterface::Impl {
       bool currentEstopActive = (digitalRead(config.pins.estopIn) == HIGH);
       if (currentEstopActive != lastEstopActive) {
         lastEstopActive = currentEstopActive;
+        estopActive.store(currentEstopActive);
         ICommandIntentSink* sink = nullptr;
         portENTER_CRITICAL(&sinkMux);
         sink = commandSink;
@@ -853,6 +855,7 @@ void ConsoleInterface::registerCommandSink(ICommandIntentSink* sink) {
 
 void ConsoleInterface::triggerEmergencyStop(bool active) {
   if (!impl_) return;
+  impl_->estopActive.store(active);
   ICommandIntentSink* sink = nullptr;
   portENTER_CRITICAL(&impl_->sinkMux);
   sink = impl_->commandSink;
@@ -860,6 +863,10 @@ void ConsoleInterface::triggerEmergencyStop(bool active) {
   if (sink) {
     sink->onEmergencyStop(active);
   }
+}
+
+bool ConsoleInterface::isEmergencyStopActive() const {
+  return impl_ && impl_->estopActive.load();
 }
 
 ConsoleConfig ConsoleInterface::configSnapshot() const { return impl_->config; }

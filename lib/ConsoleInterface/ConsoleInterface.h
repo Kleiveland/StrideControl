@@ -29,6 +29,7 @@ class ConsoleInterface {
   ConsoleExecutionMode getExecutionMode() const;
   void registerCommandSink(ICommandIntentSink* sink);
   void triggerEmergencyStop(bool active);
+  bool isEmergencyStopActive() const;
 
   ConsoleConfig configSnapshot() const;
   bool setClearMapping(const ButtonMapping& verifiedMapping);

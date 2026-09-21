@@ -22,6 +22,7 @@ void VirtualTreadmill::resetModelUs(uint64_t initialTimeUs) {
 
     actualSpeedKmh_ = 0.0f;
     targetSpeedKmh_ = 0.0f;
+    directBeltSpeedKmh_ = 0.0f;
     actualInclinePct_ = 0.0f;
     targetInclinePct_ = 0.0f;
     odometerKm_ = 0.0;
@@ -165,6 +166,11 @@ bool VirtualTreadmill::tick(const SimulationTick& tick) {
 }
 
 void VirtualTreadmill::updateSpeed(uint32_t deltaMs) {
+    if (directBeltSpeedKmh_ > 0.0f && !eStopActive_) {
+        actualSpeedKmh_ = directBeltSpeedKmh_;
+        return;
+    }
+
     const float dtSec = static_cast<float>(deltaMs) / 1000.0f;
     float effectiveTarget = targetSpeedKmh_;
 
@@ -376,6 +382,7 @@ void VirtualTreadmill::updateInclinePulses(float prevIncline, float currIncline)
 }
 
 void VirtualTreadmill::setTargetSpeedKmh(float speedKmh) {
+    directBeltSpeedKmh_ = 0.0f;
     if (speedKmh < 0.0f) {
         targetSpeedKmh_ = 0.0f;
     } else if (speedKmh > config_.maxSpeedKmh) {
@@ -393,6 +400,11 @@ void VirtualTreadmill::setTargetSpeedKmh(float speedKmh) {
             csafeState_.stateNibble = 0x05;
         }
     }
+}
+
+void VirtualTreadmill::setDirectBeltSpeedKmh(float speedKmh) {
+    directBeltSpeedKmh_ = (speedKmh > config_.maxSpeedKmh) ? config_.maxSpeedKmh : (speedKmh < 0.0f ? 0.0f : speedKmh);
+    actualSpeedKmh_ = directBeltSpeedKmh_;
 }
 
 void VirtualTreadmill::setTargetInclinePct(float inclinePct) {
