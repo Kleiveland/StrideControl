@@ -130,7 +130,7 @@ static const char kSimulatorHtml[] PROGMEM = R"rawliteral(
         <div class="telem-card">
             <div class="telem-label">Simulator Health</div>
             <div class="telem-val" style="font-size: 1.1rem;" id="t-dropped">0 <span style="font-size:0.8rem">dropped</span></div>
-            <div class="telem-sub">Auth: <span id="t-authority" style="color:var(--green-hover)">YES</span></div>
+            <div class="telem-sub">Auth: <span id="t-authority" style="color:var(--green-hover)">YES</span> &bull; E-Stop: <span id="t-estop" style="color:var(--green-hover)">OFF</span></div>
         </div>
         <div class="telem-card">
             <div class="telem-label">CSAFE Machine State</div>
@@ -155,7 +155,7 @@ static const char kSimulatorHtml[] PROGMEM = R"rawliteral(
                     <button class="btn-green" style="flex:1" onclick="sendConsole('QuickStart')">QUICK START (1.0 km/h)</button>
                     <button class="btn-red" style="flex:1" onclick="sendConsole('Stop')">STOP (0.0 km/h)</button>
                 </div>
-                <button class="btn-estop" onclick="sendConsole('EmergencyStop')">EMERGENCY STOP (Latch 0.0 km/h)</button>
+                <button id="btn-estop" class="btn-estop" onclick="sendConsole('EmergencyStop')">EMERGENCY STOP (Latch 0.0 km/h)</button>
             </div>
 
             <!-- Speed Increments -->
@@ -439,6 +439,27 @@ static const char kSimulatorHtml[] PROGMEM = R"rawliteral(
                     : '--';
                 linkEl.innerText = `${data.csafe.linkStatus || '--'} (${rawHex})`;
                 linkEl.style.color = data.csafe.online && data.csafe.fresh ? '#3fb950' : '#f85149';
+            }
+        }
+        if (typeof data.estopActive === 'boolean') {
+            const estopEl = document.getElementById('t-estop');
+            if (estopEl) {
+                estopEl.innerText = data.estopActive ? 'ACTIVE' : 'OFF';
+                estopEl.style.color = data.estopActive ? '#f85149' : '#3fb950';
+            }
+            const btnEstop = document.getElementById('btn-estop');
+            if (btnEstop) {
+                if (data.estopActive) {
+                    btnEstop.innerText = 'RELEASE EMERGENCY STOP (Plastic Clip Popped Out)';
+                    btnEstop.style.backgroundColor = '#da3633';
+                    btnEstop.style.boxShadow = '0 0 16px rgba(218, 54, 51, 0.8)';
+                    btnEstop.style.border = '2px solid #ffffff';
+                } else {
+                    btnEstop.innerText = 'EMERGENCY STOP (Latch 0.0 km/h)';
+                    btnEstop.style.backgroundColor = '#b62324';
+                    btnEstop.style.boxShadow = 'none';
+                    btnEstop.style.border = 'none';
+                }
             }
         }
     }

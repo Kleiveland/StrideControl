@@ -1868,8 +1868,17 @@ void WebServerManager::registerRoutes() {
             } else if (strcmp(btn, "EmergencyStop") == 0) {
 #if defined(STRIDECONTROL_TESTBENCH)
                 if (simRuntime_ != nullptr) {
-                    ok = simRuntime_->triggerEmergencyStop(true, millis());
-                    request->send(ok ? 200 : 503, "application/json", ok ? "{\"status\":\"estop_triggered\"}" : "{\"error\":\"failed\"}");
+                    bool targetState = true;
+                    if (doc.containsKey("active")) {
+                        targetState = doc["active"].as<bool>();
+                    } else {
+                        // Toggle if no explicit active flag provided (e.g. clicking Emergency Stop in simulator UI)
+                        targetState = !simRuntime_->isEmergencyStopActive();
+                    }
+                    ok = simRuntime_->triggerEmergencyStop(targetState, millis());
+                    request->send(ok ? 200 : 503, "application/json",
+                        ok ? (targetState ? "{\"status\":\"estop_triggered\",\"active\":true}" : "{\"status\":\"estop_released\",\"active\":false}")
+                           : "{\"error\":\"failed\"}");
                     return;
                 }
 #endif

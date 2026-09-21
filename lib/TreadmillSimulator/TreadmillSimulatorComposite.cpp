@@ -201,6 +201,9 @@ bool TreadmillSimulatorComposite::stageStop(uint32_t nowMs) {
 }
 
 bool TreadmillSimulatorComposite::stageEmergencyStop(bool active, uint32_t nowMs) {
+    if (console_ != nullptr) {
+        console_->triggerEmergencyStop(active);
+    }
     StagedDiscreteEvent ev{};
     ev.type = active ? StagedDiscreteEvent::Type::EmergencyStop : StagedDiscreteEvent::Type::EmergencyStopRelease;
     ev.timestampMs = nowMs;
