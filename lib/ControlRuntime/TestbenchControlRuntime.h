@@ -258,7 +258,7 @@ private:
     static constexpr BaseType_t kTaskCore = 1; // Moved off Core 0 to reduce WiFi/BT radio task contention
 
     static constexpr uint32_t kBleTaskExitTimeoutMs = 3000;
-    static constexpr uint32_t kBleTaskStackSize = 4096;
+    static constexpr uint32_t kBleTaskStackSize = 8192;
     static constexpr UBaseType_t kBleTaskPriority = 3;
     static constexpr BaseType_t kBleTaskCore = 0; // PRO_CPU_NUM
 };

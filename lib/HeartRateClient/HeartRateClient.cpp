@@ -194,6 +194,8 @@ void HeartRateClient::end() {
     metrics_ = HeartRateClientMetrics{};
     internalState_ = HeartRateInternalState::Idle;
     reconnectAttempts_ = 0;
+    connParamsRequestedMs_ = 0;
+    connParamsCheckPending_ = false;
     connectPending_ = false;
     samplePending_ = false;
     disconnectPending_ = false;
@@ -502,6 +504,7 @@ void HeartRateClient::update(uint32_t nowMs) {
         }
         stateEntryTimestampMs_ = nowMs;
         hrChar_ = nullptr;
+        connParamsCheckPending_ = false;
     }
     portEXIT_CRITICAL(&mux_);
 
@@ -677,6 +680,20 @@ void HeartRateClient::update(uint32_t nowMs) {
                                               localTargetName, localTargetAddress);
                             }
                             portEXIT_CRITICAL(&mux_);
+
+                            // Best-effort connection parameter negotiation for radio coexistence:
+                            // HR strap notifies once per second - request longer interval (50-100ms)
+                            // and slave latency to minimize BLE radio airtime competing with WiFi.
+                            // Units: interval in 1.25ms steps (40=50ms, 80=100ms), timeout in 10ms steps (400=4000ms).
+                            localClient->updateConnParams(40, 80, 4, 400);
+                            portENTER_CRITICAL(&mux_);
+                            connParamsRequestedMs_ = nowMs;
+                            connParamsCheckPending_ = true;
+                            portEXIT_CRITICAL(&mux_);
+                            stridecontrol::DiagnosticsLog::instance().addEntry(
+                                "[HRClient] Requested conn params: itvl=50-100ms, latency=4, timeout=4000ms");
+                            Serial.println("[HRClient] Requested conn params: itvl=50-100ms, latency=4, timeout=4000ms");
+
                             return;
                         }
                     }
@@ -741,6 +758,30 @@ void HeartRateClient::update(uint32_t nowMs) {
         }
     }
     portEXIT_CRITICAL(&mux_);
+
+    // 7. Deferred Connection Parameter Verification (~2.5s post-negotiation)
+    ::NimBLEClient* localClientForParams = nullptr;
+    portENTER_CRITICAL(&mux_);
+    if (connParamsCheckPending_ && (nowMs - connParamsRequestedMs_ >= 2500)) {
+        connParamsCheckPending_ = false;
+        if (internalState_ == HeartRateInternalState::ConnectedStreaming && !isShuttingDown_) {
+            localClientForParams = client_;
+        }
+    }
+    portEXIT_CRITICAL(&mux_);
+
+    if (localClientForParams != nullptr && localClientForParams->isConnected()) {
+        NimBLEConnInfo info = localClientForParams->getConnInfo();
+        const uint16_t itvl = info.getConnInterval();
+        const uint16_t latency = info.getConnLatency();
+        const uint16_t timeout = info.getConnTimeout();
+        stridecontrol::DiagnosticsLog::instance().addEntryf(
+            "[HRClient] Verified conn params (delayed read): itvl=%u (%.2fms), latency=%u, timeout=%ums",
+            itvl, itvl * 1.25f, latency, timeout * 10);
+        Serial.printf(
+            "[HRClient] Verified conn params (delayed read): itvl=%u (%.2fms), latency=%u, timeout=%ums\n",
+            itvl, itvl * 1.25f, latency, timeout * 10);
+    }
 }
 
 HeartRateState HeartRateClient::getState() const {

@@ -122,6 +122,8 @@ private:
     bool isTransitioningLifecycle_{false};
     bool isDiscoveryScan_{false};
     uint32_t reconnectAttempts_{0};
+    uint32_t connParamsRequestedMs_{0};
+    bool connParamsCheckPending_{false};
 };
 
 } // namespace stridecontrol
