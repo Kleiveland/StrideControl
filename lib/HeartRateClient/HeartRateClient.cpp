@@ -7,6 +7,7 @@
 #include <NimBLERemoteCharacteristic.h>
 #include <cstring>
 #include <string>
+#include "../DiagnosticsLog/DiagnosticsLog.h"
 
 namespace stridecontrol {
 
@@ -112,6 +113,7 @@ bool HeartRateClient::begin(const BleConfig& config, BleManager* bleManager) {
     isTransitioningLifecycle_ = true;
     config_ = config;
     scanResultCount_ = 0;
+    reconnectAttempts_ = 0;
     bleManager_ = bleManager;
     portEXIT_CRITICAL(&mux_);
 
@@ -191,6 +193,7 @@ void HeartRateClient::end() {
     state_ = HeartRateState{};
     metrics_ = HeartRateClientMetrics{};
     internalState_ = HeartRateInternalState::Idle;
+    reconnectAttempts_ = 0;
     connectPending_ = false;
     samplePending_ = false;
     disconnectPending_ = false;
@@ -228,6 +231,8 @@ void HeartRateClient::updateConfig(const BleConfig& config) {
 
     if (internalState_ == HeartRateInternalState::Idle && config_.preferredHrMac[0] != '\0' && config_.autoConnectHr) {
         internalState_ = HeartRateInternalState::CooldownWait;
+        reconnectAttempts_ = 0;
+        metrics_.reconnectAttempts = 0;
         stateEntryTimestampMs_ = millis() - HeartRateClientTiming::RECONNECT_COOLDOWN_MS;
     }
     portEXIT_CRITICAL(&mux_);
@@ -551,6 +556,16 @@ void HeartRateClient::update(uint32_t nowMs) {
             internalState_ = HeartRateInternalState::CooldownWait;
             state_.connectionState = HeartRateConnectionState::Disconnected;
             stateEntryTimestampMs_ = nowMs;
+            if (!wasDiscoveryTimeout) {
+                reconnectAttempts_++;
+                metrics_.reconnectAttempts = reconnectAttempts_;
+                const uint32_t nextCooldownMs = calculateReconnectCooldownMs();
+                stridecontrol::DiagnosticsLog::instance().addEntryf(
+                    "[HRClient] Background scan timed out (failure %u), cooldown %u ms",
+                    reconnectAttempts_, nextCooldownMs);
+                Serial.printf("[HRClient] Background scan timed out (failure %u), cooldown %u ms\n",
+                              reconnectAttempts_, nextCooldownMs);
+            }
         } else {
             // Unpaired / discovery scan: return to completely Idle state (0% radio airtime)
             internalState_ = HeartRateInternalState::Idle;
@@ -609,6 +624,14 @@ void HeartRateClient::update(uint32_t nowMs) {
             internalState_ = HeartRateInternalState::CooldownWait;
             state_.connectionState = HeartRateConnectionState::Failed;
             stateEntryTimestampMs_ = nowMs;
+            reconnectAttempts_++;
+            metrics_.reconnectAttempts = reconnectAttempts_;
+            const uint32_t nextCooldownMs = calculateReconnectCooldownMs();
+            stridecontrol::DiagnosticsLog::instance().addEntryf(
+                "[HRClient] Client creation failed (failure %u), cooldown %u ms",
+                reconnectAttempts_, nextCooldownMs);
+            Serial.printf("[HRClient] Client creation failed (failure %u), cooldown %u ms\n",
+                          reconnectAttempts_, nextCooldownMs);
             portEXIT_CRITICAL(&mux_);
             return;
         }
@@ -645,6 +668,13 @@ void HeartRateClient::update(uint32_t nowMs) {
                                 state_.connectedAddress[sizeof(state_.connectedAddress) - 1] = '\0';
                                 state_.batteryPercent = 0;
                                 state_.batteryPercentValid = false;
+                                reconnectAttempts_ = 0;
+                                metrics_.reconnectAttempts = 0;
+                                stridecontrol::DiagnosticsLog::instance().addEntryf(
+                                    "[HRClient] Connected to %s (%s), reset reconnect attempts to 0",
+                                    localTargetName, localTargetAddress);
+                                Serial.printf("[HRClient] Connected to %s (%s), reset reconnect attempts to 0\n",
+                                              localTargetName, localTargetAddress);
                             }
                             portEXIT_CRITICAL(&mux_);
                             return;
@@ -663,6 +693,14 @@ void HeartRateClient::update(uint32_t nowMs) {
         state_.sensorAddress[0] = '\0';
         state_.sensorName[0] = '\0';
         stateEntryTimestampMs_ = nowMs;
+        reconnectAttempts_++;
+        metrics_.reconnectAttempts = reconnectAttempts_;
+        const uint32_t nextCooldownMs = calculateReconnectCooldownMs();
+        stridecontrol::DiagnosticsLog::instance().addEntryf(
+            "[HRClient] Connection failed (failure %u), cooldown %u ms",
+            reconnectAttempts_, nextCooldownMs);
+        Serial.printf("[HRClient] Connection failed (failure %u), cooldown %u ms\n",
+                      reconnectAttempts_, nextCooldownMs);
         portEXIT_CRITICAL(&mux_);
     }
 
@@ -670,13 +708,13 @@ void HeartRateClient::update(uint32_t nowMs) {
     BleManager* localMgr = nullptr;
     bool autoScan = false;
     portENTER_CRITICAL(&mux_);
+    const uint32_t currentCooldownMs = calculateReconnectCooldownMs();
     if (internalState_ == HeartRateInternalState::CooldownWait &&
-        (nowMs - stateEntryTimestampMs_ >= HeartRateClientTiming::RECONNECT_COOLDOWN_MS)) {
+        (nowMs - stateEntryTimestampMs_ >= currentCooldownMs)) {
         if (config_.preferredHrMac[0] != '\0' && config_.autoConnectHr) {
             internalState_ = HeartRateInternalState::Scanning;
             state_.connectionState = HeartRateConnectionState::Scanning;
             stateEntryTimestampMs_ = nowMs;
-            metrics_.reconnectAttempts++;
             localMgr = bleManager_;
             autoScan = true;
         } else {
@@ -724,6 +762,23 @@ HeartRateInternalState HeartRateClient::getInternalState() const {
     HeartRateInternalState copy = internalState_;
     portEXIT_CRITICAL(&mux_);
     return copy;
+}
+
+uint32_t HeartRateClient::getReconnectAttempts() const {
+    portENTER_CRITICAL(&mux_);
+    uint32_t attempts = reconnectAttempts_;
+    portEXIT_CRITICAL(&mux_);
+    return attempts;
+}
+
+uint32_t HeartRateClient::calculateReconnectCooldownMs() const {
+    if (reconnectAttempts_ > HeartRateClientTiming::RECONNECT_FAILURES_TIER2) {
+        return HeartRateClientTiming::RECONNECT_COOLDOWN_TIER2_MS;
+    }
+    if (reconnectAttempts_ > HeartRateClientTiming::RECONNECT_FAILURES_TIER1) {
+        return HeartRateClientTiming::RECONNECT_COOLDOWN_TIER1_MS;
+    }
+    return HeartRateClientTiming::RECONNECT_COOLDOWN_MS;
 }
 
 } // namespace stridecontrol

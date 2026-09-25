@@ -77,6 +77,8 @@ public:
     HeartRateState getState() const;
     HeartRateClientMetrics getMetrics() const;
     HeartRateInternalState getInternalState() const;
+    uint32_t getReconnectAttempts() const;
+    uint32_t calculateReconnectCooldownMs() const;
 
 private:
     friend class HeartRateClientCallbacks;
@@ -119,6 +121,7 @@ private:
     bool isShuttingDown_{false};
     bool isTransitioningLifecycle_{false};
     bool isDiscoveryScan_{false};
+    uint32_t reconnectAttempts_{0};
 };
 
 } // namespace stridecontrol

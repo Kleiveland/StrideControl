@@ -12,7 +12,11 @@ struct HeartRateClientTiming {
     static constexpr uint32_t DATA_TIMEOUT_MS = 5000;           ///< Time without sample before heartRateValid becomes false
     static constexpr uint32_t SCAN_DURATION_MS = 5000;          ///< Duration of an active background scan window
     static constexpr uint32_t DISCOVERY_SCAN_DURATION_MS = 8000;///< Duration of an active discovery scan window
-    static constexpr uint32_t RECONNECT_COOLDOWN_MS = 3000;     ///< Cooldown before retry after disconnect/failure
+    static constexpr uint32_t RECONNECT_COOLDOWN_MS = 3000;     ///< Cooldown before retry after disconnect/failure (base case)
+    static constexpr uint32_t RECONNECT_COOLDOWN_TIER1_MS = 30000; ///< Cooldown after 3+ consecutive failures (30s)
+    static constexpr uint32_t RECONNECT_COOLDOWN_TIER2_MS = 60000; ///< Cooldown after 10+ consecutive failures (60s)
+    static constexpr uint32_t RECONNECT_FAILURES_TIER1 = 3;     ///< Consecutive failures threshold for Tier 1 cooldown
+    static constexpr uint32_t RECONNECT_FAILURES_TIER2 = 10;    ///< Consecutive failures threshold for Tier 2 cooldown
     static constexpr uint32_t BATTERY_POLL_INTERVAL_MS = 60000; ///< Interval between Battery Service (0x180F) reads
 };
 
