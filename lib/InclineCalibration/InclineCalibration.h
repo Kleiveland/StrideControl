@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <cstdint>
 #include <cstddef>
@@ -33,10 +33,13 @@ public:
     bool isMaxAchievableInclineVerified() const;
     uint8_t getPointCount() const;
 
+    // Configuration & validation
+    const InclineConfig& getConfiguration() const { return config_; }
+    static bool validateCandidate(const InclineConfig& config, char* errBuf = nullptr, size_t errBufLen = 0);
+
     static const char* version();
 
 private:
-    bool validateCandidate(const InclineConfig& config) const;
     static float clamp(float v, float minVal, float maxVal);
 
     InclineConfig config_{};

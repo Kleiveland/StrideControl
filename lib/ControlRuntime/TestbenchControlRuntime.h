@@ -32,6 +32,7 @@
 #include "HeartRateService.h"
 #include "InclineVerifier.h"
 #include "RampTestTracker.h"
+#include "SpeedCalibration.h"
 
 namespace stridecontrol {
 
@@ -93,15 +94,24 @@ public:
     bool didRampTestTimeOut() const override { return rampTestTracker_.timedOut(); }
     uint32_t getRampTestDeadTimeMs() const override { return rampTestTracker_.deadTimeMs(); }
     uint32_t getRampTestTotalMs() const override { return rampTestTracker_.totalTimeMs(); }
-    float getMaxAchievableSpeedKmh() const override { return 25.0f; }
-    bool isMaxAchievableSpeedVerified() const override { return false; }
+    float getMaxAchievableSpeedKmh() const override { return speedCalibration_.getMaxAchievableSpeedKmh(); }
+    bool isMaxAchievableSpeedVerified() const override { return speedCalibration_.isMaxAchievableSpeedVerified(); }
     RampTestPhase getRampTestPhase() const { return rampTestTracker_.phase(); }
     InclineCommissioningPhase getInclineCommissioningPhase() const override { return inclineTracker_.phase(); }
     uint8_t getInclineCommissioningPointCount() const override { return inclineTracker_.pointCount(); }
     bool didInclineCommissioningTimeOut() const override { return inclineTracker_.timedOut(); }
+    void onSpeedConfigUpdated(const SpeedConfig& config) override { speedCalibration_.setConfiguration(config); }
+    SpeedCalibrationResult calculateSpeedCommand(float physicalSpeedKmh) const override {
+        return speedCalibration_.calculateCommand(physicalSpeedKmh);
+    }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
     bool isEmergencyStopActive() const { return console_.isEmergencyStopActive(); }
+
+    SpeedSensor& getSpeedSensor() { return speedSensor_; }
+    const SpeedSensor& getSpeedSensor() const { return speedSensor_; }
+    SpeedCalibration& getSpeedCalibration() { return speedCalibration_; }
+    const SpeedCalibration& getSpeedCalibration() const { return speedCalibration_; }
 
     TreadmillSimulatorComposite& getComposite() { return composite_; }
     const TreadmillSimulatorComposite& getComposite() const { return composite_; }
@@ -130,11 +140,13 @@ private:
     public:
         TargetSinkWrapper(TreadmillSimulatorComposite& composite,
                           InclineVerificationCommandInput& context,
-                          portMUX_TYPE& mux)
-            : composite_(composite), context_(context), mux_(mux) {}
+                          portMUX_TYPE& mux,
+                          SpeedCalibration& speedCal)
+            : composite_(composite), context_(context), mux_(mux), speedCal_(speedCal) {}
 
         bool submitSpeedTarget(float targetSpeedKmh, uint32_t nowMs) override {
-            return composite_.submitSpeedTarget(targetSpeedKmh, nowMs);
+            const float cmdKmh = speedCal_.calculateCommandSpeedKmh(targetSpeedKmh);
+            return composite_.submitSpeedTarget(cmdKmh, nowMs);
         }
 
         bool submitInclineTarget(float targetInclinePct, uint32_t nowMs) override {
@@ -166,6 +178,7 @@ private:
         TreadmillSimulatorComposite& composite_;
         InclineVerificationCommandInput& context_;
         portMUX_TYPE& mux_;
+        SpeedCalibration& speedCal_;
     };
 
     void runTaskLoop();
@@ -198,9 +211,12 @@ private:
     HeartRateService heartRateService_;
     std::atomic<bool> simHeartRateFromSpeedEnabled_{false};
 
+    // Domain Speed Calibration Engine
+    SpeedCalibration speedCalibration_;
+
     // Passive Composite Simulator
     TreadmillSimulatorComposite composite_;
-    TargetSinkWrapper targetSink_{composite_, publishedInclineCommandContext_, inclineCommandContextMux_};
+    TargetSinkWrapper targetSink_{composite_, publishedInclineCommandContext_, inclineCommandContextMux_, speedCalibration_};
 
     // Domain Session & Coordination
     WorkoutSession session_;

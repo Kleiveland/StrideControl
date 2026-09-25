@@ -11,7 +11,7 @@ namespace stridecontrol {
 
 TestbenchControlRuntime::TestbenchControlRuntime()
     : composite_(speedSensor_, inclineSensor_, imu_),
-      targetSink_(composite_, publishedInclineCommandContext_, inclineCommandContextMux_) {}
+      targetSink_(composite_, publishedInclineCommandContext_, inclineCommandContextMux_, speedCalibration_) {}
 
 TestbenchControlRuntime::~TestbenchControlRuntime() {
     end();
@@ -108,7 +108,10 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     bleConfig_ = bleConfig;
 
     // 1. Initialize sensor drivers in SoftwareObservation mode
+    const SpeedConfig spdCfg = SettingsService::instance().getSpeedConfig();
     speedSensor_.begin(SpeedSensorConfig{}, SpeedObservationMode::SoftwareObservation);
+    speedSensor_.setCalibrationFactor(spdCfg.sensorCalibrationFactor);
+    speedCalibration_.setConfiguration(spdCfg);
     inclineSensor_.begin(InclineSensorConfig{}, InclineCalibration{}, InclineObservationMode::SoftwareObservation);
     console_.begin(ConsoleExecutionMode::SoftwareSink);
     imu_.begin(ImuObservationMode::SoftwareObservation);

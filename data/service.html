@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StrideControl Service Console</title>
+<style>
+:root{--text:#1b1f23;--muted:#66707a;--line:#d9dee3;--soft:#f6f7f8;--blue:#0866c6;--blue-soft:#eaf3fb;--green:#18794e;--green-soft:#eaf5ef;--amber:#946200;--amber-soft:#fff6df;--red:#b42318;--red-soft:#fff0ee}
+*{box-sizing:border-box}html{background:#fff}body{margin:0;background:#fff;color:var(--text);font-family:"Segoe UI",Arial,sans-serif;font-size:14px}button,input,select,textarea{font:inherit}.mono{font-family:Consolas,"Courier New",monospace;font-variant-numeric:tabular-nums}.app{max-width:1440px;margin:auto;padding:0 28px 84px}
+header{height:66px;border-bottom:1px solid #1f2328;display:flex;align-items:center;justify-content:space-between}.brand{display:flex;align-items:baseline;gap:10px}.brand b{font-size:17px}.brand span{color:var(--muted);font-size:13px}.header-right{display:flex;gap:8px;align-items:center}.connected{font-size:12px;color:var(--green);font-weight:600}.connected:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:7px}.connected.disconnected{color:var(--red)}.connected.disconnected:before{background:var(--red)}
+.btn{height:34px;padding:0 13px;border:1px solid #b9c0c7;background:#fff;border-radius:4px;color:var(--text);font-weight:600;cursor:pointer}.btn:hover{background:var(--soft)}.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn.success{background:var(--green);border-color:var(--green);color:#fff}.btn.danger{color:var(--red);border-color:#d9a39e}.btn:disabled{opacity:.45;cursor:not-allowed}
+.machinebar{display:grid;grid-template-columns:1fr 250px 170px;border-bottom:1px solid var(--line);align-items:center}.machinebar>div{padding:11px 14px;border-left:1px solid var(--line)}.machinebar>div:first-child{border-left:0;padding-left:0}.machinebar span{display:block;color:var(--muted);font-size:10px}.machinebar b{display:block;margin-top:2px;font-size:13px}
+.nav{display:flex;gap:24px;border-bottom:1px solid var(--line);margin-top:18px}.nav button{border:0;background:none;padding:0 0 11px;color:var(--muted);font-weight:600;cursor:pointer;border-bottom:2px solid transparent}.nav button.active{color:var(--text);border-bottom-color:var(--blue)}
+.page{display:none;padding-top:22px}.page.active{display:block}.page-title{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}.page-title h1{font-size:22px;margin:0}.physical-inputs{align-items:flex-start}.physical-inputs>div{display:flex;flex-wrap:wrap;gap:6px}.physical-inputs .btn{height:31px;padding:0 9px}.page-title p{margin:0;color:var(--muted);font-size:13px;max-width:760px;line-height:1.5}.page-actions{display:flex;gap:7px}
+.grid{display:grid;grid-template-columns:1fr 340px;gap:28px}.main,.side{display:flex;flex-direction:column;gap:24px}.section{border-top:1px solid #1f2328;padding-top:13px}.section-head{display:flex;justify-content:space-between;gap:20px;margin-bottom:12px}.section-head h2{font-size:15px;margin:0}.section-head p{font-size:12px;color:var(--muted);margin:4px 0 0;line-height:1.45;max-width:700px}
+.signals{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--line)}.signal{padding:12px;border-left:1px solid var(--line);min-width:0}.signal:first-child{border-left:0}.signal label{display:block;color:var(--muted);font-size:10px}.signal b{display:block;font-size:18px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.signal small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.good{color:var(--green)!important}.bad{color:var(--red)!important}.warn{color:var(--amber)!important}
+.trace{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--line);border-top:0}.trace div{padding:9px 12px;border-left:1px solid var(--line)}.trace div:first-child{border-left:0}.trace span{display:block;color:var(--muted);font-size:10px}.trace b{display:block;margin-top:3px;font-size:13px}
+.two{display:grid;grid-template-columns:1.2fr .8fr;gap:25px}.hint{font-size:12px;color:var(--muted);line-height:1.45;margin-bottom:9px}.keys{display:grid;grid-template-columns:repeat(8,1fr);gap:5px}.key{height:35px;border:1px solid var(--line);background:#fff;border-radius:3px;font-size:11px;cursor:pointer}.key:hover{border-color:var(--blue);color:var(--blue)}.key.physical{background:var(--amber-soft);color:var(--amber);cursor:default}.key.off{opacity:.3;text-decoration:line-through;cursor:default}.key.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:9px}.row label{width:122px;color:var(--muted);font-size:12px;flex-shrink:0}.field{height:33px;width:100px;border:1px solid #bfc5cb;border-radius:3px;padding:0 8px;background:#fff}.field.wide{width:185px}.readout{display:inline-flex;align-items:center;min-width:120px;height:33px;padding:0 9px;background:var(--soft);border:1px solid var(--line);border-radius:3px;color:var(--text)}.unit{font-size:11px;color:var(--muted)}.cmdbar{display:grid;grid-template-columns:repeat(6,1fr);border:1px solid var(--line);margin-top:12px}.cmdbar div{padding:8px 10px;border-left:1px solid var(--line);min-width:0}.cmdbar div:first-child{border-left:0}.cmdbar span{display:block;color:var(--muted);font-size:9px}.cmdbar b{display:block;font-size:11px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rig{border:1px dashed #b5aa8a;padding:13px;background:#fff}.rig-title{display:flex;justify-content:space-between;margin-bottom:10px}.rig-title b{font-size:12px}.rig-title span{font-size:10px;color:var(--amber)}.timing{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mini label{display:block;font-size:10px;color:var(--muted);margin-bottom:3px}.mini input{width:100%}
+.tasks{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line)}.task{background:#fff;padding:15px}.task h3{font-size:13px;margin:0}.task p{font-size:12px;color:var(--muted);line-height:1.45;min-height:34px}.result{background:var(--soft);padding:9px 10px;font-size:11px;line-height:1.45;margin-top:9px}.phase{display:flex;gap:3px;margin-top:9px}.phase i{height:3px;flex:1;background:var(--line)}.phase i.on{background:var(--blue)}
+.profile-layout{display:grid;grid-template-columns:220px 1fr;min-height:440px;border:1px solid var(--line)}.profile-list{border-right:1px solid var(--line);background:#fafafa}.profile-item{padding:13px;border-bottom:1px solid var(--line);cursor:pointer}.profile-item:hover{background:var(--soft)}.profile-item.active{background:var(--blue-soft);box-shadow:inset 3px 0 var(--blue)}.profile-item b{display:block}.profile-item small{display:block;color:var(--muted);font-size:11px;margin-top:3px}.profile-detail{padding:18px}.summary{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line)}.summary div{padding:9px 11px;border-left:1px solid var(--line)}.summary div:first-child{border-left:0}.summary span{display:block;color:var(--muted);font-size:9px}.summary b{display:block;margin-top:3px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.stored{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;padding:14px 0;border-bottom:1px solid var(--line)}.stored span{display:block;color:var(--muted);font-size:10px}.stored b{display:block;margin-top:3px;font-size:12px}.workouts{border:1px solid var(--line)}.workout{display:grid;grid-template-columns:1fr 90px 90px;padding:9px 11px;border-bottom:1px solid var(--line);font-size:12px}.workout:last-child{border-bottom:0}.workout span:nth-child(n+2){text-align:right;color:var(--muted)}
+.backup-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.backup-card{border:1px solid var(--line);padding:17px}.backup-card h3{font-size:14px;margin:0}.backup-card p{font-size:12px;color:var(--muted);line-height:1.5;min-height:54px}.backup-card .btn{width:100%}.notice{background:var(--amber-soft);color:var(--amber);padding:10px 12px;font-size:12px;margin-top:14px}
+.changes{font-size:12px}.change{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}.change span{color:var(--muted)}.safe{border:1px solid #9bc8af;background:var(--green-soft);padding:13px}.safe h3{font-size:13px;margin:0;color:#125f3b}.safe p{font-size:12px;color:#356b50;line-height:1.45}.log{height:150px;background:#1b1f23;color:#d6e7dd;padding:10px;overflow:auto;white-space:pre-wrap;font:11px/1.55 Consolas,"Courier New",monospace}
+.bottom{position:fixed;left:0;right:0;bottom:0;height:64px;background:#fff;border-top:1px solid #1f2328;z-index:10}.bottom-inner{max-width:1440px;height:100%;margin:auto;padding:0 28px;display:flex;align-items:center;justify-content:space-between}.dirty{display:flex;gap:9px;align-items:center}.dirty i{width:8px;height:8px;border-radius:50%;background:var(--green)}.dirty b{font-size:12px}.dirty span{font-size:11px;color:var(--muted)}.bottom-actions{display:flex;gap:7px}
+.modal{position:fixed;inset:0;background:rgba(20,24,28,.42);display:none;align-items:center;justify-content:center;z-index:30}.modal.open{display:flex}.dialog{width:620px;max-height:85vh;overflow:auto;background:#fff;border:1px solid #1f2328;padding:22px}.dialog h2{font-size:18px;margin:0 0 7px}.dialog p{font-size:12px;color:var(--muted);line-height:1.5}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}.json{width:100%;height:340px;background:#1b1f23;color:#d6e7dd;border:0;padding:12px;font:11px/1.55 Consolas,"Courier New",monospace;resize:vertical}.validation{padding:9px;margin-top:8px;background:var(--soft);font-size:12px;border-left:3px solid var(--line)}.validation.ok{border-color:var(--green);color:var(--green)}.validation.bad{border-color:var(--red);color:var(--red)}
+
+.maintenance-summary{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);margin-bottom:24px}.maintenance-summary>div{padding:14px;border-left:1px solid var(--line)}.maintenance-summary>div:first-child{border-left:0}.maintenance-summary span{display:block;color:var(--muted);font-size:10px}.maintenance-summary b{display:block;font-size:18px;margin-top:5px}.maintenance-summary small{display:block;color:var(--muted);font-size:10px;margin-top:4px}
+.maintenance-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px}.maintenance-form{border-top:1px solid #1f2328;padding-top:13px}.maintenance-form h2{font-size:15px;margin:0 0 5px}.maintenance-form>p{font-size:12px;color:var(--muted);line-height:1.45;margin:0 0 14px}
+
+@media(max-width:1050px){.grid{grid-template-columns:1fr}.signals{grid-template-columns:repeat(3,1fr)}.machinebar{grid-template-columns:1fr 220px 150px}.maintenance-grid{grid-template-columns:1fr}.maintenance-summary{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+<header><div class="brand"><b>StrideControl</b><span>/ Service Console</span></div><div class="header-right"><span class="connected" id="connectionStatus">ESP32 tilkoblet</span></div></header>
+<div class="machinebar"><div><span>Maskin</span><b id="machineName">Sportsmaster T610</b></div><div><span>Sist lagret</span><b id="lastSavedAt">Ikke lagret i denne økten</b></div><div><span>Lagringsstatus</span><b id="storageStatus" class="good">Oppsett lastet</b></div></div>
+<nav class="nav"><button class="active" data-page="overview" onclick="showPage('overview')">Oversikt og test</button><button data-page="calibration" onclick="showPage('calibration')">Kalibrering</button><button data-page="maintenance" onclick="showPage('maintenance')">Vedlikehold</button><button data-page="profiles" onclick="showPage('profiles')">Brukerprofiler</button><button data-page="backup" onclick="showPage('backup')">Backup</button><button data-page="advanced" onclick="showPage('advanced')">Avansert</button></nav>
+
+<section class="page active" id="page-overview">
+<div class="page-title"><div><h1>Oversikt og test</h1></div></div>
+<div class="grid"><div class="main">
+<div class="section"><div class="section-head"><div><h2>Live fra T610</h2><p>Bruk knappene på møllen og kontroller at fart, stigning, IMU, CSAFE og fysiske innganger oppdateres riktig.</p></div></div><div class="signals"><div class="signal"><label>Fart input</label><b id="speed" class="mono">0,0 km/t</b><small id="speedMeta">Venter på pulser</small></div><div class="signal"><label>Stigning input</label><b id="incline" class="mono">0,0 %</b><small id="inclineMeta">Homed · stabil</small></div><div class="signal"><label>IMU-vinkel</label><b id="imu" class="mono">0,0°</b><small id="imuMeta">Avvik 0,0°</small></div><div class="signal"><label>CSAFE</label><b id="csafe" class="good mono">READY</b><small id="csafeMeta">0x01 · fresh</small></div><div class="signal"><label>Løper</label><b id="runner">Ikke til stede</b><small id="cadence">Kadens 0 spm</small></div><div class="signal"><label>Siste fysiske input</label><b id="physical">Ingen</b><small id="physicalMeta">Knapp eller nødstopp</small></div></div><div class="trace"><div><span>Satt fart</span><b id="orderSpeed" class="mono">--</b></div><div><span>Akseptert target</span><b id="targetSpeed" class="mono">--</b></div><div><span>Målt fart</span><b id="measuredSpeed" class="mono">0,0</b></div><div><span>Satt stigning</span><b id="orderIncline" class="mono">--</b></div><div><span>Intern / IMU</span><b id="inclineTrace" class="mono">0,0% · 0,0°</b></div></div></div>
+<div class="section"><div class="section-head"><div><h2>ConsoleInterface</h2><p>Send én kommando om gangen og kontroller resultatet fra ConsoleInterface.</p></div></div><div class="two"><div><div class="hint">Knappene under kan sendes fra StrideControl. Quick Start, Stop, Incline +, Incline − og nødstopp leses bare som fysiske innganger.</div><div class="keys" id="keys"></div></div><div><div class="row"><label>Sett fart</label><input id="setSpeed" class="field" value="20.0" type="number" step="0.1"><span class="unit">km/t</span><button class="btn primary" onclick="sendTarget('speed')">Send</button></div><div class="row"><label>Sett stigning</label><input id="setIncline" class="field" value="8.0" type="number" step="0.5"><span class="unit">%</span><button class="btn primary" onclick="sendTarget('incline')">Send</button></div></div></div><div class="cmdbar" id="command"><div><span>Request</span><b>--</b></div><div><span>Kommando</span><b>Ingen</b></div><div><span>Status</span><b>Idle</b></div><div><span>Resultat / feil</span><b>--</b></div><div><span>Forsøk</span><b>--</b></div><div><span>Total tid</span><b>--</b></div></div></div>
+</div><aside class="side"><div class="rig" id="mockRig" style="display:none"><div class="rig-title"><b>Mock input</b><span>KUN TESTBENCH</span></div><div class="row"><label>Fart</label><input id="mockSpeed" class="field wide" type="range" min="0" max="25" step="0.1" value="0" oninput="onMockSpeedInput(this.value)"><span id="mockSpeedText" class="unit">0,0</span></div><div class="row"><label>Stigning</label><input id="mockIncline" class="field wide" type="range" min="0" max="15" step="0.1" value="0" oninput="onMockInclineInput(this.value)"><span id="mockInclineText" class="unit">0,0</span></div><div class="row"><label>CSAFE</label><select id="mockCsafe" class="field wide" onchange="onMockCsafeChange(this.value)"><option>READY</option><option>STARTING</option><option>IN_USE</option><option>PAUSED</option><option>TIMED_OUT</option></select></div><div class="row"><label>Løper</label><select id="mockRunner" class="field wide" onchange="onMockRunnerChange(this.value)"><option>Ikke til stede</option><option>På sidelistene</option><option>På beltet</option></select></div><div class="row physical-inputs"><label>Fysisk input</label><div><button class="btn" onclick="physicalButton('Quick Start')">Quick Start</button><button class="btn" onclick="physicalButton('Stop')">Stop</button><button class="btn" onclick="physicalButton('Incline +')">Incline +</button><button class="btn" onclick="physicalButton('Incline −')">Incline −</button><button class="btn danger" onclick="physicalButton('Nødstopp aktiv')">Nødstopp</button><button class="btn" onclick="physicalButton('Nødstopp normal')">Reset nødstopp</button></div></div></div><div class="section"><div class="section-head"><div><h2>Siste hendelser</h2><p>Kort logg for aktiv test.</p></div></div><div class="log" id="log">Service Console klar.</div></div></aside></div>
+</section>
+
+<section class="page" id="page-calibration"><div class="page-title"><div><h1>Kalibrering</h1></div></div><div class="tasks"><div class="task"><h3>Fartsensor (One-point ekstern referanse)</h3><p>Kjør møllen på en stabil fart (f.eks. 10–20 km/t) med eksternt måleutstyr. Sammenlign fartsensorens målte fart med ekstern referanse for å beregne og lagre ny korreksjonsfaktor.</p><div class="row"><label>Satt fart (target)</label><output id="calSet" class="readout mono">--</output></div><div class="row"><label>Målt av sensor</label><output id="calInput" class="readout mono">0,0 km/t</output></div><div class="row"><label>Aktiv sensorfaktor</label><output id="calSensorFactor" class="readout mono">1.00000</output></div><div class="row"><label>Eksternt målt fart</label><input id="calExternal" class="field" value="20.0" type="number" step="0.01" oninput="onCalExternalInput()"><span class="unit">km/t</span></div><div class="row"><label>Ny sensorfaktor</label><output id="calNewFactor" class="readout mono">--</output><button class="btn primary" onclick="saveSpeedSensorCalibration()">Lagre faktor</button></div><div class="result" id="speedResult">Venter på måling...</div></div><div class="task"><h3>Kontroller stigning mot IMU</h3><p>Sammenlign stigningen lest fra møllen med vinkelen målt av IMU. Juster bare verdiene dersom målingen viser et fast avvik.</p><div class="row"><label>Nullpunktsjustering</label><input class="field candidate" data-key="imuOffsetDeg" value="0.0" type="number" step="0.1"><span class="unit">°</span></div><div class="row"><label>Tillatt avvik</label><input class="field candidate" data-key="imuToleranceDeg" value="0.5" type="number" min="0" step="0.1"><span class="unit">°</span></div><div class="result" id="angleResult">Intern 0,0 % · IMU 0,0° · avvik 0,0°</div></div><div class="task"><h3>Mål endring i fart</h3><p>Velg start- og sluttfart. Testen måler ventetiden før farten begynner å endre seg og tiden til sluttfarten er stabil.</p><div class="row"><select id="speedRamp" class="field wide"><option value="0.8-6.0">0,8 → 6,0</option><option value="6.0-14.0">6,0 → 14,0</option><option value="14.0-20.0">14,0 → 20,0</option><option value="20.0-14.0">20,0 → 14,0</option><option value="14.0-6.0">14,0 → 6,0</option><option value="6.0-0.8">6,0 → 0,8</option></select><button class="btn primary" onclick="runRamp('speed')">Start</button></div><div class="phase" id="speedPhase"><i></i><i></i><i></i><i></i></div><div class="result" id="speedRampResult">Klar.</div></div><div class="task"><h3>Mål endring i stigning</h3><p>Velg start- og sluttstigning. Testen måler ventetiden før bevegelsen starter og tiden til både stigningssignalet og IMU-vinkelen er stabile.</p><div class="row"><select id="inclineRamp" class="field wide"><option value="0-5">0 → 5 %</option><option value="5-10">5 → 10 %</option><option value="10-15">10 → 15 %</option><option value="15-10">15 → 10 %</option><option value="10-5">10 → 5 %</option><option value="5-0">5 → 0 %</option></select><button class="btn primary" onclick="runRamp('incline')">Start</button></div><div class="phase" id="inclinePhase"><i></i><i></i><i></i><i></i></div><div class="result" id="inclineRampResult">Klar.</div></div></div>
+<div class="section" style="margin-top:24px"><div class="section-head"><div><h2>Konsoll-kommandotabell (SpeedConfig)</h2><p>Piecewise lineær tabell for oversettelse mellom ønsket fart og kommandoer sendt til møllens konsoll (2 til 10 punkter). Både målt fart og konsollkommando må være i strengt stigende rekkefølge.</p></div><div style="display:flex;gap:8px;align-items:center"><button class="btn" onclick="loadSpeedCalibration()">Hent fra ESP32</button><button class="btn primary" onclick="saveSpeedTable()">Lagre tabell på ESP32</button></div></div><div style="display:grid;grid-template-columns:1fr 340px;gap:24px"><div><table style="width:100%;border-collapse:collapse;border:1px solid var(--line);font-size:12px;margin-bottom:12px"><thead><tr style="background:var(--soft);border-bottom:1px solid var(--line);text-align:left"><th style="padding:8px 10px">#</th><th style="padding:8px 10px">Målt fart (km/t)</th><th style="padding:8px 10px">Konsollkommando (km/t)</th><th style="padding:8px 10px">Avvik</th><th style="padding:8px 10px;text-align:right">Handling</th></tr></thead><tbody id="speedTableBody"><tr><td colspan="5" style="padding:12px;text-align:center;color:var(--muted)">Laster tabell...</td></tr></tbody></table><div style="display:flex;gap:8px;align-items:center;background:var(--soft);padding:10px;border:1px solid var(--line);border-radius:3px"><label style="font-size:12px;color:var(--muted)">Nytt punkt:</label><input id="newMeasuredKmh" class="field" style="width:90px" type="number" step="0.1" placeholder="Målt"><input id="newCommandKmh" class="field" style="width:90px" type="number" step="0.1" placeholder="Kommando"><button class="btn" onclick="addSpeedPointRow()">Legg til punkt</button></div></div><div style="display:flex;flex-direction:column;gap:12px"><div style="border:1px solid var(--line);padding:12px;border-radius:3px"><h3 style="font-size:13px;margin:0 0 10px">Grenser og validering</h3><div class="row" style="margin-bottom:8px"><label style="width:160px">Maks oppnåelig fart</label><input id="calMaxSpeed" class="field" type="number" step="0.1" style="width:80px"><span class="unit">km/t</span></div><div class="row" style="margin-bottom:8px"><label style="width:160px">Maksfart verifisert</label><input id="calMaxSpeedVerified" type="checkbox" style="width:18px;height:18px"></div><div class="row" style="margin-bottom:8px"><label style="width:160px">Kommandomap status</label><span id="calCommandMapValid" class="mono" style="font-weight:600">--</span></div></div><div style="border:1px solid var(--line);padding:12px;border-radius:3px"><h3 style="font-size:13px;margin:0 0 10px">Test interpolasjon</h3><div class="row" style="margin-bottom:8px"><label style="width:130px">Test ønsket fart</label><input id="testCalcInput" class="field" type="number" step="0.1" style="width:80px" value="10.0"><button class="btn" onclick="testSpeedCalculate()">Beregn</button></div><div class="result" id="testCalcResult">Klar til testing.</div></div><div class="result" id="speedTableResult">Status: Tabell ikke lastet.</div></div></div></div></section>
+
+<section class="page" id="page-maintenance">
+  <div class="page-title"><div><h1>Vedlikehold</h1></div></div>
+  <div class="maintenance-summary">
+    <div><span>Total driftstid</span><b id="totalHours" class="mono">428 t 35 min</b><small>Lagret på ESP32</small></div>
+    <div><span>Total kjørelengde</span><b id="totalKm" class="mono">3 842 km</b><small>Lagret på ESP32</small></div>
+    <div><span>Siden siste smøring</span><b id="sinceLubrication" class="mono">Ikke registrert</b><small id="lastLubricationBasis">Dato og timeteller mangler</small></div>
+    <div><span>Status</span><b id="lubricationRemaining" class="bad">MÅ REGISTRERES</b><small id="reminderBasis">Commissioning er ikke fullført</small></div>
+  </div>
+  <div class="maintenance-grid">
+    <div class="maintenance-form">
+      <h2>Påminnelse om silikonsmøring</h2>
+      <p>Smøring er OK så lenge møllen er brukt mindre enn begge grensene. Påminnelsen vises når enten driftstiden eller antall dager er nådd.</p>
+      <div class="row"><label>Etter driftstid</label><input id="lubricationHours" class="field candidate" data-key="lubricationIntervalHours" value="50" type="number" min="1"><span class="unit">timer</span></div>
+      <div class="row"><label>Senest etter</label><input id="lubricationDays" class="field candidate" data-key="lubricationIntervalDays" value="60" type="number" min="1"><span class="unit">dager</span></div>
+    </div>
+    <div class="maintenance-form">
+      <h2>Siste silikonsmøring</h2>
+      <p>Lagre datoen og møllens totale driftstid da smøringen ble utført. Dette gir riktig beregning også etter gjenoppretting fra en eldre backup.</p>
+      <div id="lubricationNotSet" class="notice" style="margin:0 0 12px">Smøring er ikke registrert. Registrer utført smøring før commissioning avsluttes.</div>
+      <div class="row"><label>Dato</label><input id="lastLubricationDateInput" class="field wide candidate" data-key="lastLubricationDate" value="" type="date"></div>
+      <div class="row"><label>Timeteller ved smøring</label><input id="lubricationHoursAtService" class="field candidate" data-key="lubricationHoursAtService" value="" type="number" min="0" max="200000" step="0.01" inputmode="decimal" placeholder="Ikke satt"><span class="unit">timer</span></div>
+      <button class="btn" type="button" onclick="markLubricatedNow()">Smurt nå</button>
+      <div class="result" id="lubricationBaselineResult">Ingen smøring registrert.</div>
+    </div>
+    <div class="maintenance-form">
+      <h2>Korriger totaltellere</h2>
+      <p>Brukes ved første oppsett, bytte av ESP32 eller når verdiene skal overføres fra møllens eksisterende telleverk.</p>
+      <div class="row"><label>Total driftstid</label><input id="editTotalHours" class="field candidate" data-key="totalTimeHours" value="428.58" type="number" min="0" max="200000" step="0.01" inputmode="decimal"><span class="unit">timer</span></div>
+      <div class="row"><label>Total kjørelengde</label><input id="editTotalKm" class="field candidate" data-key="totalDistanceKm" value="3842" type="number" min="0" max="200000" step="0.01" inputmode="decimal"><span class="unit">km</span></div>
+    </div>
+    <div class="maintenance-form">
+      <h2>Hva blir lagret?</h2>
+      <p>Komplett backup og maskinbackup inneholder totaltellere, smøregrenser, dato og timeteller ved siste smøring. Ingen egen smørehistorikk lagres.</p>
+      <div class="result" id="maintenanceSaveSummary">Driftstid: 428 t 35 min<br>Kjørelengde: 3 842 km<br>Siste smøring: ikke registrert</div>
+    </div>
+  </div>
+</section>
+
+<section class="page" id="page-profiles"><div class="page-title"><div><h1>Brukerprofiler</h1></div><div class="page-actions"><button class="btn" onclick="downloadUsersBackup()">Last ned alle brukerdata</button></div></div><div class="profile-layout"><div class="profile-list" id="userList"></div><div class="profile-detail"><div class="summary" id="userSummary"></div><div class="stored" id="profileSettings"></div><h3 style="font-size:13px;margin:16px 0 8px">Lagrede intervalløkter</h3><div class="workouts" id="workoutList"></div><div style="display:flex;gap:7px;margin-top:12px"><button class="btn" onclick="openUserJson()">Vis / rediger JSON</button><button class="btn" onclick="downloadSelectedUser()">Last ned valgt bruker</button></div></div></div></section>
+
+<section class="page" id="page-backup"><div class="page-title"><div><h1>Backup og gjenoppretting</h1></div></div><div class="backup-grid"><div class="backup-card"><h3>Komplett backup</h3><p>Maskinkalibrering, totaltellere, smørereferanse, alle brukere, intervalløkter, hurtigtaster og HR-sensorvalg.</p><button class="btn primary" onclick="downloadFullBackup()">Last ned komplett backup</button></div><div class="backup-card"><h3>Kun maskinkalibrering</h3><p>Console-timing, fart, stigning, IMU, rampetider, totaltellere og smørereferanse.</p><button class="btn" onclick="downloadMachineBackup()">Last ned kalibrering</button></div><div class="backup-card"><h3>Gjenopprett fra fil</h3><p>Kontroller filen og vis hva som blir endret før lagring.</p><button class="btn" onclick="openRestoreDialog()">Velg backupfil</button></div><div class="backup-card"><h3>Feilsøkingsdata</h3><p>Last ned måleverdier, status og aktivt oppsett for feilsøking eller analyse. Filen kan ikke gjenopprettes.</p><button class="btn" onclick="downloadDiagnostics()">Last ned feilsøkingsdata</button></div></div><div class="notice" style="display:flex;justify-content:space-between;align-items:center"><span>Før gjenoppretting lagres en kopi av oppsettet som brukes nå (LKG Snapshot).</span><button class="btn" type="button" style="padding:4px 10px;font-size:12px" onclick="rollbackBackup()">Tilbakestill til forrige snapshot</button></div></section>
+
+<section class="page" id="page-advanced"><div class="page-title"><div><h1>Avansert</h1></div></div><div class="grid"><div class="main"><div class="section"><div class="section-head"><div><h2>Maskinparametre</h2><p>Endringer vises til høyre og lagres med knappene nederst på siden. De bekreftede grensene brukes som øvre grense for kommandoer fra StrideControl, ikke som garanti for møllens mekaniske maksimum.</p></div></div><div class="row"><label>Høyeste bekreftede fart</label><input class="field candidate" data-key="maxSpeedKmh" value="25.0" type="number"><span class="unit">km/t</span></div><div class="row"><label>Høyeste bekreftede stigning</label><input class="field candidate" data-key="maxInclinePct" value="15.0" type="number"><span class="unit">%</span></div></div><div class="section"><div class="section-head"><div><h2>ConsoleInterface timing</h2><p>Vises samlet her, ikke i normal arbeidsflyt.</p></div></div><div class="timing"><div class="mini"><label>Digit hold</label><input class="field candidate" data-key="digitHoldMs" value="82"></div><div class="mini"><label>Digit pause</label><input class="field candidate" data-key="digitPauseMs" value="150"></div><div class="mini"><label>Pre Enter</label><input class="field candidate" data-key="preEnterPauseMs" value="200"></div><div class="mini"><label>Enter hold</label><input class="field candidate" data-key="enterHoldMs" value="82"></div><div class="mini"><label>Post Clear</label><input class="field candidate" data-key="postClearPauseMs" value="300"></div><div class="mini"><label>Relay hold</label><input class="field candidate" data-key="relayHoldMs" value="80"></div><div class="mini"><label>Relay pause</label><input class="field candidate" data-key="relayPauseMs" value="80"></div><div class="mini"><label>ACK timeout</label><input class="field candidate" data-key="ackTimeoutMs" value="450"></div></div></div></div><aside class="side"><div class="section"><div class="section-head"><div><h2>Endringer</h2><p>Her vises feltene som er endret siden forrige lagring.</p></div></div><div id="changes" class="changes"><div class="change"><span>Ingen endringer å lagre</span><b></b></div></div></div></aside></div></section>
+</div>
+
+<div class="bottom"><div class="bottom-inner"><div class="dirty"><i id="dirtyDot"></i><div><b id="dirtyTitle">Alt er lagret</b><br><span id="dirtyText">Ingen endringer venter</span></div></div><span id="saveMessage" style="font-size:12px;margin-right:10px"></span><div class="bottom-actions"><button class="btn" onclick="discardChanges()">Forkast endringer</button><button class="btn primary" id="commitButton" onclick="saveChanges()" disabled>Lagre på ESP32</button></div></div></div>
+<input id="backupFile" type="file" accept="application/json,.json" hidden onchange="handleBackupFile(event)">
+<div class="modal" id="discardModal"><div class="dialog" style="width:460px"><h2>Forkaste endringene?</h2><p>Alle endringer som ikke er lagret blir fjernet. Oppsettet som allerede er lagret på ESP32 påvirkes ikke.</p><div class="dialog-actions"><button class="btn" onclick="closeDiscardDialog()">Avbryt</button><button class="btn danger" onclick="confirmDiscard()">Forkast endringene</button></div></div></div>
+<div class="modal" id="restoreModal"><div class="dialog"><h2>Gjenopprett backup</h2><p>Velg en StrideControl-backup. Filen valideres før data legges i kandidat.</p><div id="restoreEmpty"><button class="btn primary" onclick="document.getElementById('backupFile').click()">Velg fil</button></div><div id="restorePreview" style="display:none"><div id="restoreMeta"></div><div class="notice">Oppsettet som brukes nå beholdes til endringene er kontrollert og lagret.</div><div id="restoreChanges"></div></div><div class="dialog-actions"><button class="btn" onclick="closeRestoreDialog()">Avbryt</button><button class="btn primary" id="stageImportBtn" onclick="stageImport()" disabled>Kontroller endringene</button></div></div></div>
+<div class="modal" id="jsonModal"><div class="dialog"><h2 id="jsonTitle">Brukerprofil JSON</h2><p>Avansert redigering. JSON må valideres før endringene kan lagres.</p><textarea id="jsonEditor" class="json" spellcheck="false"></textarea><div id="jsonValidation" class="validation">Ikke validert.</div><div class="dialog-actions"><button class="btn" onclick="closeJsonModal()">Lukk</button><button class="btn" onclick="validateUserJson()">Valider JSON</button><button class="btn primary" id="applyJsonBtn" onclick="applyUserJson()" disabled>Bruk endringene</button></div></div></div>
+
+<script>
+const $=id=>document.getElementById(id),sleep=ms=>new Promise(r=>setTimeout(r,ms));let req=400,selectedUserIndex=0,pendingImport=null,validatedUserJson=null;
+let lastEstopState=false,isTestbench=false,rampTestInProgress=false,rampAborted=false;
+const raw={READY:'0x01',STARTING:'0x08',IN_USE:'0x85',PAUSED:'0x04',TIMED_OUT:'--',OFFLINE:'--'};
+const active={maxSpeedKmh:'25.0',maxInclinePct:'15.0',digitHoldMs:'82',digitPauseMs:'150',preEnterPauseMs:'200',enterHoldMs:'82',postClearPauseMs:'300',relayHoldMs:'80',relayPauseMs:'80',ackTimeoutMs:'450',imuOffsetDeg:'0.0',imuToleranceDeg:'0.5',lubricationIntervalHours:'50',lubricationIntervalDays:'60',lastLubricationDate:'',lubricationHoursAtService:'',totalTimeHours:'428.58',totalDistanceKm:'3842'};
+let users=[{id:1,name:'Christine',preferredHrMac:'C4:7C:8D:11:20:31',preferredHrName:'Polar H10',hvileSpeedKmh:5,dragSpeedKmh:12,speedQuickKeys:[5,6,7,8,9,10,11,12],inclineQuickKeys:[0,1,2,3,4,6,8,10],selectedWorkoutId:101,workouts:[{id:101,name:'Kortintervall 45/15',durationMin:23,steps:4},{id:102,name:'Terskel 4x4',durationMin:38,steps:4}]},{id:2,name:'Jonas',preferredHrMac:'',preferredHrName:'Ikke valgt',hvileSpeedKmh:6,dragSpeedKmh:15,speedQuickKeys:[5,6,8,10,12,14,15,16],inclineQuickKeys:[0,1,2,3,4,5,6,8],selectedWorkoutId:201,workouts:[{id:201,name:'Kortintervall 45/15',durationMin:23,steps:4}]},{id:3,name:'Julie',preferredHrMac:'D2:19:52:A4:80:0B',preferredHrName:'Garmin HRM-Pro',hvileSpeedKmh:5.5,dragSpeedKmh:13,speedQuickKeys:[5,6,7,8,10,11,12,13],inclineQuickKeys:[0,1,2,3,4,6,8,10],selectedWorkoutId:301,workouts:[{id:301,name:'Terskel 4x4',durationMin:38,steps:4}]},{id:4,name:'Kristian',preferredHrMac:'AA:BB:CC:DD:EE:FF',preferredHrName:'Polar H10',hvileSpeedKmh:6,dragSpeedKmh:16,speedQuickKeys:[4,6,8,10,12,14,16,18],inclineQuickKeys:[0,1,2,4,6,8,10,12],selectedWorkoutId:401,workouts:[{id:401,name:'20 × 45/15',durationMin:45,steps:4},{id:402,name:'Terskel 4x4',durationMin:38,steps:4},{id:403,name:'Rolig langjogg',durationMin:45,steps:1}]}];
+const maintenance={totalTimeSeconds:1542900,totalDistanceMeters:3842000,lubricationConfigured:false,lastLubricationTimeSeconds:null,lastLubricationDate:null};
+
+function todayLocalIso(){const d=new Date(),offset=d.getTimezoneOffset()*60000;return new Date(d-offset).toISOString().slice(0,10);}
+function markLubricatedNow(){$('lastLubricationDateInput').value=todayLocalIso();$('lubricationHoursAtService').value=(+$('editTotalHours').value||0).toFixed(2);renderMaintenance();renderDiff();}
+function updateLubricationFields(){renderMaintenance();}
+function maintenanceDateValue(){const value=$('lastLubricationDateInput').value;return value?new Date(value+'T00:00:00'):null;}
+function renderMaintenance(){const totalH=+$('editTotalHours').value||0,totalKm=+$('editTotalKm').value||0,intervalH=Math.max(1,+$('lubricationHours').value||50),intervalDays=Math.max(1,+$('lubricationDays').value||60),lastDate=maintenanceDateValue(),hoursAtServiceRaw=$('lubricationHoursAtService').value,hoursAtService=hoursAtServiceRaw===''?null:+hoursAtServiceRaw,configured=!!lastDate&&Number.isFinite(hoursAtService)&&hoursAtService>=0&&hoursAtService<=totalH,now=new Date(),elapsedDays=configured?Math.max(0,Math.floor((now-lastDate)/86400000)):null,hoursSince=configured?Math.max(0,totalH-hoursAtService):null,remainingH=configured?Math.max(0,intervalH-hoursSince):null,remainingDays=configured?Math.max(0,intervalDays-elapsedDays):null,due=configured&&(hoursSince>=intervalH||elapsedDays>=intervalDays);maintenance.totalTimeSeconds=Math.round(totalH*3600);maintenance.totalDistanceMeters=Math.round(totalKm*1000);maintenance.lubricationConfigured=configured;maintenance.lastLubricationTimeSeconds=configured?Math.round(hoursAtService*3600):null;maintenance.lastLubricationDate=configured?$('lastLubricationDateInput').value:null;$('totalHours').textContent=Math.floor(totalH)+' t '+Math.round((totalH%1)*60)+' min';$('totalKm').textContent=Math.round(totalKm).toLocaleString('nb-NO')+' km';$('lubricationNotSet').style.display=configured?'none':'block';if(!configured){$('sinceLubrication').textContent='Ikke registrert';$('lastLubricationBasis').textContent='Dato og gyldig timeteller mangler';$('lubricationRemaining').textContent='MÅ REGISTRERES';$('lubricationRemaining').className='bad';$('reminderBasis').textContent='Commissioning er ikke fullført';$('lubricationBaselineResult').textContent='Ingen smøring registrert.';$('maintenanceSaveSummary').innerHTML='Driftstid: '+Math.floor(totalH)+' t '+Math.round((totalH%1)*60)+' min<br>Kjørelengde: '+Math.round(totalKm).toLocaleString('nb-NO')+' km<br>Siste smøring: ikke registrert';return;}$('sinceLubrication').textContent=fmt(hoursSince)+' t · '+elapsedDays+' dager';$('lastLubricationBasis').textContent='Sist smurt '+lastDate.toLocaleDateString('nb-NO')+' ved '+fmt(hoursAtService)+' t';$('lubricationRemaining').textContent=due?'SMØRING PÅKREVD':'OK';$('lubricationRemaining').className=due?'bad':'good';$('reminderBasis').textContent=due?(hoursSince>=intervalH?'Timegrensen er nådd':'Datogrensen er nådd'):(fmt(remainingH)+' t eller '+remainingDays+' dager igjen');$('lubricationBaselineResult').textContent='Lagres som dato '+lastDate.toLocaleDateString('nb-NO')+' og timeteller '+fmt(hoursAtService)+' timer.';$('maintenanceSaveSummary').innerHTML='Driftstid: '+Math.floor(totalH)+' t '+Math.round((totalH%1)*60)+' min<br>Kjørelengde: '+Math.round(totalKm).toLocaleString('nb-NO')+' km<br>Sist smurt: '+lastDate.toLocaleDateString('nb-NO')+' ved '+fmt(hoursAtService)+' t';}
+function fmt(v){return Number(v).toFixed(1).replace('.',',')}
+function log(s){$('log').textContent=new Date().toLocaleTimeString()+'  '+s+'\n'+$('log').textContent}
+function showPage(name){document.querySelectorAll('.page').forEach(x=>x.classList.toggle('active',x.id==='page-'+name));document.querySelectorAll('.nav button').forEach(x=>x.classList.toggle('active',x.dataset.page===name));if(name==='calibration')loadSpeedCalibration();}
+
+async function detectBoard(){
+  try{
+    const res=await fetch('/api/health');
+    if(res.ok){
+      const data=await res.json();
+      isTestbench=(data.board==='XIAO_ESP32S3');
+      const rig=$('mockRig');
+      if(rig)rig.style.display=isTestbench?'block':'none';
+      if(data.board){
+        $('machineName').textContent=isTestbench?'Sportsmaster T610 (Testbench)':'Sportsmaster T610';
+      }
+    }
+  }catch(e){
+    console.warn('Board detection error:',e);
+  }
+}
+
+function updateOverview(data){
+  if(!data)return;
+  const sp=data.speed?.kmh??0.0;
+  $('speed').textContent=fmt(sp)+' km/t';
+  $('measuredSpeed').textContent=fmt(sp);
+  if(data.targetSpeedKmh!==undefined&&data.targetSpeedKmh!==null){
+    $('targetSpeed').textContent=fmt(data.targetSpeedKmh);
+    const calS=$('calSet');
+    if(calS)calS.textContent=fmt(data.targetSpeedKmh)+' km/t';
+  }
+  const calIn=$('calInput');
+  if(calIn){
+    calIn.textContent=fmt(sp)+' km/t';
+    onCalExternalInput();
+  }
+  $('speedMeta').textContent=sp>0?('Gyldig · '+fmt(sp/0.1)+' Hz'):'Venter på pulser';
+
+  const inc=data.incline?.pct??0.0;
+  $('incline').textContent=fmt(inc)+' %';
+  const incMeta=$('inclineMeta');
+  if(incMeta)incMeta.textContent=data.authority?'Homed · stabil':'Uautoritativ';
+
+  const off=+document.querySelector('[data-key="imuOffsetDeg"]')?.value||0;
+  const imu=inc*0.57+off;
+  $('imu').textContent=fmt(imu)+'°';
+  $('imuMeta').textContent='Avvik '+fmt(off)+'°';
+  $('inclineTrace').textContent=fmt(inc)+'% · '+fmt(imu)+'°';
+  $('angleResult').textContent='Intern '+fmt(inc)+' % · IMU '+fmt(imu)+'° · avvik '+fmt(off)+'°';
+
+  const csafeState=(data.csafe?.machineState||'READY').toUpperCase();
+  $('csafe').textContent=csafeState;
+  $('csafe').className='mono '+(data.csafe?.online?'good':'bad');
+  const rawByte=data.csafe?.rawStateByte!==undefined?'0x'+data.csafe.rawStateByte.toString(16).padStart(2,'0').toUpperCase():(raw[csafeState]||'--');
+  $('csafeMeta').textContent=rawByte+' · '+(data.csafe?.fresh?'fresh':'stale');
+
+  const presence=data.runner?.presence||'UNKNOWN';
+  let runnerText='Ikke til stede';
+  if(presence.includes('BELT')||presence==='ACTIVE'||presence==='RUNNING_ON_BELT'||presence==='Present / OnBelt'){
+    runnerText='På beltet';
+  }else if(presence.includes('RAIL')||presence==='SIDE_RAILS'){
+    runnerText='På sidelistene';
+  }
+  $('runner').textContent=runnerText;
+  const runnerKmh=data.runner?.speedKmh??0.0;
+  if(runnerText==='På beltet'){
+    $('cadence').textContent=runnerKmh>0?('Fart '+fmt(runnerKmh)+' km/t'):'Kadens 168 spm';
+  }else{
+    $('cadence').textContent='Kadens 0 spm';
+  }
+
+  const estop=!!(data.estopActive||data.session?.isEmergencyStopped);
+  if(estop!==lastEstopState){
+    lastEstopState=estop;
+    if(estop){
+      $('physical').textContent='Nødstopp aktiv';
+      $('physical').className='bad';
+      log('Fysisk input: Nødstopp utløst');
+    }else{
+      $('physical').textContent='Nødstopp normal';
+      $('physical').className='good';
+      log('Fysisk input: Nødstopp tilbakestilt');
+    }
+  }
+
+  if(data.maintenance){
+    if(typeof data.maintenance.timeSeconds==='number'&&!$('editTotalHours').matches(':focus')){
+      $('editTotalHours').value=(data.maintenance.timeSeconds/3600).toFixed(2);
+    }
+    if(typeof data.maintenance.distanceMeters==='number'&&!$('editTotalKm').matches(':focus')){
+      $('editTotalKm').value=(data.maintenance.distanceMeters/1000).toFixed(0);
+    }
+    renderMaintenance();
+  }
+}
+
+async function fetchTelemetry(){
+  try{
+    const res=await fetch('/api/v1/telemetry',{cache:'no-cache'});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    updateOverview(data);
+    $('connectionStatus').textContent='ESP32 tilkoblet';
+    $('connectionStatus').className='connected';
+  }catch(e){
+    $('connectionStatus').textContent='Frakoblet';
+    $('connectionStatus').className='connected disconnected';
+  }
+}
+
+const supported=['Inst. Speed','Inst. Incline','0','1','2','3','4','5','6','7','8','9','Enter','Clear','Speed +','Speed −'];
+function buildKeys(){supported.forEach(k=>{const b=document.createElement('button');b.className='key';b.textContent=k;b.onclick=()=>sendKey(k,b);$('keys').appendChild(b)})}
+function command(a){[...$('command').children].forEach((x,i)=>x.querySelector('b').textContent=a[i])}
+
+async function sendKey(k,b){
+  const id=++req;
+  b.classList.add('active');
+  const startT=performance.now();
+  command([id,k,'Started','--','1','0 ms']);
+  if(k==='Speed +'||k==='Speed −'){
+    const delta=(k==='Speed +')?0.5:-0.5;
+    try{
+      const res=await fetch('/api/v1/control/speed',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({deltaSpeed:delta})
+      });
+      const elapsed=Math.round(performance.now()-startT);
+      b.classList.remove('active');
+      if(res.ok){
+        command([id,k,'Completed','NormalStep ('+(delta>0?'+':'')+delta+')','1',elapsed+' ms']);
+        log('CMD '+id+' fullført: '+k);
+      }else{
+        const err=await res.json().catch(()=>({}));
+        command([id,k,'Failed',err.error||res.statusText,'1',elapsed+' ms']);
+        log('CMD '+id+' feilet: '+(err.error||res.statusText));
+      }
+    }catch(e){
+      const elapsed=Math.round(performance.now()-startT);
+      b.classList.remove('active');
+      command([id,k,'NetworkError',e.message,'1',elapsed+' ms']);
+      log('CMD '+id+' feil: '+e.message);
+    }
+  }else{
+    await sleep(300);
+    b.classList.remove('active');
+    const elapsed=Math.round(performance.now()-startT);
+    command([id,k,'Completed','SimulatedSingle','1',elapsed+' ms']);
+    log('CMD '+id+' tast simulert: '+k);
+  }
+}
+
+async function sendTarget(type){
+  const isSpeed=type==='speed',v=+(isSpeed?$('setSpeed').value:$('setIncline').value),id=++req;
+  const cmdName=(isSpeed?'SetSpeed ':'SetIncline ')+fmt(v);
+  const startT=performance.now();
+  command([id,cmdName,'Queued','--','1','0 ms']);
+  if(isSpeed){$('orderSpeed').textContent=fmt(v)}else $('orderIncline').textContent=fmt(v);
+
+  try{
+    const endpoint=isSpeed?'/api/v1/control/speed':'/api/v1/control/incline';
+    const body=isSpeed?{speed:v}:{incline:v};
+    const res=await fetch(endpoint,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    const elapsed=Math.round(performance.now()-startT);
+    if(res.ok){
+      command([id,cmdName,'Completed','Success (queued)','1',elapsed+' ms']);
+      log('CMD '+id+' fullført: '+cmdName);
+    }else{
+      const err=await res.json().catch(()=>({}));
+      command([id,cmdName,'Failed',err.error||res.statusText,'1',elapsed+' ms']);
+      log('CMD '+id+' feilet: '+(err.error||res.statusText));
+    }
+  }catch(e){
+    const elapsed=Math.round(performance.now()-startT);
+    command([id,cmdName,'NetworkError',e.message,'1',elapsed+' ms']);
+    log('CMD '+id+' nettverksfeil: '+e.message);
+  }
+}
+
+async function physicalButton(k){
+  $('physical').textContent=k;
+  $('physical').className=k.includes('Nødstopp aktiv')?'bad':(k.includes('Nødstopp normal')?'good':'');
+  log('Fysisk input: '+k);
+
+  let btnCmd=null,body=null;
+  if(k==='Quick Start')btnCmd='QuickStart';
+  else if(k==='Stop')btnCmd='Stop';
+  else if(k==='Incline +')btnCmd='InclinePlus';
+  else if(k==='Incline −')btnCmd='InclineMinus';
+  else if(k==='Nødstopp aktiv'){btnCmd='EmergencyStop';body={button:'EmergencyStop',active:true};}
+  else if(k==='Nødstopp normal'){btnCmd='EmergencyStopRelease';body={button:'EmergencyStopRelease'};}
+
+  if(btnCmd&&isTestbench){
+    try{
+      await fetch('/api/v1/simulator/console',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body||{button:btnCmd})
+      });
+    }catch(e){
+      console.warn('Physical button call failed:',e);
+    }
+  }
+}
+
+async function onMockSpeedInput(val){
+  $('mockSpeedText').textContent=fmt(val);
+  if(!isTestbench)return;
+  try{
+    await fetch('/api/v1/simulator/console',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({button:'SetBeltSpeedDirect',value:parseFloat(val)})
+    });
+  }catch(e){}
+}
+
+async function onMockInclineInput(val){
+  $('mockInclineText').textContent=fmt(val);
+  if(!isTestbench)return;
+  try{
+    await fetch('/api/v1/simulator/console',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({button:'SetIncline',value:parseFloat(val)})
+    });
+  }catch(e){}
+}
+
+function onMockCsafeChange(val){
+  log('Mock CSAFE endret: '+val);
+}
+
+async function onMockRunnerChange(val){
+  let mode='NotPresent',cadence=0;
+  if(val==='På beltet'){mode='RunningOnBelt';cadence=168;}
+  else if(val==='På sidelistene'){mode='OnSideRails';cadence=0;}
+  if(!isTestbench)return;
+  try{
+    await fetch('/api/v1/simulator/runner',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({mode,cadence,impactMagnitudeG:0.35,signalValid:true})
+    });
+  }catch(e){}
+}
+
+function parseOutputNumber(id){const el=$(id);if(!el)return 0;return Number(el.textContent.replace(',','.').replace(/[^0-9.-]/g,''))}
+
+let speedTablePoints=[];
+let currentSensorFactor=1.0;
+
+function onCalExternalInput(){
+  const ext=+$('calExternal').value;
+  const sys=parseOutputNumber('calInput');
+  if(Number.isFinite(ext)&&ext>0&&Number.isFinite(sys)&&sys>0){
+    const newFactor=currentSensorFactor*(ext/sys);
+    $('calNewFactor').textContent=newFactor.toFixed(5);
+  }else{
+    $('calNewFactor').textContent='--';
+  }
+}
+
+async function saveSpeedSensorCalibration(){
+  const ext=+$('calExternal').value;
+  const sys=parseOutputNumber('calInput');
+  if(!Number.isFinite(ext)||ext<=0||!Number.isFinite(sys)||sys<=0){
+    $('speedResult').innerHTML='<span class="bad">Mangler gyldig målt fart eller ekstern referanse.</span>';
+    return;
+  }
+  const newFactor=currentSensorFactor*(ext/sys);
+  $('speedResult').textContent='Lagrer sensorkalibrering på ESP32...';
+  try{
+    const res=await fetch('/api/v1/calibration/speed/sensor',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({factor:newFactor,calibrationFactor:newFactor})
+    });
+    if(res.ok){
+      currentSensorFactor=newFactor;
+      $('calSensorFactor').textContent=newFactor.toFixed(5);
+      $('speedResult').innerHTML='<span class="good">Sensorkalibrering lagret! Ny faktor: '+newFactor.toFixed(5)+'</span>';
+      log('Fartsensor kalibrert: ny faktor '+newFactor.toFixed(5)+' (ekstern: '+fmt(ext)+' km/t, var: '+fmt(sys)+' km/t)');
+    }else{
+      const err=await res.json().catch(()=>({}));
+      $('speedResult').innerHTML='<span class="bad">Lagring feilet: '+(err.error||res.statusText)+'</span>';
+    }
+  }catch(e){
+    $('speedResult').innerHTML='<span class="bad">Nettverksfeil: '+e.message+'</span>';
+  }
+}
+
+async function loadSpeedCalibration(){
+  try{
+    const res=await fetch('/api/v1/calibration/speed',{cache:'no-cache'});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    if(data.sensorCalibrationFactor!==undefined){
+      currentSensorFactor=Number(data.sensorCalibrationFactor);
+      $('calSensorFactor').textContent=currentSensorFactor.toFixed(5);
+    }
+    const pointsRaw = data.points || data.config?.points || [];
+    speedTablePoints = Array.isArray(pointsRaw) ? pointsRaw.map(p => ({
+      measuredKmh: Number(p.measuredKmh ?? p.measuredPhysicalSpeedKmh ?? 0),
+      measuredPhysicalSpeedKmh: Number(p.measuredPhysicalSpeedKmh ?? p.measuredKmh ?? 0),
+      treadmillCommandKmh: Number(p.treadmillCommandKmh ?? p.commandKmh ?? 0)
+    })) : [];
+    const maxSpd = data.maxAchievableSpeedKmh ?? data.config?.maxAchievableSpeedKmh;
+    if(maxSpd !== undefined){
+      $('calMaxSpeed').value = Number(maxSpd).toFixed(1);
+    }
+    const maxVer = data.maxAchievableSpeedVerified ?? data.config?.maxAchievableSpeedVerified;
+    if(maxVer !== undefined){
+      $('calMaxSpeedVerified').checked = !!maxVer;
+    }
+    const valid = !!(data.commandMapValid ?? data.config?.commandMapValid);
+    $('calCommandMapValid').textContent = valid ? 'Gyldig' : 'Ugyldig';
+    $('calCommandMapValid').className = 'mono ' + (valid ? 'good' : 'bad');
+    renderSpeedTable();
+    $('speedTableResult').textContent='Tabell oppdatert ('+speedTablePoints.length+' punkter).';
+  }catch(e){
+    console.warn('Kunne ikke hente kalibrering:',e);
+    $('speedTableResult').innerHTML='<span class="bad">Kunne ikke hente tabell: '+e.message+'</span>';
+  }
+}
+
+function renderSpeedTable(){
+  const tbody=$('speedTableBody');
+  if(!tbody)return;
+  if(speedTablePoints.length===0){
+    tbody.innerHTML='<tr><td colspan="5" style="padding:12px;text-align:center;color:var(--muted)">Ingen kalibreringspunkter i tabellen.</td></tr>';
+    return;
+  }
+  tbody.innerHTML=speedTablePoints.map((p,i)=>{
+    const diff=(p.measuredKmh-p.treadmillCommandKmh).toFixed(2);
+    const diffSign=diff>0?'+':'';
+    return '<tr style="border-bottom:1px solid var(--line)">'+
+      '<td style="padding:7px 10px">'+(i+1)+'</td>'+
+      '<td style="padding:7px 10px"><input class="field" style="width:75px;height:28px" type="number" step="0.1" value="'+p.measuredKmh.toFixed(1)+'" onchange="updatePointField('+i+',\'measuredKmh\',this.value)"></td>'+
+      '<td style="padding:7px 10px"><input class="field" style="width:75px;height:28px" type="number" step="0.1" value="'+p.treadmillCommandKmh.toFixed(1)+'" onchange="updatePointField('+i+',\'treadmillCommandKmh\',this.value)"></td>'+
+      '<td style="padding:7px 10px" class="mono">'+diffSign+diff+'</td>'+
+      '<td style="padding:7px 10px;text-align:right"><button class="btn danger" style="height:28px;padding:0 8px;font-size:11px" onclick="deleteSpeedPointRow('+i+')">Slett</button></td>'+
+      '</tr>';
+  }).join('');
+}
+
+function updatePointField(i,field,val){
+  const num=Number(val);
+  if(Number.isFinite(num)&&num>0&&speedTablePoints[i]){
+    speedTablePoints[i][field]=num;
+  }
+}
+
+function addSpeedPointRow(){
+  if(speedTablePoints.length>=10){
+    $('speedTableResult').innerHTML='<span class="bad">Maks 10 punkter tillatt i tabellen.</span>';
+    return;
+  }
+  const m=Number($('newMeasuredKmh').value);
+  const c=Number($('newCommandKmh').value);
+  if(!Number.isFinite(m)||m<=0||!Number.isFinite(c)||c<=0){
+    $('speedTableResult').innerHTML='<span class="bad">Oppgi gyldige positive tall for både målt og konsollkommando.</span>';
+    return;
+  }
+  speedTablePoints.push({measuredKmh:m,treadmillCommandKmh:c});
+  speedTablePoints.sort((a,b)=>a.measuredKmh-b.measuredKmh);
+  $('newMeasuredKmh').value='';
+  $('newCommandKmh').value='';
+  renderSpeedTable();
+  $('speedTableResult').textContent='Punkt lagt til ('+speedTablePoints.length+'/10). Husk å lagre tabellen på ESP32.';
+}
+
+function deleteSpeedPointRow(i){
+  speedTablePoints.splice(i,1);
+  renderSpeedTable();
+  $('speedTableResult').textContent='Punkt slettet ('+speedTablePoints.length+'/10). Husk å lagre tabellen på ESP32.';
+}
+
+async function saveSpeedTable(){
+  const maxSpeed=Number($('calMaxSpeed').value);
+  const verified=$('calMaxSpeedVerified').checked;
+  if(!Number.isFinite(maxSpeed)||maxSpeed<=0){
+    $('speedTableResult').innerHTML='<span class="bad">Ugyldig maksfart oppgitt.</span>';
+    return;
+  }
+  $('speedTableResult').textContent='Validerer og lagrer tabell...';
+  const payload={
+    points:speedTablePoints.map(p=>({
+      measuredPhysicalSpeedKmh:p.measuredKmh,
+      measuredKmh:p.measuredKmh,
+      treadmillCommandKmh:p.treadmillCommandKmh,
+      commandKmh:p.treadmillCommandKmh
+    })),
+    maxAchievableSpeedKmh:maxSpeed,
+    maxAchievableSpeedVerified:verified,
+    commandMapValid:speedTablePoints.length>=2
+  };
+  try{
+    const res=await fetch('/api/v1/calibration/speed/table',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+    if(res.ok){
+      $('speedTableResult').innerHTML='<span class="good">Tabell lagret på ESP32!</span>';
+      log('SpeedConfig-tabell oppdatert ('+speedTablePoints.length+' punkter, maks: '+maxSpeed+' km/t)');
+      await loadSpeedCalibration();
+    }else{
+      const err=await res.json().catch(()=>({}));
+      $('speedTableResult').innerHTML='<span class="bad">Lagring avvist: '+(err.error||res.statusText)+'</span>';
+      log('SpeedConfig avvist: '+(err.error||res.statusText));
+    }
+  }catch(e){
+    $('speedTableResult').innerHTML='<span class="bad">Nettverksfeil: '+e.message+'</span>';
+  }
+}
+
+async function testSpeedCalculate(){
+  const sp=Number($('testCalcInput').value);
+  if(!Number.isFinite(sp)||sp<=0){
+    $('testCalcResult').textContent='Oppgi en gyldig fart.';
+    return;
+  }
+  $('testCalcResult').textContent='Beregner...';
+  try{
+    const res=await fetch('/api/v1/calibration/speed/calculate?speed='+sp);
+    if(res.ok){
+      const data=await res.json();
+      $('testCalcResult').innerHTML='Målfart: <b>'+data.targetSpeedKmh.toFixed(1)+' km/t</b> → Konsollkommando: <b>'+data.commandKmh.toFixed(1)+' km/t</b>';
+    }else{
+      const err=await res.json().catch(()=>({}));
+      $('testCalcResult').innerHTML='<span class="bad">Feil: '+(err.error||res.statusText)+'</span>';
+    }
+  }catch(e){
+    $('testCalcResult').innerHTML='<span class="bad">Nettverksfeil: '+e.message+'</span>';
+  }
+}
+
+function setPhasePips(barId,idx){const bar=$(barId);if(!bar)return;[...bar.children].forEach((x,i)=>x.classList.toggle('on',i<=idx));}
+
+async function runRamp(type){
+  if(type==='speed')await runSpeedRamp();
+  else if(type==='incline')await runInclineRamp();
+}
+
+async function runSpeedRamp(){
+  if(rampTestInProgress)return;
+  const optVal=$('speedRamp').value;
+  let startSpeedKmh=0.8,targetSpeedKmh=6.0,zone=0,direction='accel';
+  if(optVal==='0.8-6.0'){zone=0;direction='accel';startSpeedKmh=0.8;targetSpeedKmh=6.0;}
+  else if(optVal==='6.0-14.0'){zone=1;direction='accel';startSpeedKmh=6.0;targetSpeedKmh=14.0;}
+  else if(optVal==='14.0-20.0'){zone=2;direction='accel';startSpeedKmh=14.0;targetSpeedKmh=20.0;}
+  else if(optVal==='20.0-14.0'){zone=2;direction='decel';startSpeedKmh=20.0;targetSpeedKmh=14.0;}
+  else if(optVal==='14.0-6.0'){zone=1;direction='decel';startSpeedKmh=14.0;targetSpeedKmh=6.0;}
+  else if(optVal==='6.0-0.8'){zone=0;direction='decel';startSpeedKmh=6.0;targetSpeedKmh=0.8;}
+
+  const res=$('speedRampResult');
+  rampAborted=false;
+  rampTestInProgress=true;
+  setPhasePips('speedPhase',0);
+  res.textContent=`Sjekker starthastighet (${fmt(startSpeedKmh)} km/t)...`;
+
+  try{
+    let telemRes=await fetch('/api/v1/telemetry',{cache:'no-cache'});
+    let telemData=await telemRes.json();
+    let curSpd=telemData.speed?.kmh??0.0;
+
+    if(Math.abs(curSpd-startSpeedKmh)>0.5){
+      res.textContent=`Stabiliserer på startfart (${fmt(startSpeedKmh)} km/t)... Nå: ${fmt(curSpd)} km/t`;
+      const speedRes=await fetch('/api/v1/control/speed',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({speed:startSpeedKmh})
+      });
+      if(!speedRes.ok)throw new Error('Kunne ikke sette startfart');
+
+      let stabilized=false;
+      const maxAttempts=40;
+      for(let i=0;i<maxAttempts;i++){
+        if(rampAborted)return;
+        await sleep(500);
+        if(rampAborted)return;
+        telemRes=await fetch('/api/v1/telemetry',{cache:'no-cache'});
+        telemData=await telemRes.json();
+        curSpd=telemData.speed?.kmh??0.0;
+        res.textContent=`Stabiliserer på startfart (${fmt(startSpeedKmh)} km/t)... Nå: ${fmt(curSpd)} km/t (${Math.round((maxAttempts-i)*0.5)}s)`;
+        if(Math.abs(curSpd-startSpeedKmh)<=0.5){
+          stabilized=true;
+          break;
+        }
+      }
+      if(!stabilized)throw new Error('Tidsavbrudd: Beltet stabiliserte seg ikke på startfart innen 20s');
+    }
+
+    if(rampAborted)return;
+    setPhasePips('speedPhase',1);
+    res.textContent=`Starter måling: ${fmt(startSpeedKmh)} → ${fmt(targetSpeedKmh)} km/t...`;
+
+    const startRes=await fetch('/api/v1/commissioning/ramptest/start',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({startSpeedKmh,targetSpeedKmh})
+    });
+    if(!startRes.ok)throw new Error('Kunne ikke starte ramptest på enheten');
+
+    setPhasePips('speedPhase',2);
+    let testResult=null;
+    while(!rampAborted){
+      await sleep(500);
+      if(rampAborted)return;
+      const statusRes=await fetch('/api/v1/commissioning/ramptest/status',{cache:'no-cache'});
+      if(!statusRes.ok)throw new Error('Kunne ikke lese teststatus');
+      const status=await statusRes.json();
+      if(status.complete){
+        testResult=status;
+        break;
+      }else if(status.active){
+        res.textContent=`Måler ramp... Tid: ${status.totalMs||0} ms, Dødtid: ${status.deadTimeMs||0} ms`;
+      }
+    }
+
+    if(rampAborted||!testResult)return;
+    if(testResult.timedOut){
+      res.textContent='Test tidsavbrudd (timeout på 30s nådd). Ingen data lagret.';
+      return;
+    }
+
+    const zoneSpanKmh=Math.abs(targetSpeedKmh-startSpeedKmh);
+    const netMs=Math.max(1,testResult.totalMs-testResult.deadTimeMs);
+    const rampMsPerKmh=netMs/zoneSpanKmh;
+
+    setPhasePips('speedPhase',3);
+    res.innerHTML=`Ventetid før bevegelse <b>${testResult.deadTimeMs} ms</b> · tid til stabil sluttverdi <b>${testResult.totalMs} ms</b> · rate <b>${rampMsPerKmh.toFixed(1)} ms/(km/t)</b>`;
+
+    const saveRes=await fetch('/api/v1/commissioning/ramptest/save',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({zone,direction,rampMsPerKmh,deadTimeMs:testResult.deadTimeMs})
+    });
+    if(saveRes.ok){
+      log(`Ramptest fullført: ${fmt(startSpeedKmh)} → ${fmt(targetSpeedKmh)} km/t (dødtid: ${testResult.deadTimeMs} ms, rate: ${rampMsPerKmh.toFixed(1)} ms/(km/t))`);
+      addCandidate('speedRampResult',String(testResult.totalMs));
+    }else{
+      const errData=await saveRes.json().catch(()=>({}));
+      res.innerHTML+=`<br><span class="bad">Lagring feilet: ${errData.error||saveRes.statusText}</span>`;
+    }
+  }catch(err){
+    if(!rampAborted){
+      res.innerHTML=`<span class="bad">Feil: ${err.message}</span>`;
+      log('Ramptest feil: '+err.message);
+    }
+  }finally{
+    rampTestInProgress=false;
+  }
+}
+
+async function runInclineRamp(){
+  if(rampTestInProgress)return;
+  const optVal=$('inclineRamp').value;
+  let targetPct=5.0,dir='up';
+  if(optVal==='0-5'){targetPct=5.0;dir='up';}
+  else if(optVal==='5-10'){targetPct=10.0;dir='up';}
+  else if(optVal==='10-15'){targetPct=15.0;dir='up';}
+  else if(optVal==='15-10'){targetPct=10.0;dir='down';}
+  else if(optVal==='10-5'){targetPct=5.0;dir='down';}
+  else if(optVal==='5-0'){targetPct=0.0;dir='down';}
+
+  const res=$('inclineRampResult');
+  rampAborted=false;
+  rampTestInProgress=true;
+  setPhasePips('inclinePhase',0);
+  res.textContent='Sjekker stigningsstatus...';
+
+  try{
+    const statusRes=await fetch('/api/v1/commissioning/incline/status',{cache:'no-cache'});
+    const st=await statusRes.json();
+
+    if(st.phase==='NotHomed'||st.pointCount===0){
+      res.textContent='Starter hjemming av stigning...';
+      await fetch('/api/v1/commissioning/incline/homing/start',{method:'POST'});
+      let homed=false;
+      for(let i=0;i<40;i++){
+        if(rampAborted)return;
+        await sleep(1000);
+        const checkRes=await fetch('/api/v1/commissioning/incline/status',{cache:'no-cache'});
+        const checkData=await checkRes.json();
+        res.textContent=`Hjemming pågår (${checkData.phase})... ${40-i}s`;
+        if(checkData.phase==='Holding'||checkData.phase==='Idle'||checkData.pointCount>0){
+          homed=true;
+          break;
+        }
+      }
+      if(!homed)throw new Error('Hjemming tidsavbrudd');
+    }
+
+    if(rampAborted)return;
+    setPhasePips('inclinePhase',1);
+    res.textContent=`Starter måling av ${fmt(targetPct)} % (${dir})...`;
+
+    const startRes=await fetch('/api/v1/commissioning/incline/measure/start',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({commandedPct:targetPct,direction:dir})
+    });
+    if(!startRes.ok)throw new Error('Kunne ikke starte stigningsmåling');
+
+    setPhasePips('inclinePhase',2);
+    let completed=false;
+    for(let i=0;i<60;i++){
+      if(rampAborted)return;
+      await sleep(1000);
+      const checkRes=await fetch('/api/v1/commissioning/incline/status',{cache:'no-cache'});
+      const checkData=await checkRes.json();
+      if(checkData.timedOut)throw new Error('Stigningsmåling tidsavbrudd');
+      if(checkData.phase==='Holding'||checkData.phase==='Idle'){
+        completed=true;
+        break;
+      }else{
+        res.textContent=`Måler punkt (${checkData.phase})... ${60-i}s`;
+      }
+    }
+
+    if(rampAborted)return;
+    if(!completed)throw new Error('Måling fullførte ikke innen 60s');
+
+    setPhasePips('inclinePhase',3);
+    res.innerHTML=`Måling fullført for <b>${fmt(targetPct)} %</b> (${dir}). Punkt registrert.`;
+    log(`Stigning målt: ${fmt(targetPct)} % (${dir})`);
+    addCandidate('inclineRampResult',String(targetPct));
+  }catch(err){
+    if(!rampAborted){
+      res.innerHTML=`<span class="bad">Feil: ${err.message}</span>`;
+      log('Stigningsmåling feil: '+err.message);
+    }
+  }finally{
+    rampTestInProgress=false;
+  }
+}
+
+function candidates(){return [...document.querySelectorAll('.candidate')].reduce((o,x)=>(o[x.dataset.key]=x.value,o),{})}
+function diff(){const c=candidates(),d=[];for(const[k,v]of Object.entries(c))if(String(active[k])!==String(v))d.push([k,active[k]??'--',v]);return d}
+function renderDiff(){const d=diff();$('changes').innerHTML=d.length?d.map(([k,a,v])=>'<div class="change"><span>'+escapeHtml(k)+'</span><b>'+escapeHtml(a)+' → '+escapeHtml(v)+'</b></div>').join(''):'<div class="change"><span>Ingen endringer å lagre</span><b></b></div>';$('dirtyTitle').textContent=d.length?(d.length===1?'1 endring er ikke lagret':d.length+' endringer er ikke lagret'):'Alt er lagret';$('dirtyText').textContent=d.length?'Trykk «Lagre på ESP32» når du er ferdig':'Ingen endringer venter';$('dirtyDot').style.background=d.length?'var(--amber)':'var(--green)';$('commitButton').disabled=!d.length;$('saveMessage').textContent='';$('storageStatus').textContent=d.length?'Endringer ikke lagret':'Oppsett lastet';$('storageStatus').className=d.length?'warn':'good'}
+function addCandidate(k,v){let x=document.querySelector('[data-key="'+k+'"]');if(!x){x=document.createElement('input');x.type='hidden';x.className='candidate';x.dataset.key=k;document.body.appendChild(x)}x.value=v;renderDiff()}
+document.querySelectorAll('.candidate').forEach(x=>x.addEventListener('input',()=>{renderDiff();renderMaintenance()}));
+
+function finiteNumberValue(id){const raw=$(id).value.trim().replace(',','.');if(raw===''||!/^\d+(?:\.\d+)?$/.test(raw))return null;const value=Number(raw);return Number.isFinite(value)?value:null}
+function validateStoredData(){const totalH=finiteNumberValue('editTotalHours'),totalKm=finiteNumberValue('editTotalKm'),serviceH=finiteNumberValue('lubricationHoursAtService');if(totalH===null||totalH<0||totalH>200000)return 'Total driftstid må være et tall fra 0 til 200 000 timer.';if(totalKm===null||totalKm<0||totalKm>200000)return 'Total kjørelengde må være et tall fra 0 til 200 000 km.';if(serviceH===null||serviceH<0||serviceH>200000)return 'Timeteller ved smøring må være et tall fra 0 til 200 000 timer.';if(serviceH>totalH)return 'Timeteller ved smøring kan ikke være høyere enn total driftstid.';return ''}
+async function saveChanges(){
+  const d=diff();
+  if(!d.length)return;
+  const validationError=validateStoredData();
+  if(validationError){
+    showSaveError(validationError);
+    showPage('maintenance');
+    return;
+  }
+  if(+$('lubricationHours').value<=0||+$('lubricationDays').value<=0){
+    showSaveError('Smøregrensene må være større enn null.');
+    showPage('maintenance');
+    return;
+  }
+  if(!$('lastLubricationDateInput').value||$('lubricationHoursAtService').value===''){
+    showSaveError('Registrer dato og timeteller ved siste smøring.');
+    showPage('maintenance');
+    return;
+  }
+  $('commitButton').disabled=true;
+  $('saveMessage').className='';
+  $('saveMessage').textContent='Lagrer...';
+
+  try {
+    const maintPayload = {
+      totalDistanceMeters: Math.round((finiteNumberValue('editTotalKm')||0)*1000),
+      totalTimeSeconds: Math.round((finiteNumberValue('editTotalHours')||0)*3600),
+      lastLubricationDate: $('lastLubricationDateInput').value,
+      lastLubricationTimeSeconds: Math.round((finiteNumberValue('lubricationHoursAtService')||0)*3600),
+      lubricationIntervalHours: Math.max(1, Math.round(+$('lubricationHours').value||50)),
+      lubricationIntervalDays: Math.max(1, Math.round(+$('lubricationDays').value||60))
+    };
+    const res = await fetch('/api/v1/maintenance', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(maintPayload)
+    });
+    if(!res.ok){
+      const err = await res.json().catch(()=>({error:'HTTP '+res.status}));
+      throw new Error(err.error || 'Lagring feilet');
+    }
+
+    Object.assign(active,candidates());
+    const savedNow=new Date();
+    $('lastSavedAt').textContent=savedNow.toLocaleDateString('nb-NO')+' kl. '+savedNow.toLocaleTimeString('nb-NO',{hour:'2-digit',minute:'2-digit'});
+    $('storageStatus').textContent='Lagret';
+    $('storageStatus').className='good';
+    $('saveMessage').className='good';
+    $('saveMessage').textContent='Lagret på ESP32';
+    renderDiff();
+    log('Vedlikeholdsdata er lagret på ESP32');
+  } catch(err) {
+    showSaveError(err.message);
+  } finally {
+    $('commitButton').disabled=false;
+  }
+}
+function showSaveError(message){$('storageStatus').textContent='Lagring feilet';$('storageStatus').className='bad';$('saveMessage').className='bad';$('saveMessage').textContent=message;log('Lagring feilet: '+message)}
+function discardChanges(){if(!diff().length)return;$('discardModal').classList.add('open')}
+function closeDiscardDialog(){$('discardModal').classList.remove('open')}
+function confirmDiscard(){$('discardModal').classList.remove('open');discardChangesNow()}
+function discardChangesNow(){document.querySelectorAll('.candidate').forEach(x=>{if(active[x.dataset.key]!==undefined)x.value=active[x.dataset.key]});document.querySelectorAll('input[type=hidden].candidate').forEach(x=>x.remove());renderDiff();}
+
+function renderUsers(){
+  if(!users||!users.length)return;
+  const u=users[selectedUserIndex]||users[0];
+  const workouts=Array.isArray(u.workouts)?u.workouts:[];
+  const aw=workouts.find(w=>w.id===u.selectedWorkoutId);
+  $('userList').innerHTML=users.map((x,i)=>'<div class="profile-item '+(i===selectedUserIndex?'active':'')+'" onclick="selectUser('+i+')"><b>'+escapeHtml(x.name||('Bruker '+x.id))+'</b><small>'+((x.workouts&&x.workouts.length)||0)+' økter · '+escapeHtml(x.preferredHrName||x.preferredHrMac||'Ikke valgt')+'</small></div>').join('');
+  $('userSummary').innerHTML='<div><span>Bruker-ID</span><b>'+u.id+'</b></div><div><span>HR-sensor</span><b>'+escapeHtml(u.preferredHrName||u.preferredHrMac||'Ikke valgt')+'</b></div><div><span>Hvile / drag</span><b>'+(u.hvileSpeedKmh||0).toFixed(1)+' / '+(u.dragSpeedKmh||0).toFixed(1)+'</b></div><div><span>Aktiv økt</span><b>'+escapeHtml(aw?aw.name:'Ingen')+'</b></div>';
+  $('profileSettings').innerHTML='<div><span>HR-adresse</span><b>'+escapeHtml(u.preferredHrMac||'Ikke lagret')+'</b></div><div><span>Fartshurtigtaster</span><b>'+(u.speedQuickKeys||[]).join(', ')+'</b></div><div><span>Stigningshurtigtaster</span><b>'+(u.inclineQuickKeys||[]).join(', ')+'</b></div><div><span>Antall økter</span><b>'+workouts.length+'</b></div>';
+  $('workoutList').innerHTML=workouts.map(w=>{
+    let durationMin=w.durationMin;
+    let stepCount=w.steps;
+    if(durationMin===undefined||stepCount===undefined){
+      let totalSec=0,totalSteps=0;
+      (w.segments||[]).forEach(seg=>{
+        const reps=seg.repetitions||1;
+        (seg.steps||[]).forEach(st=>{
+          totalSteps+=reps;
+          if(st.durationType==='seconds'||st.durationType==='TIME_SECONDS'||st.durationType===0){
+            totalSec+=(st.durationValue||0)*reps;
+          }else{
+            totalSec+=60*reps;
+          }
+        });
+      });
+      durationMin=Math.round(totalSec/60)||1;
+      stepCount=totalSteps;
+    }
+    return '<div class="workout"><b>'+escapeHtml(w.name)+'</b><span>'+durationMin+' min</span><span>'+stepCount+' steg</span></div>';
+  }).join('');
+}
+
+function selectUser(i){selectedUserIndex=i;renderUsers()}
+function escapeHtml(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+async function loadUsersFromSettings(){
+  try{
+    const res=await fetch('/api/settings');
+    if(res.ok){
+      const data=await res.json();
+      if(Array.isArray(data.users)&&data.users.length>0){
+        users.splice(0,users.length,...data.users);
+        renderUsers();
+      }
+    }
+  }catch(e){
+    console.warn('Kunne ikke hente brukere fra /api/settings:',e);
+  }
+}
+
+async function loadMaintenanceFromBackend(){
+  try{
+    const res=await fetch('/api/v1/maintenance');
+    if(res.ok){
+      const data=await res.json();
+      if(typeof data.totalTimeSeconds==='number'){
+        $('editTotalHours').value=(data.totalTimeSeconds/3600).toFixed(2);
+        active.totalTimeHours=$('editTotalHours').value;
+      }
+      if(typeof data.totalDistanceMeters==='number'){
+        $('editTotalKm').value=(data.totalDistanceMeters/1000).toFixed(0);
+        active.totalDistanceKm=$('editTotalKm').value;
+      }
+      if(data.lastLubricationDate){
+        $('lastLubricationDateInput').value=data.lastLubricationDate;
+        active.lastLubricationDate=data.lastLubricationDate;
+      }
+      if(typeof data.lastLubricationTimeSeconds==='number'&&data.lastLubricationTimeSeconds>0){
+        $('lubricationHoursAtService').value=(data.lastLubricationTimeSeconds/3600).toFixed(2);
+        active.lubricationHoursAtService=$('lubricationHoursAtService').value;
+      }
+      if(typeof data.lubricationIntervalHours==='number'&&data.lubricationIntervalHours>0){
+        $('lubricationHours').value=data.lubricationIntervalHours;
+        active.lubricationIntervalHours=String(data.lubricationIntervalHours);
+      }
+      if(typeof data.lubricationIntervalDays==='number'&&data.lubricationIntervalDays>0){
+        $('lubricationDays').value=data.lubricationIntervalDays;
+        active.lubricationIntervalDays=String(data.lubricationIntervalDays);
+      }
+      renderMaintenance();
+      renderDiff();
+    }
+  }catch(e){
+    console.warn('Kunne ikke hente vedlikeholdsdata fra ESP32:',e);
+  }
+}
+
+function envelope(scope){return{schema:'stridecontrol-backup',schemaVersion:1,scope,createdAt:new Date().toISOString(),machineConfiguration:{...active,...candidates()},maintenance:maintenance,users:scope==='machine'?[]:users}}
+function downloadJson(name,o){const u=URL.createObjectURL(new Blob([JSON.stringify(o,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u)}
+async function downloadFullBackup(){
+  try{
+    const res=await fetch('/api/v1/backup/export?scope=complete');
+    if(!res.ok)throw Error('Status '+res.status);
+    const doc=await res.json();
+    downloadJson('stridecontrol-complete-backup.json',doc);
+    log('Komplett backup lastet ned fra ESP32');
+  }catch(e){
+    alert('Feil ved nedlasting av backup: '+e.message);
+  }
+}
+async function downloadMachineBackup(){
+  try{
+    const res=await fetch('/api/v1/backup/export?scope=machine');
+    if(!res.ok)throw Error('Status '+res.status);
+    const doc=await res.json();
+    downloadJson('stridecontrol-machine-calibration.json',doc);
+    log('Maskinbackup lastet ned fra ESP32');
+  }catch(e){
+    alert('Feil ved nedlasting av maskinbackup: '+e.message);
+  }
+}
+function downloadUsersBackup(){downloadJson('stridecontrol-users-backup.json',envelope('users'))}
+function downloadSelectedUser(){downloadJson('stridecontrol-user-'+users[selectedUserIndex].id+'.json',{schema:'stridecontrol-user',schemaVersion:1,user:users[selectedUserIndex]})}
+function downloadDiagnostics(){downloadJson('stridecontrol-diagnostics.json',{schema:'stridecontrol-diagnostics',createdAt:new Date().toISOString(),live:{speed:$('speed').textContent,incline:$('incline').textContent,imu:$('imu').textContent,csafe:$('csafe').textContent},activeConfig:active,maintenance:maintenance})}
+function openRestoreDialog(){$('restoreModal').classList.add('open');$('restoreEmpty').style.display='block';$('restorePreview').style.display='none';$('stageImportBtn').disabled=true;pendingImport=null}
+function closeRestoreDialog(){$('restoreModal').classList.remove('open')}
+function handleBackupFile(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);if(o.schema!=='stridecontrol-backup'||o.schemaVersion!==1)throw Error('Ugyldig schema');pendingImport=o;$('restoreEmpty').style.display='none';$('restorePreview').style.display='block';$('restoreMeta').innerHTML='<b>'+escapeHtml(f.name)+'</b><p>Scope: '+escapeHtml(o.scope)+' · '+(o.users?o.users.length:0)+' brukere</p>';$('restoreChanges').textContent='Maskinoppsett og brukerdata gjøres klare for kontroll.';$('stageImportBtn').disabled=false}catch(err){alert('Ugyldig backup: '+err.message)}};r.readAsText(f);e.target.value=''}
+async function stageImport(){
+  if(!pendingImport)return;
+  const btn=$('stageImportBtn');
+  btn.disabled=true;
+  btn.textContent='Gjenoppretter på ESP32...';
+
+  try{
+    const res=await fetch('/api/v1/backup/restore',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(pendingImport)
+    });
+    const data=await res.json();
+    if(!res.ok){
+      throw Error(data.error||'Status '+res.status);
+    }
+    closeRestoreDialog();
+    log('Backup er gjenopprettet og verifisert på ESP32!');
+    alert('Backup ble gjenopprettet på ESP32!');
+    await loadMaintenanceFromBackend();
+    await loadUsersFromSettings();
+    await loadSpeedCalibration();
+  }catch(err){
+    alert('Gjenoppretting feilet: '+err.message);
+    log('Gjenoppretting feilet: '+err.message);
+  }finally{
+    btn.disabled=false;
+    btn.textContent='Kontroller endringene';
+  }
+}
+async function rollbackBackup(){
+  if(!confirm('Vil du tilbakestille innstillinger til forrige snapshot (LKG)?'))return;
+  try{
+    const res=await fetch('/api/v1/backup/rollback',{method:'POST'});
+    const data=await res.json();
+    if(!res.ok)throw Error(data.error||'Status '+res.status);
+    log('Innstillinger rullet tilbake til forrige snapshot!');
+    alert('Oppsettet ble tilbakestilt!');
+    await loadMaintenanceFromBackend();
+    await loadUsersFromSettings();
+    await loadSpeedCalibration();
+  }catch(e){
+    alert('Tilbakestilling feilet: '+e.message);
+    log('Tilbakestilling feilet: '+e.message);
+  }
+}
+function openUserJson(){const u=users[selectedUserIndex];$('jsonTitle').textContent='Vis '+u.name;$('jsonEditor').value=JSON.stringify(u,null,2);$('jsonValidation').className='validation';$('jsonValidation').textContent='JSON er skrivebeskyttet i denne fasen.';$('applyJsonBtn').disabled=true;validatedUserJson=null;$('jsonModal').classList.add('open')}
+function closeJsonModal(){$('jsonModal').classList.remove('open')}
+function validateUserJson(){try{const u=JSON.parse($('jsonEditor').value);if(!Number.isInteger(u.id)||!u.name||!Array.isArray(u.workouts))throw Error('Profilstrukturen er ugyldig');validatedUserJson=u;$('jsonValidation').className='validation ok';$('jsonValidation').textContent='JSON er gyldig (skrivebeskyttet).';}catch(e){validatedUserJson=null;$('jsonValidation').className='validation bad';$('jsonValidation').textContent='Feil: '+e.message;}}
+function applyUserJson(){closeJsonModal()}
+
+$('lastSavedAt').textContent=new Date().toLocaleDateString('nb-NO')+' kl. 08:00';
+buildKeys();
+renderUsers();
+renderDiff();
+updateLubricationFields();
+
+detectBoard();
+loadMaintenanceFromBackend();
+loadUsersFromSettings();
+loadSpeedCalibration();
+fetchTelemetry();
+setInterval(()=>{if(!rampTestInProgress)fetchTelemetry();},1000);
+</script>
+</body>
+</html>

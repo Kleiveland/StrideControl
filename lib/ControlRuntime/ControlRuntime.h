@@ -103,6 +103,10 @@ public:
     InclineCommissioningPhase getInclineCommissioningPhase() const override { return inclineTracker_.phase(); }
     uint8_t getInclineCommissioningPointCount() const override { return inclineTracker_.pointCount(); }
     bool didInclineCommissioningTimeOut() const override { return inclineTracker_.timedOut(); }
+    void onSpeedConfigUpdated(const SpeedConfig& config) override { calibration_.setConfiguration(config); }
+    SpeedCalibrationResult calculateSpeedCommand(float physicalSpeedKmh) const override {
+        return calibration_.calculateCommand(physicalSpeedKmh);
+    }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
     bool isEmergencyStopActive() const { return console_.isEmergencyStopActive(); }

@@ -31,6 +31,7 @@ struct SpeedConfig {
     bool commandMapValid = false;
     float maxAchievableSpeedKmh = 25.0f;
     bool maxAchievableSpeedVerified = false;
+    float sensorCalibrationFactor = 1.0f;
 };
 
 /**
@@ -39,6 +40,10 @@ struct SpeedConfig {
 struct MaintenanceConfig {
     uint64_t totalDistanceMeters = 0;
     uint64_t totalTimeSeconds = 0;
+    char lastLubricationDate[16] = "";
+    uint64_t lastLubricationTimeSeconds = 0;
+    uint32_t lubricationIntervalHours = 50;
+    uint32_t lubricationIntervalDays = 60;
 };
 
 /**

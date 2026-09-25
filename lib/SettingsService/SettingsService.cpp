@@ -180,6 +180,7 @@ SpeedConfig SettingsService::getSpeedConfig() {
             cfg.maxAchievableSpeedKmh = prefs.getFloat("spd_max", 25.0f);
             cfg.maxAchievableSpeedVerified = prefs.getBool("spd_max_v", false);
             cfg.commandMapValid = prefs.getBool("spd_map_v", false);
+            cfg.sensorCalibrationFactor = prefs.getFloat("spd_cal_f", 1.0f);
             cfg.pointCount = prefs.getUChar("spd_pts", 0);
             if (cfg.pointCount > kMaxSpeedCalibrationPoints) {
                 cfg.pointCount = kMaxSpeedCalibrationPoints;
@@ -199,6 +200,12 @@ MaintenanceConfig SettingsService::getMaintenanceConfig() {
         if (prefs.begin(kNvsNamespace, true)) {
             cfg.totalDistanceMeters = prefs.getULong64("maint_dist", 0);
             cfg.totalTimeSeconds = prefs.getULong64("maint_time", 0);
+            String dateStr = prefs.getString("maint_lub_d", "");
+            strncpy(cfg.lastLubricationDate, dateStr.c_str(), sizeof(cfg.lastLubricationDate) - 1);
+            cfg.lastLubricationDate[sizeof(cfg.lastLubricationDate) - 1] = '\0';
+            cfg.lastLubricationTimeSeconds = prefs.getULong64("maint_lub_s", 0);
+            cfg.lubricationIntervalHours = prefs.getUInt("maint_lub_ih", 50);
+            cfg.lubricationIntervalDays = prefs.getUInt("maint_lub_id", 60);
             prefs.end();
         }
         xSemaphoreGive(mutex_);
@@ -236,10 +243,25 @@ bool SettingsService::saveSpeedConfig(const SpeedConfig& config) {
             prefs.putFloat("spd_max", config.maxAchievableSpeedKmh);
             prefs.putBool("spd_max_v", config.maxAchievableSpeedVerified);
             prefs.putBool("spd_map_v", config.commandMapValid);
+            prefs.putFloat("spd_cal_f", config.sensorCalibrationFactor);
             prefs.putUChar("spd_pts", config.pointCount);
             if (config.pointCount > 0) {
                 prefs.putBytes("spd_data", config.points.data(), config.pointCount * sizeof(SpeedCalibrationPoint));
             }
+            prefs.end();
+            ok = true;
+        }
+        xSemaphoreGive(mutex_);
+    }
+    return ok;
+}
+
+bool SettingsService::saveSpeedSensorCalibrationFactor(float factor) {
+    bool ok = false;
+    if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        Preferences prefs;
+        if (prefs.begin(kNvsNamespace, false)) {
+            prefs.putFloat("spd_cal_f", factor);
             prefs.end();
             ok = true;
         }
@@ -255,6 +277,10 @@ bool SettingsService::saveMaintenanceConfig(const MaintenanceConfig& config) {
         if (prefs.begin(kNvsNamespace, false)) {
             prefs.putULong64("maint_dist", config.totalDistanceMeters);
             prefs.putULong64("maint_time", config.totalTimeSeconds);
+            prefs.putString("maint_lub_d", config.lastLubricationDate);
+            prefs.putULong64("maint_lub_s", config.lastLubricationTimeSeconds);
+            prefs.putUInt("maint_lub_ih", config.lubricationIntervalHours);
+            prefs.putUInt("maint_lub_id", config.lubricationIntervalDays);
             prefs.end();
             ok = true;
         }
@@ -640,6 +666,167 @@ bool SettingsService::validateSystemSettings(const SystemSettings& s, char* errB
                 return false;
             }
         }
+    }
+
+    return true;
+}
+
+bool SettingsService::validateInclineConfig(const InclineConfig& config, char* errBuf, size_t errBufLen) {
+    auto setErr = [&](const char* msg) {
+        if (errBuf && errBufLen > 0) {
+            strncpy(errBuf, msg, errBufLen - 1);
+            errBuf[errBufLen - 1] = '\0';
+        }
+    };
+
+    if (config.pointCount > kMaxInclineCalibrationPoints) {
+        setErr("Point count exceeds kMaxInclineCalibrationPoints (10)");
+        return false;
+    }
+    if (!std::isfinite(config.maxAchievableInclinePct) ||
+        config.maxAchievableInclinePct <= 0.0f ||
+        config.maxAchievableInclinePct > 15.0f) {
+        setErr("maxAchievableInclinePct must be finite and in (0.0, 15.0]");
+        return false;
+    }
+    if (config.commandMapValid && config.pointCount < 2) {
+        setErr("commandMapValid requires at least 2 points");
+        return false;
+    }
+    if (config.maxAchievableInclineVerified && !config.commandMapValid) {
+        setErr("maxAchievableInclineVerified requires valid command map");
+        return false;
+    }
+
+    for (size_t i = 0; i < config.pointCount; ++i) {
+        const auto& pt = config.points[i];
+        if (!std::isfinite(pt.measuredActualInclinePct) || !std::isfinite(pt.treadmillCommandPct)) {
+            setErr("Calibration point values must be finite numbers");
+            return false;
+        }
+        if (pt.measuredActualInclinePct < 0.0f || pt.measuredActualInclinePct > 15.0f) {
+            setErr("measuredActualInclinePct out of range [0.0, 15.0]");
+            return false;
+        }
+        if (pt.treadmillCommandPct < 0.0f || pt.treadmillCommandPct > 15.0f) {
+            setErr("treadmillCommandPct out of range [0.0, 15.0]");
+            return false;
+        }
+        if (i > 0) {
+            const auto& prev = config.points[i - 1];
+            if (pt.measuredActualInclinePct <= prev.measuredActualInclinePct) {
+                setErr("Points must be strictly monotonically increasing in measured incline");
+                return false;
+            }
+            if (pt.treadmillCommandPct <= prev.treadmillCommandPct) {
+                setErr("Points must be strictly monotonically increasing in command incline");
+                return false;
+            }
+        }
+    }
+
+    if (config.maxAchievableInclineVerified && config.commandMapValid && config.pointCount >= 2) {
+        const float highestMeasured = config.points[config.pointCount - 1].measuredActualInclinePct;
+        if (config.maxAchievableInclinePct > highestMeasured) {
+            setErr("Verified maxAchievableInclinePct exceeds highest calibrated measured incline");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool SettingsService::validateMaintenanceConfig(const MaintenanceConfig& c, char* errBuf, size_t errBufLen) {
+    auto setErr = [&](const char* msg) {
+        if (errBuf && errBufLen > 0) {
+            strncpy(errBuf, msg, errBufLen - 1);
+            errBuf[errBufLen - 1] = '\0';
+        }
+    };
+
+    if (c.totalDistanceMeters > 200000000ULL) { // 200,000 km
+        setErr("totalDistanceMeters exceeds maximum 200,000 km limit");
+        return false;
+    }
+    if (c.totalTimeSeconds > 720000000ULL) { // 200,000 hours
+        setErr("totalTimeSeconds exceeds maximum 200,000 hours limit");
+        return false;
+    }
+    if (c.lubricationIntervalHours == 0 || c.lubricationIntervalHours > 10000) {
+        setErr("lubricationIntervalHours must be between 1 and 10000 hours");
+        return false;
+    }
+    if (c.lubricationIntervalDays == 0 || c.lubricationIntervalDays > 3650) {
+        setErr("lubricationIntervalDays must be between 1 and 3650 days");
+        return false;
+    }
+    if (c.lastLubricationDate[0] != '\0') {
+        if (strlen(c.lastLubricationDate) > 15) {
+            setErr("lastLubricationDate string too long (max 15 chars)");
+            return false;
+        }
+        if (c.lastLubricationTimeSeconds > c.totalTimeSeconds) {
+            setErr("lastLubricationTimeSeconds cannot exceed totalTimeSeconds");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool SettingsService::validateRampCalibrationConfig(const RampCalibrationConfig& c, char* errBuf, size_t errBufLen) {
+    auto setErr = [&](const char* msg) {
+        if (errBuf && errBufLen > 0) {
+            strncpy(errBuf, msg, errBufLen - 1);
+            errBuf[errBufLen - 1] = '\0';
+        }
+    };
+
+    if (c.deadTimeMs > 5000) {
+        setErr("deadTimeMs exceeds 5000 ms limit");
+        return false;
+    }
+    for (int i = 0; i < 3; ++i) {
+        if (!std::isfinite(c.accelMsPerKmh[i]) || c.accelMsPerKmh[i] < 50.0f || c.accelMsPerKmh[i] > 20000.0f) {
+            setErr("accelMsPerKmh out of range (50-20000 ms/(km/h))");
+            return false;
+        }
+        if (!std::isfinite(c.decelMsPerKmh[i]) || c.decelMsPerKmh[i] < 50.0f || c.decelMsPerKmh[i] > 20000.0f) {
+            setErr("decelMsPerKmh out of range (50-20000 ms/(km/h))");
+            return false;
+        }
+    }
+    if (!std::isfinite(c.loadMultiplier) || c.loadMultiplier < 0.5f || c.loadMultiplier > 3.0f) {
+        setErr("loadMultiplier out of range (0.5-3.0)");
+        return false;
+    }
+    if (static_cast<uint8_t>(c.source) > 3) {
+        setErr("Invalid ramp calibration source");
+        return false;
+    }
+
+    return true;
+}
+
+bool SettingsService::validateBleConfig(const BleConfig& c, char* errBuf, size_t errBufLen) {
+    auto setErr = [&](const char* msg) {
+        if (errBuf && errBufLen > 0) {
+            strncpy(errBuf, msg, errBufLen - 1);
+            errBuf[errBufLen - 1] = '\0';
+        }
+    };
+
+    if (strlen(c.advertisedDeviceName) == 0 || strlen(c.advertisedDeviceName) > 31) {
+        setErr("advertisedDeviceName must be 1 to 31 characters");
+        return false;
+    }
+    if (c.ftmsNotifyRateHz < 1 || c.ftmsNotifyRateHz > 10) {
+        setErr("ftmsNotifyRateHz must be between 1 and 10 Hz");
+        return false;
+    }
+    if (c.rscNotifyRateHz < 1 || c.rscNotifyRateHz > 10) {
+        setErr("rscNotifyRateHz must be between 1 and 10 Hz");
+        return false;
     }
 
     return true;

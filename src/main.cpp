@@ -282,6 +282,7 @@ void setup() {
 #if defined(STRIDECONTROL_TESTBENCH)
     s_webServerManager.attachSimulatorRuntime(&s_testbenchRuntime);
     s_webServerManager.attachHeartRateClient(&s_testbenchRuntime.getHeartRateClient());
+    s_webServerManager.attachSpeedSensor(&s_testbenchRuntime.getSpeedSensor());
 
     // 5. Start Dedicated Core 0 Testbench Control Task
     const bool taskOk = s_testbenchRuntime.startControlTask();
@@ -292,9 +293,13 @@ void setup() {
     s_console.begin();
 
     // Configure SpeedSensor per DESIGN_GUIDE.md §4.3 (integrated GPIO allocation): GPIO 3
+    const stridecontrol::SpeedConfig spdCfg = stridecontrol::SettingsService::instance().getSpeedConfig();
+    s_speedCalibration.setConfiguration(spdCfg);
+
     stridecontrol::SpeedSensorConfig speedConfig;
     speedConfig.inputPin = GPIO_NUM_3;
     speedConfig.useInternalPullup = true;
+    speedConfig.calibrationFactor = spdCfg.sensorCalibrationFactor;
     const bool speedOk = s_speedSensor.begin(speedConfig);
 
     // Configure InclineSensor per DESIGN_GUIDE.md §4.3: GPIO 14
@@ -344,6 +349,7 @@ void setup() {
     s_webServerManager.attachCommandStager(&s_systemManager.getControlRuntime());
     s_webServerManager.attachSystemManager(&s_systemManager);
     s_webServerManager.attachHeartRateClient(&s_heartRateClient);
+    s_webServerManager.attachSpeedSensor(&s_speedSensor);
 
     Serial.println("[System] Production hardware profile active.");
 #endif

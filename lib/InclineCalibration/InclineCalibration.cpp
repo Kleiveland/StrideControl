@@ -1,6 +1,7 @@
-﻿#include "InclineCalibration.h"
+#include "InclineCalibration.h"
 #include <cmath>
 #include <algorithm>
+#include <cstring>
 
 namespace stridecontrol {
 
@@ -99,39 +100,55 @@ uint8_t InclineCalibration::getPointCount() const {
     return config_.pointCount;
 }
 
-bool InclineCalibration::validateCandidate(const InclineConfig& config) const {
+bool InclineCalibration::validateCandidate(const InclineConfig& config, char* errBuf, size_t errBufLen) {
+    auto setErr = [&](const char* msg) {
+        if (errBuf && errBufLen > 0) {
+            strncpy(errBuf, msg, errBufLen - 1);
+            errBuf[errBufLen - 1] = '\0';
+        }
+    };
+
     if (config.pointCount > kMaxInclineCalibrationPoints) {
+        setErr("Point count exceeds kMaxInclineCalibrationPoints (10)");
         return false;
     }
     if (!std::isfinite(config.maxAchievableInclinePct) ||
         config.maxAchievableInclinePct <= 0.0f ||
         config.maxAchievableInclinePct > 15.0f) {
+        setErr("maxAchievableInclinePct must be finite and in (0.0, 15.0]");
         return false;
     }
     if (config.commandMapValid && config.pointCount < 2) {
+        setErr("commandMapValid requires at least 2 points");
         return false;
     }
     if (config.maxAchievableInclineVerified && !config.commandMapValid) {
+        setErr("maxAchievableInclineVerified requires valid command map");
         return false;
     }
 
     for (size_t i = 0; i < config.pointCount; ++i) {
         const auto& pt = config.points[i];
         if (!std::isfinite(pt.measuredActualInclinePct) || !std::isfinite(pt.treadmillCommandPct)) {
+            setErr("Calibration point values must be finite numbers");
             return false;
         }
         if (pt.measuredActualInclinePct < 0.0f || pt.measuredActualInclinePct > 15.0f) {
+            setErr("measuredActualInclinePct out of range [0.0, 15.0]");
             return false;
         }
         if (pt.treadmillCommandPct < 0.0f || pt.treadmillCommandPct > 15.0f) {
+            setErr("treadmillCommandPct out of range [0.0, 15.0]");
             return false;
         }
         if (i > 0) {
             const auto& prev = config.points[i - 1];
             if (pt.measuredActualInclinePct <= prev.measuredActualInclinePct) {
+                setErr("Points must be strictly monotonically increasing in measured incline");
                 return false;
             }
             if (pt.treadmillCommandPct <= prev.treadmillCommandPct) {
+                setErr("Points must be strictly monotonically increasing in command incline");
                 return false;
             }
         }
@@ -140,6 +157,7 @@ bool InclineCalibration::validateCandidate(const InclineConfig& config) const {
     if (config.maxAchievableInclineVerified && config.commandMapValid && config.pointCount >= 2) {
         const float highestMeasured = config.points[config.pointCount - 1].measuredActualInclinePct;
         if (config.maxAchievableInclinePct > highestMeasured) {
+            setErr("Verified maxAchievableInclinePct exceeds highest calibrated measured incline");
             return false;
         }
     }

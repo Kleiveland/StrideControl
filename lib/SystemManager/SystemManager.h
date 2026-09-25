@@ -47,6 +47,10 @@ public:
 
     float getMaxAchievableSpeedKmh() const;
     bool isMaxAchievableSpeedVerified() const;
+    void onSpeedConfigUpdated(const SpeedConfig& config) {
+        calibration_.setConfiguration(config);
+        controlRuntime_.onSpeedConfigUpdated(config);
+    }
 
     static const char* version();
 

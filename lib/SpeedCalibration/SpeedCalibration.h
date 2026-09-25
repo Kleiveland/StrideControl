@@ -35,6 +35,10 @@ public:
     // Direct float convenience wrapper (returns calculateCommand().treadmillCommandKmh)
     float calculateCommandSpeedKmh(float desiredPhysicalSpeedKmh) const;
 
+    // Configuration & validation
+    const SpeedConfig& getConfiguration() const { return config_; }
+    static bool validateCandidate(const SpeedConfig& config, char* errBuf = nullptr, size_t errBufLen = 0);
+
     // Metadata & queries
     float getMaxAchievableSpeedKmh() const;
     bool isCommandMapValid() const;
@@ -44,7 +48,6 @@ public:
     static const char* version();
 
 private:
-    bool validateCandidate(const SpeedConfig& config) const;
     static float clamp(float v, float minVal, float maxVal);
 
     SpeedConfig config_{};

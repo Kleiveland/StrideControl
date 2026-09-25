@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cstddef>
 #include "../InclineCommissioningTracker/InclineCommissioningTracker.h"
+#include "../SpeedCalibration/SpeedCalibrationTypes.h"
+#include "../SettingsService/SettingsServiceTypes.h"
 
 namespace stridecontrol {
 
@@ -83,6 +85,10 @@ public:
     virtual InclineCommissioningPhase getInclineCommissioningPhase() const { return InclineCommissioningPhase::Idle; }
     virtual uint8_t getInclineCommissioningPointCount() const { return 0; }
     virtual bool didInclineCommissioningTimeOut() const { return false; }
+    virtual void onSpeedConfigUpdated(const SpeedConfig& config) {}
+    virtual SpeedCalibrationResult calculateSpeedCommand(float physicalSpeedKmh) const {
+        return SpeedCalibrationResult(physicalSpeedKmh, physicalSpeedKmh, SpeedCalibrationResultStatus::IdentityFallback);
+    }
 };
 
 } // namespace stridecontrol

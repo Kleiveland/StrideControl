@@ -118,7 +118,7 @@ struct SpeedSensor::Impl {
         result.state.signalPresent = true;
         result.state.measurementValid = true;
         result.state.frequencyHz = 1000000.0f / static_cast<float>(snap.lastPulseIntervalUs);
-        result.state.speedKmh = result.state.frequencyHz * config.kmhPerHz;
+        result.state.speedKmh = result.state.frequencyHz * config.kmhPerHz * config.calibrationFactor;
         result.state.status = SpeedSensorStatus::Measuring;
       }
     }
@@ -155,6 +155,9 @@ bool SpeedSensor::begin(const SpeedSensorConfig& config, SpeedObservationMode mo
   if (config.pulseLockoutUs < config.glitchRejectUs) return false;
   if (config.pulseTimeoutMs == 0 || (config.pulseTimeoutMs * 1000UL) <= config.pulseLockoutUs) return false;
   if (!std::isfinite(config.kmhPerHz) || config.kmhPerHz < 0.1f || config.kmhPerHz > 10.0f) {
+    return false;
+  }
+  if (!std::isfinite(config.calibrationFactor) || config.calibrationFactor < 0.1f || config.calibrationFactor > 10.0f) {
     return false;
   }
 
@@ -291,6 +294,22 @@ SpeedObservationMode SpeedSensor::getObservationMode() const {
 SpeedSensorConfig SpeedSensor::configSnapshot() const {
   if (!impl_) return SpeedSensorConfig{};
   return impl_->config;
+}
+
+void SpeedSensor::setCalibrationFactor(float factor) {
+  if (!impl_) return;
+  if (!std::isfinite(factor) || factor < 0.1f || factor > 10.0f) return;
+  portENTER_CRITICAL(&impl_->stateMux);
+  impl_->config.calibrationFactor = factor;
+  portEXIT_CRITICAL(&impl_->stateMux);
+}
+
+float SpeedSensor::getCalibrationFactor() const {
+  if (!impl_) return 1.0f;
+  portENTER_CRITICAL(&impl_->stateMux);
+  const float f = impl_->config.calibrationFactor;
+  portEXIT_CRITICAL(&impl_->stateMux);
+  return f;
 }
 
 const char* SpeedSensor::version() {

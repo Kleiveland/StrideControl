@@ -10,15 +10,17 @@ struct SpeedSensorConfig {
   uint32_t pulseLockoutUs = 2000;
   uint32_t pulseTimeoutMs = 2000;
   float kmhPerHz = 1.1148f;
+  float calibrationFactor = 1.0f;
 
   SpeedSensorConfig() = default;
-  SpeedSensorConfig(gpio_num_t pin, bool pullup, uint32_t glitch, uint32_t lockout, uint32_t timeout, float factor)
+  SpeedSensorConfig(gpio_num_t pin, bool pullup, uint32_t glitch, uint32_t lockout, uint32_t timeout, float factor, float calFactor = 1.0f)
       : inputPin(pin),
         useInternalPullup(pullup),
         glitchRejectUs(glitch),
         pulseLockoutUs(lockout),
         pulseTimeoutMs(timeout),
-        kmhPerHz(factor) {}
+        kmhPerHz(factor),
+        calibrationFactor(calFactor) {}
 };
 
 }  // namespace stridecontrol

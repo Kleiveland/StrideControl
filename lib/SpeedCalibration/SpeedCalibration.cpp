@@ -99,39 +99,54 @@ uint8_t SpeedCalibration::getPointCount() const {
     return config_.pointCount;
 }
 
-bool SpeedCalibration::validateCandidate(const SpeedConfig& config) const {
+static void setValidationError(char* errBuf, size_t errBufLen, const char* msg) {
+    if (errBuf != nullptr && errBufLen > 0) {
+        snprintf(errBuf, errBufLen, "%s", msg);
+    }
+}
+
+bool SpeedCalibration::validateCandidate(const SpeedConfig& config, char* errBuf, size_t errBufLen) {
     if (config.pointCount > kMaxSpeedCalibrationPoints) {
+        setValidationError(errBuf, errBufLen, "Point count exceeds maximum of 10");
         return false;
     }
     if (!std::isfinite(config.maxAchievableSpeedKmh) ||
         config.maxAchievableSpeedKmh <= 0.0f ||
         config.maxAchievableSpeedKmh > 25.0f) {
+        setValidationError(errBuf, errBufLen, "Max achievable speed must be between 0.8 and 25.0 km/h");
         return false;
     }
     if (config.commandMapValid && config.pointCount < 2) {
+        setValidationError(errBuf, errBufLen, "At least 2 points required for a valid command map");
         return false;
     }
     if (config.maxAchievableSpeedVerified && !config.commandMapValid) {
+        setValidationError(errBuf, errBufLen, "Verified max speed requires an active command map");
         return false;
     }
 
     for (size_t i = 0; i < config.pointCount; ++i) {
         const auto& pt = config.points[i];
         if (!std::isfinite(pt.measuredPhysicalSpeedKmh) || !std::isfinite(pt.treadmillCommandKmh)) {
+            setValidationError(errBuf, errBufLen, "Point contains non-finite speed values");
             return false;
         }
         if (pt.measuredPhysicalSpeedKmh <= 0.0f) {
+            setValidationError(errBuf, errBufLen, "Measured physical speed must be positive");
             return false;
         }
         if (pt.treadmillCommandKmh < 0.8f || pt.treadmillCommandKmh > 25.0f) {
+            setValidationError(errBuf, errBufLen, "Treadmill command must be between 0.8 and 25.0 km/h");
             return false;
         }
         if (i > 0) {
             const auto& prev = config.points[i - 1];
             if (pt.measuredPhysicalSpeedKmh <= prev.measuredPhysicalSpeedKmh) {
+                setValidationError(errBuf, errBufLen, "Measured speed points must be in strictly ascending order");
                 return false;
             }
             if (pt.treadmillCommandKmh <= prev.treadmillCommandKmh) {
+                setValidationError(errBuf, errBufLen, "Treadmill command points must be in strictly ascending order");
                 return false;
             }
         }
@@ -140,6 +155,7 @@ bool SpeedCalibration::validateCandidate(const SpeedConfig& config) const {
     if (config.maxAchievableSpeedVerified && config.commandMapValid && config.pointCount >= 2) {
         const float highestMeasured = config.points[config.pointCount - 1].measuredPhysicalSpeedKmh;
         if (config.maxAchievableSpeedKmh > highestMeasured) {
+            setValidationError(errBuf, errBufLen, "Verified max speed cannot exceed highest measured point in table");
             return false;
         }
     }

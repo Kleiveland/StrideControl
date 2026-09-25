@@ -31,6 +31,8 @@ class SpeedSensor {
   SpeedObservationMode getObservationMode() const;
 
   SpeedSensorConfig configSnapshot() const;
+  void setCalibrationFactor(float factor);
+  float getCalibrationFactor() const;
   static const char* version();
 
  private:

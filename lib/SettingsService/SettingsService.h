@@ -43,6 +43,7 @@ public:
     RampCalibrationConfig getRampCalibrationConfig();
     bool saveInclineConfig(const InclineConfig& config);
     bool saveSpeedConfig(const SpeedConfig& config);
+    bool saveSpeedSensorCalibrationFactor(float factor);
     bool saveMaintenanceConfig(const MaintenanceConfig& config);
     bool saveRampCalibrationConfig(const RampCalibrationConfig& config);
     bool getBleStackEnabled();
@@ -59,6 +60,10 @@ public:
     bool commitUsersJson();
 
     static bool validateSystemSettings(const SystemSettings& candidate, char* errBuf = nullptr, size_t errBufLen = 0);
+    static bool validateInclineConfig(const InclineConfig& config, char* errBuf = nullptr, size_t errBufLen = 0);
+    static bool validateMaintenanceConfig(const MaintenanceConfig& config, char* errBuf = nullptr, size_t errBufLen = 0);
+    static bool validateRampCalibrationConfig(const RampCalibrationConfig& config, char* errBuf = nullptr, size_t errBufLen = 0);
+    static bool validateBleConfig(const BleConfig& config, char* errBuf = nullptr, size_t errBufLen = 0);
     static void populateFactoryDefaults(SystemSettings& target);
 
     static void serializeSettingsJson(const SystemSettings& settings, Print& output);

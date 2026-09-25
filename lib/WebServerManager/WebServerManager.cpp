@@ -10,6 +10,8 @@
 #include "../CsafeInterface/CsafeTypes.h"
 #include "SystemManager.h"
 #include "../HeartRateClient/HeartRateClient.h"
+#include "SpeedSensor.h"
+#include "SpeedCalibration.h"
 
 #if defined(STRIDECONTROL_TESTBENCH)
 #include "TestbenchControlRuntime.h"
@@ -158,10 +160,17 @@ void WebServerManager::attachHeartRateClient(HeartRateClient* hrClient) {
     hrClient_ = hrClient;
 }
 
+void WebServerManager::attachSpeedSensor(SpeedSensor* speedSensor) {
+    speedSensor_ = speedSensor;
+}
+
 #if defined(STRIDECONTROL_TESTBENCH)
 void WebServerManager::attachSimulatorRuntime(TestbenchControlRuntime* simRuntime) {
     simRuntime_ = simRuntime;
     commandStager_ = simRuntime;
+    if (simRuntime != nullptr && speedSensor_ == nullptr) {
+        speedSensor_ = &simRuntime->getSpeedSensor();
+    }
 }
 #endif
 
@@ -448,6 +457,20 @@ void WebServerManager::registerRoutes() {
 
     // Static font assets handler (1 year cache)
     server_.serveStatic("/fonts", LittleFS, "/fonts").setCacheControl("public, max-age=31536000, immutable");
+
+    server_.on("/service.html", HTTP_GET, [](AsyncWebServerRequest* request) {
+        if (LittleFS.exists("/service.html")) {
+            AsyncWebServerResponse* response = request->beginResponse(LittleFS, "/service.html", "text/html");
+            response->addHeader("Cache-Control", "no-cache");
+            request->send(response);
+        } else {
+            request->send(404, "text/plain", "StrideControl: /service.html not found on LittleFS filesystem.");
+        }
+    });
+
+    server_.on("/commissioning.html", HTTP_GET, [](AsyncWebServerRequest* request) {
+        request->redirect("/service.html");
+    });
 
     // Static asset handler from LittleFS root
     server_.serveStatic("/", LittleFS, "/").setCacheControl("public, max-age=3600");
@@ -1138,15 +1161,6 @@ void WebServerManager::registerRoutes() {
     server_.on("/api/control/incline", HTTP_POST, inclineHandler, nullptr, commandBodyBuffer);
     server_.on("/api/v1/control/incline", HTTP_POST, inclineHandler, nullptr, commandBodyBuffer);
 
-    server_.on("/commissioning.html", HTTP_GET, [](AsyncWebServerRequest* request) {
-        if (LittleFS.exists("/commissioning.html")) {
-            AsyncWebServerResponse* response = request->beginResponse(LittleFS, "/commissioning.html", "text/html");
-            response->addHeader("Cache-Control", "no-cache");
-            request->send(response);
-        } else {
-            request->send(404, "text/plain", "StrideControl: /commissioning.html not found on LittleFS filesystem.");
-        }
-    });
 
     server_.on("/api/v1/diagnostics/log", HTTP_GET, [](AsyncWebServerRequest* request) {
         AsyncResponseStream* stream = request->beginResponseStream("text/plain");
@@ -1187,6 +1201,208 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/capabilities/speed", HTTP_GET, capabilitiesSpeedHandler);
     server_.on("/api/v1/capabilities/speed", HTTP_GET, capabilitiesSpeedHandler);
+
+    // GET /api/v1/calibration/speed: Return SpeedConfig (sensor factor, max speed, command points)
+    auto speedCalibrationGetHandler = [this](AsyncWebServerRequest* request) {
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        stream->addHeader("Access-Control-Allow-Origin", "*");
+        stream->addHeader("Cache-Control", "no-cache");
+        SpeedConfig cfg = SettingsService::instance().getSpeedConfig();
+        float sensorFactor = cfg.sensorCalibrationFactor;
+        if (speedSensor_ != nullptr) {
+            sensorFactor = speedSensor_->getCalibrationFactor();
+        }
+        JsonDocument doc;
+        doc["sensorCalibrationFactor"] = sensorFactor;
+        doc["maxAchievableSpeedKmh"] = cfg.maxAchievableSpeedKmh;
+        doc["maxAchievableSpeedVerified"] = cfg.maxAchievableSpeedVerified;
+        doc["commandMapValid"] = cfg.commandMapValid;
+        doc["pointCount"] = cfg.pointCount;
+        JsonArray pts = doc["points"].to<JsonArray>();
+        for (size_t i = 0; i < cfg.pointCount; ++i) {
+            JsonObject p = pts.add<JsonObject>();
+            p["measuredPhysicalSpeedKmh"] = cfg.points[i].measuredPhysicalSpeedKmh;
+            p["treadmillCommandKmh"] = cfg.points[i].treadmillCommandKmh;
+        }
+        serializeJson(doc, *stream);
+        request->send(stream);
+    };
+    server_.on("/api/v1/calibration/speed", HTTP_GET, speedCalibrationGetHandler);
+
+    // GET /api/v1/calibration/speed/calculate?speed=X: Query calculateCommand result
+    server_.on("/api/v1/calibration/speed/calculate", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        stream->addHeader("Access-Control-Allow-Origin", "*");
+        stream->addHeader("Cache-Control", "no-cache");
+        float targetSpd = 0.0f;
+        if (request->hasParam("speed")) {
+            targetSpd = request->getParam("speed")->value().toFloat();
+        }
+        SpeedCalibrationResult res{};
+        if (commandStager_ != nullptr) {
+            res = commandStager_->calculateSpeedCommand(targetSpd);
+        } else {
+            SpeedCalibration tempCal;
+            tempCal.setConfiguration(SettingsService::instance().getSpeedConfig());
+            res = tempCal.calculateCommand(targetSpd);
+        }
+        JsonDocument doc;
+        doc["desiredPhysicalSpeedKmh"] = res.desiredPhysicalSpeedKmh;
+        doc["treadmillCommandKmh"] = res.treadmillCommandKmh;
+        doc["status"] = static_cast<uint8_t>(res.status);
+        serializeJson(doc, *stream);
+        request->send(stream);
+    });
+
+    // POST /api/v1/calibration/speed/sensor: Save one-point sensor calibration factor
+    auto speedSensorCalHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+            return;
+        }
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received != buffer->capacity) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+            return;
+        }
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+
+        if (err) {
+            request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+
+        float factor = 1.0f;
+        if (doc.containsKey("factor")) {
+            factor = doc["factor"].as<float>();
+        } else if (doc.containsKey("systemSpeedKmh") && doc.containsKey("externalSpeedKmh")) {
+            float sysSpd = doc["systemSpeedKmh"].as<float>();
+            float extSpd = doc["externalSpeedKmh"].as<float>();
+            if (!std::isfinite(sysSpd) || sysSpd <= 0.0f || !std::isfinite(extSpd) || extSpd <= 0.0f) {
+                request->send(400, "application/json", "{\"error\":\"Speeds must be positive finite numbers\"}");
+                return;
+            }
+            factor = extSpd / sysSpd;
+        } else {
+            request->send(400, "application/json", "{\"error\":\"Missing factor or speed pair\"}");
+            return;
+        }
+
+        if (!std::isfinite(factor) || factor < 0.5f || factor > 2.0f) {
+            request->send(400, "application/json", "{\"error\":\"Calibration factor must be between 0.5 and 2.0\"}");
+            return;
+        }
+
+        const bool saved = SettingsService::instance().saveSpeedSensorCalibrationFactor(factor);
+        if (!saved) {
+            request->send(500, "application/json", "{\"error\":\"Failed to persist sensor calibration factor\"}");
+            return;
+        }
+
+        if (speedSensor_ != nullptr) {
+            speedSensor_->setCalibrationFactor(factor);
+        }
+
+        JsonDocument resp;
+        resp["status"] = "saved";
+        resp["factor"] = factor;
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        serializeJson(resp, *stream);
+        request->send(stream);
+    };
+    server_.on("/api/v1/calibration/speed/sensor", HTTP_POST, speedSensorCalHandler, nullptr, commandBodyBuffer);
+
+    // POST /api/v1/calibration/speed/table: Save full SpeedConfig points table
+    auto speedTableSaveHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+            return;
+        }
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received != buffer->capacity) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+            return;
+        }
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+
+        if (err) {
+            request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+
+        SpeedConfig candidate = SettingsService::instance().getSpeedConfig();
+        if (doc.containsKey("maxAchievableSpeedKmh")) {
+            candidate.maxAchievableSpeedKmh = doc["maxAchievableSpeedKmh"].as<float>();
+        }
+        if (doc.containsKey("maxAchievableSpeedVerified")) {
+            candidate.maxAchievableSpeedVerified = doc["maxAchievableSpeedVerified"].as<bool>();
+        }
+        if (doc.containsKey("commandMapValid")) {
+            candidate.commandMapValid = doc["commandMapValid"].as<bool>();
+        }
+        if (doc["points"].is<JsonArray>()) {
+            JsonArray arr = doc["points"].as<JsonArray>();
+            candidate.pointCount = std::min(arr.size(), kMaxSpeedCalibrationPoints);
+            for (size_t i = 0; i < candidate.pointCount; ++i) {
+                candidate.points[i].measuredPhysicalSpeedKmh = arr[i]["measuredPhysicalSpeedKmh"] | 0.0f;
+                candidate.points[i].treadmillCommandKmh = arr[i]["treadmillCommandKmh"] | 0.0f;
+            }
+        } else if (doc.containsKey("points") && doc["points"].isNull()) {
+            candidate.pointCount = 0;
+            candidate.commandMapValid = false;
+        }
+
+        char errBuf[128] = {};
+        if (!SpeedCalibration::validateCandidate(candidate, errBuf, sizeof(errBuf))) {
+            JsonDocument errDoc;
+            errDoc["error"] = errBuf[0] != '\0' ? errBuf : "Validation failed";
+            AsyncResponseStream* stream = request->beginResponseStream("application/json");
+            stream->setCode(400);
+            serializeJson(errDoc, *stream);
+            request->send(stream);
+            return;
+        }
+
+        const bool saved = SettingsService::instance().saveSpeedConfig(candidate);
+        if (!saved) {
+            request->send(500, "application/json", "{\"error\":\"Failed to save speed configuration\"}");
+            return;
+        }
+
+        if (commandStager_ != nullptr) {
+            commandStager_->onSpeedConfigUpdated(candidate);
+        }
+        if (systemManager_ != nullptr) {
+            systemManager_->onSpeedConfigUpdated(candidate);
+        }
+
+        request->send(200, "application/json", "{\"status\":\"saved\"}");
+    };
+    server_.on("/api/v1/calibration/speed/table", HTTP_POST, speedTableSaveHandler, nullptr, commandBodyBuffer);
 
     auto bleConfigPostHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {
@@ -1813,6 +2029,583 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/v1/commissioning/incline/abort", HTTP_POST, inclineAbortHandler);
 
+    // =======================================================================
+    // PHASE 5: REAL MAINTENANCE & BACKUP/RESTORE ENDPOINTS
+    // =======================================================================
+
+    // GET /api/v1/maintenance
+    server_.on("/api/v1/maintenance", HTTP_GET, [](AsyncWebServerRequest* request) {
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        stream->addHeader("Access-Control-Allow-Origin", "*");
+        stream->addHeader("Cache-Control", "no-cache");
+        MaintenanceConfig m = SettingsService::instance().getMaintenanceConfig();
+        JsonDocument doc;
+        doc["totalDistanceMeters"] = m.totalDistanceMeters;
+        doc["totalTimeSeconds"] = m.totalTimeSeconds;
+        doc["lastLubricationDate"] = m.lastLubricationDate;
+        doc["lastLubricationTimeSeconds"] = m.lastLubricationTimeSeconds;
+        doc["lubricationIntervalHours"] = m.lubricationIntervalHours;
+        doc["lubricationIntervalDays"] = m.lubricationIntervalDays;
+        serializeJson(doc, *stream);
+        request->send(stream);
+    });
+
+    // POST /api/v1/maintenance
+    auto maintenancePostHandler = [](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing request body\"}");
+            return;
+        }
+
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received == 0 || buffer->received != buffer->capacity) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+            return;
+        }
+
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+
+        if (err) {
+            request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+
+        MaintenanceConfig candidate = SettingsService::instance().getMaintenanceConfig();
+        if (doc["totalDistanceMeters"].is<uint64_t>()) {
+            candidate.totalDistanceMeters = doc["totalDistanceMeters"].as<uint64_t>();
+        }
+        if (doc["totalTimeSeconds"].is<uint64_t>()) {
+            candidate.totalTimeSeconds = doc["totalTimeSeconds"].as<uint64_t>();
+        }
+        if (doc["lastLubricationDate"].is<const char*>()) {
+            const char* dStr = doc["lastLubricationDate"].as<const char*>();
+            strncpy(candidate.lastLubricationDate, dStr ? dStr : "", sizeof(candidate.lastLubricationDate) - 1);
+            candidate.lastLubricationDate[sizeof(candidate.lastLubricationDate) - 1] = '\0';
+        }
+        if (doc["lastLubricationTimeSeconds"].is<uint64_t>()) {
+            candidate.lastLubricationTimeSeconds = doc["lastLubricationTimeSeconds"].as<uint64_t>();
+        }
+        if (doc["lubricationIntervalHours"].is<uint32_t>()) {
+            candidate.lubricationIntervalHours = doc["lubricationIntervalHours"].as<uint32_t>();
+        }
+        if (doc["lubricationIntervalDays"].is<uint32_t>()) {
+            candidate.lubricationIntervalDays = doc["lubricationIntervalDays"].as<uint32_t>();
+        }
+
+        char errBuf[128]{};
+        if (!SettingsService::validateMaintenanceConfig(candidate, errBuf, sizeof(errBuf))) {
+            JsonDocument errDoc;
+            errDoc["error"] = errBuf[0] != '\0' ? errBuf : "Validation failed";
+            AsyncResponseStream* stream = request->beginResponseStream("application/json");
+            stream->setCode(400);
+            serializeJson(errDoc, *stream);
+            request->send(stream);
+            return;
+        }
+
+        bool ok = SettingsService::instance().saveMaintenanceConfig(candidate);
+        if (!ok) {
+            request->send(500, "application/json", "{\"error\":\"Failed to save maintenance config\"}");
+            return;
+        }
+
+        request->send(200, "application/json", "{\"status\":\"saved\"}");
+    };
+    server_.on("/api/v1/maintenance", HTTP_POST, maintenancePostHandler, nullptr, commandBodyBuffer);
+
+    // GET /api/v1/backup/export
+    server_.on("/api/v1/backup/export", HTTP_GET, [](AsyncWebServerRequest* request) {
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        stream->addHeader("Access-Control-Allow-Origin", "*");
+        stream->addHeader("Cache-Control", "no-cache");
+
+        String scope = "complete";
+        if (request->hasParam("scope") && request->getParam("scope")->value() == "machine") {
+            scope = "machine";
+        }
+
+        char timeBuf[32];
+        time_t now = time(nullptr);
+        if (now > 1700000000) {
+            struct tm tmInfo;
+            gmtime_r(&now, &tmInfo);
+            strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%dT%H:%M:%SZ", &tmInfo);
+        } else {
+            snprintf(timeBuf, sizeof(timeBuf), "millis_%lu", static_cast<unsigned long>(millis()));
+        }
+
+        JsonDocument doc;
+        doc["schema"] = "stridecontrol-backup";
+        doc["schemaVersion"] = 1;
+        doc["scope"] = scope;
+        doc["createdAt"] = timeBuf;
+        doc["createdAtMs"] = millis();
+
+        JsonObject manifest = doc["manifest"].to<JsonObject>();
+        manifest["product"] = "StrideControl";
+        manifest["firmwareVersion"] = "1.0.0";
+        manifest["schemaVersion"] = 1;
+        manifest["scope"] = scope;
+        manifest["generatedAt"] = timeBuf;
+        manifest["generatedAtMs"] = millis();
+
+        // SpeedConfig
+        SpeedConfig spd = SettingsService::instance().getSpeedConfig();
+        JsonObject spdObj = doc["speed"].to<JsonObject>();
+        spdObj["sensorCalibrationFactor"] = spd.sensorCalibrationFactor;
+        spdObj["maxAchievableSpeedKmh"] = spd.maxAchievableSpeedKmh;
+        spdObj["maxAchievableSpeedVerified"] = spd.maxAchievableSpeedVerified;
+        spdObj["commandMapValid"] = spd.commandMapValid;
+        spdObj["pointCount"] = spd.pointCount;
+        JsonArray spdPts = spdObj["points"].to<JsonArray>();
+        for (size_t i = 0; i < spd.pointCount; ++i) {
+            JsonObject p = spdPts.add<JsonObject>();
+            p["measuredPhysicalSpeedKmh"] = spd.points[i].measuredPhysicalSpeedKmh;
+            p["treadmillCommandKmh"] = spd.points[i].treadmillCommandKmh;
+        }
+
+        // InclineConfig
+        InclineConfig inc = SettingsService::instance().getInclineConfig();
+        JsonObject incObj = doc["incline"].to<JsonObject>();
+        incObj["maxAchievableInclinePct"] = inc.maxAchievableInclinePct;
+        incObj["maxAchievableInclineVerified"] = inc.maxAchievableInclineVerified;
+        incObj["commandMapValid"] = inc.commandMapValid;
+        incObj["source"] = static_cast<uint8_t>(inc.source);
+        incObj["calibratedAtMs"] = inc.calibratedAtMs;
+        incObj["pointCount"] = inc.pointCount;
+        JsonArray incPts = incObj["points"].to<JsonArray>();
+        for (size_t i = 0; i < inc.pointCount; ++i) {
+            JsonObject p = incPts.add<JsonObject>();
+            p["measuredActualInclinePct"] = inc.points[i].measuredActualInclinePct;
+            p["treadmillCommandPct"] = inc.points[i].treadmillCommandPct;
+        }
+
+        // MaintenanceConfig
+        MaintenanceConfig m = SettingsService::instance().getMaintenanceConfig();
+        JsonObject mObj = doc["maintenance"].to<JsonObject>();
+        mObj["totalDistanceMeters"] = m.totalDistanceMeters;
+        mObj["totalTimeSeconds"] = m.totalTimeSeconds;
+        mObj["lastLubricationDate"] = m.lastLubricationDate;
+        mObj["lastLubricationTimeSeconds"] = m.lastLubricationTimeSeconds;
+        mObj["lubricationIntervalHours"] = m.lubricationIntervalHours;
+        mObj["lubricationIntervalDays"] = m.lubricationIntervalDays;
+
+        // RampCalibrationConfig
+        RampCalibrationConfig r = SettingsService::instance().getRampCalibrationConfig();
+        JsonObject rObj = doc["ramp"].to<JsonObject>();
+        rObj["deadTimeMs"] = r.deadTimeMs;
+        JsonArray aArr = rObj["accelMsPerKmh"].to<JsonArray>();
+        JsonArray dArr = rObj["decelMsPerKmh"].to<JsonArray>();
+        for (int i = 0; i < 3; ++i) {
+            aArr.add(r.accelMsPerKmh[i]);
+            dArr.add(r.decelMsPerKmh[i]);
+        }
+        rObj["loadMultiplier"] = r.loadMultiplier;
+        rObj["calibrated"] = r.calibrated;
+        rObj["source"] = static_cast<uint8_t>(r.source);
+        rObj["calibratedAtMs"] = r.calibratedAtMs;
+
+        // BleConfig
+        JsonObject bleObj = doc["ble"].to<JsonObject>();
+        bleObj["bleStackEnabled"] = SettingsService::instance().getBleStackEnabled();
+
+        // SystemSettings (Users)
+        JsonArray usersArr = doc["users"].to<JsonArray>();
+        if (scope == "complete") {
+            const SystemSettings* settings = SettingsService::instance().getActiveSettings();
+            if (settings != nullptr) {
+                for (size_t uIdx = 0; uIdx < MAX_USERS; ++uIdx) {
+                    const UserProfile& u = settings->users[uIdx];
+                    JsonObject uObj = usersArr.add<JsonObject>();
+                    uObj["id"] = u.id;
+                    uObj["name"] = u.name;
+                    uObj["hvileSpeedKmh"] = u.hvileSpeedKmh;
+                    uObj["dragSpeedKmh"] = u.dragSpeedKmh;
+                    uObj["preferredHrMac"] = u.preferredHrMac;
+
+                    JsonArray spdKeys = uObj["speedQuickKeys"].to<JsonArray>();
+                    for (float k : u.speedQuickKeys) spdKeys.add(k);
+
+                    JsonArray incKeys = uObj["inclineQuickKeys"].to<JsonArray>();
+                    for (uint8_t k : u.inclineQuickKeys) incKeys.add(k);
+
+                    uObj["selectedWorkoutId"] = u.selectedWorkoutId;
+
+                    JsonArray recArr = uObj["recentWorkoutIds"].to<JsonArray>();
+                    for (uint16_t rId : u.recentWorkoutIds) recArr.add(rId);
+
+                    JsonArray wArr = uObj["workouts"].to<JsonArray>();
+                    for (size_t wIdx = 0; wIdx < u.workoutCount; ++wIdx) {
+                        const WorkoutDefinition& w = u.workouts[wIdx];
+                        JsonObject wObj = wArr.add<JsonObject>();
+                        wObj["id"] = w.id;
+                        wObj["name"] = w.name;
+                        wObj["lastUsedTimestamp"] = w.lastUsedTimestamp;
+
+                        JsonArray segArr = wObj["segments"].to<JsonArray>();
+                        for (size_t sIdx = 0; sIdx < w.segmentCount; ++sIdx) {
+                            const WorkoutSegment& seg = w.segments[sIdx];
+                            JsonObject segObj = segArr.add<JsonObject>();
+                            segObj["id"] = seg.id;
+                            segObj["type"] = segmentTypeName(seg.type);
+                            segObj["repetitions"] = seg.repetitions;
+                            segObj["startSpeedKmh"] = seg.startSpeedKmh;
+                            segObj["speedProgressionPerRepKmh"] = seg.speedProgressionPerRepKmh;
+
+                            JsonArray stArr = segObj["steps"].to<JsonArray>();
+                            for (size_t stepIdx = 0; stepIdx < seg.stepCount; ++stepIdx) {
+                                const WorkoutStep& st = seg.steps[stepIdx];
+                                JsonObject stObj = stArr.add<JsonObject>();
+                                stObj["id"] = st.id;
+                                stObj["role"] = stepRoleName(st.role);
+                                stObj["durationType"] = durationTypeName(st.durationType);
+                                stObj["durationValue"] = st.durationValue;
+                                stObj["speedMode"] = speedModeName(st.speedMode);
+                                stObj["targetSpeedKmh"] = st.targetSpeedKmh;
+                                stObj["targetInclinePct"] = st.targetInclinePct;
+                                stObj["setIncline"] = st.setIncline;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        serializeJson(doc, *stream);
+        request->send(stream);
+    });
+
+    // Body buffer for backup restore (up to 64KB)
+    auto backupBodyBuffer = [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+        handleRequestBodyChunk(request, data, len, index, total, 65536, "{\"error\":\"Payload too large (max 64KB)\"}");
+    };
+
+    // POST /api/v1/backup/restore
+    auto backupRestoreHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing request body\"}");
+            return;
+        }
+
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received == 0 || buffer->received != buffer->capacity) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+            return;
+        }
+
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+
+        if (err) {
+            request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            return;
+        }
+
+        // Schema validation
+        int schemaVer = doc["schemaVersion"] | doc["manifest"]["schemaVersion"] | 0;
+        if (schemaVer != 1) {
+            request->send(400, "application/json", "{\"error\":\"Unsupported schema version (expected 1)\"}");
+            return;
+        }
+
+        char errBuf[128]{};
+
+        // 1. Pre-flight parse and validate SpeedConfig
+        bool hasSpeed = doc["speed"].is<JsonObjectConst>();
+        SpeedConfig candSpeed = SettingsService::instance().getSpeedConfig();
+        if (hasSpeed) {
+            JsonObjectConst sObj = doc["speed"].as<JsonObjectConst>();
+            if (sObj["sensorCalibrationFactor"].is<float>()) {
+                candSpeed.sensorCalibrationFactor = sObj["sensorCalibrationFactor"].as<float>();
+            }
+            if (sObj["maxAchievableSpeedKmh"].is<float>()) {
+                candSpeed.maxAchievableSpeedKmh = sObj["maxAchievableSpeedKmh"].as<float>();
+            }
+            if (sObj["maxAchievableSpeedVerified"].is<bool>()) {
+                candSpeed.maxAchievableSpeedVerified = sObj["maxAchievableSpeedVerified"].as<bool>();
+            }
+            if (sObj["commandMapValid"].is<bool>()) {
+                candSpeed.commandMapValid = sObj["commandMapValid"].as<bool>();
+            }
+            if (sObj["points"].is<JsonArrayConst>()) {
+                JsonArrayConst pts = sObj["points"].as<JsonArrayConst>();
+                candSpeed.pointCount = std::min(pts.size(), kMaxSpeedCalibrationPoints);
+                for (size_t i = 0; i < candSpeed.pointCount; ++i) {
+                    candSpeed.points[i].measuredPhysicalSpeedKmh = pts[i]["measuredPhysicalSpeedKmh"] | 0.0f;
+                    candSpeed.points[i].treadmillCommandKmh = pts[i]["treadmillCommandKmh"] | 0.0f;
+                }
+            }
+            if (!SpeedCalibration::validateCandidate(candSpeed, errBuf, sizeof(errBuf))) {
+                JsonDocument errDoc;
+                errDoc["error"] = String("SpeedConfig validation failed: ") + (errBuf[0] ? errBuf : "invalid bounds");
+                AsyncResponseStream* stream = request->beginResponseStream("application/json");
+                stream->setCode(400);
+                serializeJson(errDoc, *stream);
+                request->send(stream);
+                return;
+            }
+        }
+
+        // 2. Pre-flight parse and validate InclineConfig
+        bool hasIncline = doc["incline"].is<JsonObjectConst>();
+        InclineConfig candIncline = SettingsService::instance().getInclineConfig();
+        if (hasIncline) {
+            JsonObjectConst iObj = doc["incline"].as<JsonObjectConst>();
+            if (iObj["maxAchievableInclinePct"].is<float>()) {
+                candIncline.maxAchievableInclinePct = iObj["maxAchievableInclinePct"].as<float>();
+            }
+            if (iObj["maxAchievableInclineVerified"].is<bool>()) {
+                candIncline.maxAchievableInclineVerified = iObj["maxAchievableInclineVerified"].as<bool>();
+            }
+            if (iObj["commandMapValid"].is<bool>()) {
+                candIncline.commandMapValid = iObj["commandMapValid"].as<bool>();
+            }
+            if (iObj["source"].is<uint8_t>()) {
+                candIncline.source = static_cast<CalibrationSource>(iObj["source"].as<uint8_t>());
+            }
+            if (iObj["calibratedAtMs"].is<uint32_t>()) {
+                candIncline.calibratedAtMs = iObj["calibratedAtMs"].as<uint32_t>();
+            }
+            if (iObj["points"].is<JsonArrayConst>()) {
+                JsonArrayConst pts = iObj["points"].as<JsonArrayConst>();
+                candIncline.pointCount = std::min(pts.size(), static_cast<size_t>(kMaxInclineCalibrationPoints));
+                for (size_t i = 0; i < candIncline.pointCount; ++i) {
+                    candIncline.points[i].measuredActualInclinePct = pts[i]["measuredActualInclinePct"] | 0.0f;
+                    candIncline.points[i].treadmillCommandPct = pts[i]["treadmillCommandPct"] | 0.0f;
+                }
+            }
+            if (!SettingsService::validateInclineConfig(candIncline, errBuf, sizeof(errBuf))) {
+                JsonDocument errDoc;
+                errDoc["error"] = String("InclineConfig validation failed: ") + (errBuf[0] ? errBuf : "invalid bounds");
+                AsyncResponseStream* stream = request->beginResponseStream("application/json");
+                stream->setCode(400);
+                serializeJson(errDoc, *stream);
+                request->send(stream);
+                return;
+            }
+        }
+
+        // 3. Pre-flight parse and validate MaintenanceConfig
+        bool hasMaint = doc["maintenance"].is<JsonObjectConst>();
+        MaintenanceConfig candMaint = SettingsService::instance().getMaintenanceConfig();
+        if (hasMaint) {
+            JsonObjectConst mObj = doc["maintenance"].as<JsonObjectConst>();
+            if (mObj["totalDistanceMeters"].is<uint64_t>()) {
+                candMaint.totalDistanceMeters = mObj["totalDistanceMeters"].as<uint64_t>();
+            }
+            if (mObj["totalTimeSeconds"].is<uint64_t>()) {
+                candMaint.totalTimeSeconds = mObj["totalTimeSeconds"].as<uint64_t>();
+            }
+            if (mObj["lastLubricationDate"].is<const char*>()) {
+                const char* dStr = mObj["lastLubricationDate"].as<const char*>();
+                strncpy(candMaint.lastLubricationDate, dStr ? dStr : "", sizeof(candMaint.lastLubricationDate) - 1);
+                candMaint.lastLubricationDate[sizeof(candMaint.lastLubricationDate) - 1] = '\0';
+            }
+            if (mObj["lastLubricationTimeSeconds"].is<uint64_t>()) {
+                candMaint.lastLubricationTimeSeconds = mObj["lastLubricationTimeSeconds"].as<uint64_t>();
+            }
+            if (mObj["lubricationIntervalHours"].is<uint32_t>()) {
+                candMaint.lubricationIntervalHours = mObj["lubricationIntervalHours"].as<uint32_t>();
+            }
+            if (mObj["lubricationIntervalDays"].is<uint32_t>()) {
+                candMaint.lubricationIntervalDays = mObj["lubricationIntervalDays"].as<uint32_t>();
+            }
+            if (!SettingsService::validateMaintenanceConfig(candMaint, errBuf, sizeof(errBuf))) {
+                JsonDocument errDoc;
+                errDoc["error"] = String("MaintenanceConfig validation failed: ") + (errBuf[0] ? errBuf : "invalid bounds");
+                AsyncResponseStream* stream = request->beginResponseStream("application/json");
+                stream->setCode(400);
+                serializeJson(errDoc, *stream);
+                request->send(stream);
+                return;
+            }
+        }
+
+        // 4. Pre-flight parse and validate RampCalibrationConfig
+        bool hasRamp = doc["ramp"].is<JsonObjectConst>();
+        RampCalibrationConfig candRamp = SettingsService::instance().getRampCalibrationConfig();
+        if (hasRamp) {
+            JsonObjectConst rObj = doc["ramp"].as<JsonObjectConst>();
+            if (rObj["deadTimeMs"].is<uint32_t>()) {
+                candRamp.deadTimeMs = rObj["deadTimeMs"].as<uint32_t>();
+            }
+            if (rObj["accelMsPerKmh"].is<JsonArrayConst>()) {
+                JsonArrayConst a = rObj["accelMsPerKmh"].as<JsonArrayConst>();
+                for (size_t i = 0; i < 3 && i < a.size(); ++i) candRamp.accelMsPerKmh[i] = a[i] | 1000.0f;
+            }
+            if (rObj["decelMsPerKmh"].is<JsonArrayConst>()) {
+                JsonArrayConst d = rObj["decelMsPerKmh"].as<JsonArrayConst>();
+                for (size_t i = 0; i < 3 && i < d.size(); ++i) candRamp.decelMsPerKmh[i] = d[i] | 1000.0f;
+            }
+            if (rObj["loadMultiplier"].is<float>()) {
+                candRamp.loadMultiplier = rObj["loadMultiplier"].as<float>();
+            }
+            if (rObj["calibrated"].is<bool>()) {
+                candRamp.calibrated = rObj["calibrated"].as<bool>();
+            }
+            if (rObj["source"].is<uint8_t>()) {
+                candRamp.source = static_cast<CalibrationSource>(rObj["source"].as<uint8_t>());
+            }
+            if (rObj["calibratedAtMs"].is<uint32_t>()) {
+                candRamp.calibratedAtMs = rObj["calibratedAtMs"].as<uint32_t>();
+            }
+            if (!SettingsService::validateRampCalibrationConfig(candRamp, errBuf, sizeof(errBuf))) {
+                JsonDocument errDoc;
+                errDoc["error"] = String("RampCalibrationConfig validation failed: ") + (errBuf[0] ? errBuf : "invalid bounds");
+                AsyncResponseStream* stream = request->beginResponseStream("application/json");
+                stream->setCode(400);
+                serializeJson(errDoc, *stream);
+                request->send(stream);
+                return;
+            }
+        }
+
+        // 5. Pre-flight parse and validate BleConfig
+        bool hasBle = doc["ble"].is<JsonObjectConst>();
+        bool candBleEnabled = SettingsService::instance().getBleStackEnabled();
+        if (hasBle) {
+            JsonObjectConst bObj = doc["ble"].as<JsonObjectConst>();
+            if (bObj["bleStackEnabled"].is<bool>()) {
+                candBleEnabled = bObj["bleStackEnabled"].as<bool>();
+            }
+        }
+
+        // 6. Pre-flight parse and validate SystemSettings (Users)
+        bool hasUsers = doc["users"].is<JsonArrayConst>() && doc["users"].as<JsonArrayConst>().size() > 0;
+        SystemSettingsPtr candUsers = makeSystemSettings();
+        if (hasUsers && candUsers) {
+            String usersJsonStr;
+            JsonDocument uDoc;
+            uDoc["schemaVersion"] = 1;
+            uDoc["users"] = doc["users"];
+            serializeJson(uDoc, usersJsonStr);
+
+            if (!SettingsService::deserializeSettingsJson(
+                reinterpret_cast<const uint8_t*>(usersJsonStr.c_str()), usersJsonStr.length(), *candUsers, errBuf, sizeof(errBuf))) {
+                JsonDocument errDoc;
+                errDoc["error"] = String("Users validation failed: ") + (errBuf[0] ? errBuf : "invalid structure");
+                AsyncResponseStream* stream = request->beginResponseStream("application/json");
+                stream->setCode(400);
+                serializeJson(errDoc, *stream);
+                request->send(stream);
+                return;
+            }
+        }
+
+        // --- All validations passed! Snapshot active configuration before commit ---
+        captureLastKnownGoodSnapshot();
+
+        // --- Sequential apply with automatic rollback on error ---
+        bool ok = true;
+        const char* failedSection = "";
+
+        if (hasSpeed) {
+            if (!SettingsService::instance().saveSpeedConfig(candSpeed)) {
+                ok = false;
+                failedSection = "speed";
+            }
+        }
+        if (ok && hasIncline) {
+            if (!SettingsService::instance().saveInclineConfig(candIncline)) {
+                ok = false;
+                failedSection = "incline";
+            }
+        }
+        if (ok && hasMaint) {
+            if (!SettingsService::instance().saveMaintenanceConfig(candMaint)) {
+                ok = false;
+                failedSection = "maintenance";
+            }
+        }
+        if (ok && hasRamp) {
+            if (!SettingsService::instance().saveRampCalibrationConfig(candRamp)) {
+                ok = false;
+                failedSection = "ramp";
+            }
+        }
+        if (ok && hasBle) {
+            if (!SettingsService::instance().saveBleStackEnabled(candBleEnabled)) {
+                ok = false;
+                failedSection = "ble";
+            }
+        }
+        if (ok && hasUsers && candUsers) {
+            char uErr[128]{};
+            if (!SettingsService::instance().updateSystemSettings(*candUsers, uErr, sizeof(uErr))) {
+                ok = false;
+                failedSection = "users";
+            } else {
+                SettingsService::instance().commitUsersJson();
+            }
+        }
+
+        if (!ok) {
+            // Automatic rollback
+            char rErr[128]{};
+            rollbackToLastKnownGood(rErr, sizeof(rErr));
+            JsonDocument errDoc;
+            errDoc["error"] = String("Commit failed on section '") + failedSection + "'. Configuration rolled back to previous snapshot.";
+            AsyncResponseStream* stream = request->beginResponseStream("application/json");
+            stream->setCode(500);
+            serializeJson(errDoc, *stream);
+            request->send(stream);
+            return;
+        }
+
+        if (hasSpeed) {
+            if (commandStager_ != nullptr) {
+                commandStager_->onSpeedConfigUpdated(candSpeed);
+            }
+            if (systemManager_ != nullptr) {
+                systemManager_->onSpeedConfigUpdated(candSpeed);
+            }
+        }
+
+        request->send(200, "application/json", "{\"status\":\"restored\"}");
+    };
+    server_.on("/api/v1/backup/restore", HTTP_POST, backupRestoreHandler, nullptr, backupBodyBuffer);
+
+    // POST /api/v1/backup/rollback
+    auto backupRollbackHandler = [this](AsyncWebServerRequest* request) {
+        char errBuf[128]{};
+        if (!rollbackToLastKnownGood(errBuf, sizeof(errBuf))) {
+            JsonDocument errDoc;
+            errDoc["error"] = errBuf[0] ? errBuf : "Rollback failed";
+            AsyncResponseStream* stream = request->beginResponseStream("application/json");
+            stream->setCode(400);
+            serializeJson(errDoc, *stream);
+            request->send(stream);
+            return;
+        }
+        request->send(200, "application/json", "{\"status\":\"rolled_back\"}");
+    };
+    server_.on("/api/v1/backup/rollback", HTTP_POST, backupRollbackHandler);
+
 #if defined(STRIDECONTROL_TESTBENCH)
     // GET /simulator.html (Testbench active universe UI)
     server_.on("/simulator.html", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -2055,7 +2848,80 @@ void WebServerManager::registerRoutes() {
             handleRequestBodyChunk(request, data, len, index, total, 2048, "{\"error\":\"Payload too large\"}");
         }
     );
-#endif
+#endif // STRIDECONTROL_TESTBENCH
+}
+
+void WebServerManager::captureLastKnownGoodSnapshot() {
+    lastKnownGoodSnapshot_.speed = SettingsService::instance().getSpeedConfig();
+    lastKnownGoodSnapshot_.incline = SettingsService::instance().getInclineConfig();
+    lastKnownGoodSnapshot_.maintenance = SettingsService::instance().getMaintenanceConfig();
+    lastKnownGoodSnapshot_.ramp = SettingsService::instance().getRampCalibrationConfig();
+    lastKnownGoodSnapshot_.bleStackEnabled = SettingsService::instance().getBleStackEnabled();
+    const SystemSettings* cur = SettingsService::instance().getActiveSettings();
+    if (cur != nullptr) {
+        if (!lastKnownGoodSnapshot_.settings) {
+            lastKnownGoodSnapshot_.settings = makeSystemSettings();
+        }
+        if (lastKnownGoodSnapshot_.settings) {
+            *lastKnownGoodSnapshot_.settings = *cur;
+        }
+    }
+    lastKnownGoodSnapshot_.capturedAtMs = millis();
+    lastKnownGoodSnapshot_.valid = true;
+}
+
+bool WebServerManager::rollbackToLastKnownGood(char* errBuf, size_t errBufLen) {
+    auto setErr = [&](const char* msg) {
+        if (errBuf && errBufLen > 0) {
+            strncpy(errBuf, msg, errBufLen - 1);
+            errBuf[errBufLen - 1] = '\0';
+        }
+    };
+
+    if (!lastKnownGoodSnapshot_.valid) {
+        setErr("No valid snapshot available");
+        return false;
+    }
+
+    bool allOk = true;
+    if (!SettingsService::instance().saveSpeedConfig(lastKnownGoodSnapshot_.speed)) {
+        allOk = false;
+        setErr("Failed to rollback SpeedConfig");
+    }
+    if (!SettingsService::instance().saveInclineConfig(lastKnownGoodSnapshot_.incline)) {
+        allOk = false;
+        setErr("Failed to rollback InclineConfig");
+    }
+    if (!SettingsService::instance().saveMaintenanceConfig(lastKnownGoodSnapshot_.maintenance)) {
+        allOk = false;
+        setErr("Failed to rollback MaintenanceConfig");
+    }
+    if (!SettingsService::instance().saveRampCalibrationConfig(lastKnownGoodSnapshot_.ramp)) {
+        allOk = false;
+        setErr("Failed to rollback RampCalibrationConfig");
+    }
+    if (!SettingsService::instance().saveBleStackEnabled(lastKnownGoodSnapshot_.bleStackEnabled)) {
+        allOk = false;
+        setErr("Failed to rollback BleConfig");
+    }
+    if (lastKnownGoodSnapshot_.settings) {
+        char sErr[128]{};
+        if (!SettingsService::instance().updateSystemSettings(*lastKnownGoodSnapshot_.settings, sErr, sizeof(sErr))) {
+            allOk = false;
+            setErr(sErr[0] ? sErr : "Failed to rollback SystemSettings");
+        } else {
+            SettingsService::instance().commitUsersJson();
+        }
+    }
+
+    if (commandStager_ != nullptr) {
+        commandStager_->onSpeedConfigUpdated(lastKnownGoodSnapshot_.speed);
+    }
+    if (systemManager_ != nullptr) {
+        systemManager_->onSpeedConfigUpdated(lastKnownGoodSnapshot_.speed);
+    }
+
+    return allOk;
 }
 
 } // namespace stridecontrol
