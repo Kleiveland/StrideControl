@@ -82,7 +82,7 @@ public:
         report.hasActiveUser = telem.sessionSnapshot.hasActiveUser;
         report.currentRole = telem.sessionSnapshot.currentRole;
         report.hasUpcomingDragStep = telem.sessionSnapshot.hasUpcomingDragStep;
-        report.stepTargetSpeedKmh = telem.sessionSnapshot.currentStep.targetSpeedKmh;
+        report.stepTargetSpeedKmh = telem.sessionSnapshot.hasSpeedTarget ? telem.sessionSnapshot.currentStep.targetSpeedKmh : 0.0f;
         report.stepSetIncline = telem.sessionSnapshot.currentStep.setIncline;
         report.avgHeartRateBpm = telem.sessionSnapshot.avgHeartRateBpm;
         report.maxHeartRateBpm = telem.sessionSnapshot.maxHeartRateBpm;
@@ -212,7 +212,7 @@ public:
         report.hasActiveUser = sessSnap.hasActiveUser;
         report.currentRole = sessSnap.currentRole;
         report.hasUpcomingDragStep = sessSnap.hasUpcomingDragStep;
-        report.stepTargetSpeedKmh = sessSnap.currentStep.targetSpeedKmh;
+        report.stepTargetSpeedKmh = sessSnap.hasSpeedTarget ? sessSnap.currentStep.targetSpeedKmh : 0.0f;
         report.stepSetIncline = sessSnap.currentStep.setIncline;
         report.avgHeartRateBpm = sessSnap.avgHeartRateBpm;
         report.maxHeartRateBpm = sessSnap.maxHeartRateBpm;
