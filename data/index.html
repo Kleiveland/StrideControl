@@ -967,6 +967,7 @@
         <!-- VIEW 3: INTERVALL RUN                                               -->
         <!-- =================================================================== -->
         <div id="view-interval-run" class="view-flex screen-interval-base">
+            <div id="interval-incline-mount" style="display: none; width: 100%; margin-bottom: 15px;"></div>
             <div class="util-bar">
                 <div class="util-left">
                     <div class="sys-clock">12:18</div>
@@ -1003,6 +1004,7 @@
                 </div>
             </div>
 
+            <div id="interval-speed-mount" style="display: none; width: 100%; margin-top: 15px;"></div>
             <div class="interval-action-zone">
                 <div class="btn-act-action rest clickable" id="btn-kutt-drag" style="max-width: 540px;">KUTT DRAG</div>
                 <div class="btn-act-action work clickable" id="btn-goto-drag-run" style="max-width: 540px;">START DRAG NÅ</div>
@@ -1536,6 +1538,7 @@
                 if (target === 'view-interval-pause-1') {
                     showGlobalToast('DRAG FULLFØRT · SNITTPULS: 172 · SNITTFART: 15.0 KM/T');
                 }
+                updateQuickKeyRowsReflow();
             });
         });
 
@@ -3646,6 +3649,110 @@
             });
         }
 
+        // ===================================================================
+        // CONDITIONAL QUICK-KEY MOUNTING & REFLOW (INTERVAL RUNNING VIEW)
+        // ===================================================================
+        function mountQuickKeyRow(rowEl, targetContainer) {
+            if (!rowEl || !targetContainer) return;
+            if (rowEl.parentElement !== targetContainer) {
+                targetContainer.appendChild(rowEl);
+            }
+        }
+
+        function restoreManualQuickKeyRows() {
+            const incRow = document.getElementById('manual-incline-row');
+            const spdRow = document.getElementById('manual-speed-row');
+            const viewManual = document.getElementById('view-manual');
+            const manualTopBar = document.getElementById('manual-topbar');
+            const intIncMount = document.getElementById('interval-incline-mount');
+            const intSpdMount = document.getElementById('interval-speed-mount');
+
+            if (intIncMount) intIncMount.style.display = 'none';
+            if (intSpdMount) intSpdMount.style.display = 'none';
+
+            if (viewManual && incRow && manualTopBar && incRow.parentElement !== viewManual) {
+                viewManual.insertBefore(incRow, manualTopBar);
+                incRow.style.display = 'flex';
+            }
+            if (viewManual && spdRow && spdRow.parentElement !== viewManual) {
+                viewManual.appendChild(spdRow);
+                spdRow.style.display = 'flex';
+            }
+        }
+
+        function updateQuickKeyRowsReflow(telem = (typeof lastAuthoritativeTelemetry !== 'undefined' ? lastAuthoritativeTelemetry : null)) {
+            const incRow = document.getElementById('manual-incline-row');
+            const spdRow = document.getElementById('manual-speed-row');
+            const intIncMount = document.getElementById('interval-incline-mount');
+            const intSpdMount = document.getElementById('interval-speed-mount');
+            const viewRun = document.getElementById('view-interval-run');
+
+            if (!incRow || !spdRow || !intIncMount || !intSpdMount) return;
+
+            const isRunActive = viewRun && viewRun.classList.contains('active') && !document.querySelector('.modal.active');
+            const isRunningState = telem?.session?.state === 'Running';
+            const isFreeRun = telem?.session?.workoutId === 65535;
+
+            // Outside Interval running view or paused / free-run: restore to Manual view
+            if (!isRunActive || !isRunningState || isFreeRun) {
+                restoreManualQuickKeyRows();
+                return;
+            }
+
+            const role = telem?.session?.currentRole; // 'WARMUP', 'WORK', 'REST', 'COOLDOWN'
+            // Exact StepRole rule:
+            // WARMUP, WORK, COOLDOWN -> ALLOWED
+            // REST -> NEVER SHOWS
+            const isAllowedRole = (role === 'WARMUP' || role === 'WORK' || role === 'COOLDOWN');
+
+            let speedUnset = false;
+            if (typeof telem?.session?.stepTargetSpeedKmh === 'number') {
+                speedUnset = (telem.session.stepTargetSpeedKmh < 0.5);
+            } else if (typeof telem?.session?.workoutId === 'number') {
+                const wk = workoutLibrary.find(w => w.numericId === telem.session.workoutId);
+                if (wk) {
+                    const seq = buildExecutionSequence(wk);
+                    const curStep = seq[telem.session.stepIndex ?? 0];
+                    speedUnset = curStep ? (!curStep.setSpeed || !curStep.speed) : false;
+                }
+            }
+
+            let inclineUnset = false;
+            if (typeof telem?.session?.stepSetIncline === 'boolean') {
+                inclineUnset = (!telem.session.stepSetIncline);
+            } else if (typeof telem?.session?.workoutId === 'number') {
+                const wk = workoutLibrary.find(w => w.numericId === telem.session.workoutId);
+                if (wk) {
+                    const seq = buildExecutionSequence(wk);
+                    const curStep = seq[telem.session.stepIndex ?? 0];
+                    inclineUnset = curStep ? (!curStep.setIncline) : true;
+                }
+            }
+
+            const showIncline = isAllowedRole && inclineUnset;
+            const showSpeed = isAllowedRole && speedUnset;
+
+            // Incline Quick-Key Row (Top)
+            if (showIncline) {
+                mountQuickKeyRow(incRow, intIncMount);
+                incRow.style.display = 'flex';
+                intIncMount.style.display = 'block';
+            } else {
+                intIncMount.style.display = 'none';
+                incRow.style.display = 'none';
+            }
+
+            // Speed Quick-Key Row (Bottom)
+            if (showSpeed) {
+                mountQuickKeyRow(spdRow, intSpdMount);
+                spdRow.style.display = 'flex';
+                intSpdMount.style.display = 'block';
+            } else {
+                intSpdMount.style.display = 'none';
+                spdRow.style.display = 'none';
+            }
+        }
+
         // GUI-LOCAL-CLOCK: Client-side clock interpolation for smooth per-second time displays
         const localClocks = {
             manualElapsed: { anchorMs: null, anchorTs: 0, direction: 'paused' },
@@ -4339,6 +4446,7 @@
             document.querySelectorAll('#view-boot .user-btn, #view-interval-pre .user-badge, #view-interval-stop .user-badge')
                 .forEach(el => el.classList.toggle('running-dim', intervalSessionStarted));
 
+            updateQuickKeyRowsReflow(telem);
             renderLocalClocks();
         }
 
@@ -4444,6 +4552,7 @@
                 if (targetViewId === 'view-summary' && typeof renderSummaryScreen === 'function') {
                     renderSummaryScreen(lastAuthoritativeTelemetry);
                 }
+                updateQuickKeyRowsReflow(lastAuthoritativeTelemetry);
                 lastRenderedSessionState = sessionState;
             }
         }

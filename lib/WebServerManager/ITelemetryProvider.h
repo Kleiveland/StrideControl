@@ -39,6 +39,8 @@ struct TelemetryReport {
     bool hasActiveUser = false;
     StepRole currentRole = StepRole::WARMUP;
     bool hasUpcomingDragStep = false;
+    float stepTargetSpeedKmh = 0.0f;
+    bool stepSetIncline = false;
     uint32_t avgHeartRateBpm = 0;
     uint8_t maxHeartRateBpm = 0;
     float maxSpeedKmh = 0.0f;

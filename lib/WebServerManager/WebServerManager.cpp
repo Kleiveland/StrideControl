@@ -244,6 +244,8 @@ void WebServerManager::registerRoutes() {
         session["hasActiveUser"] = report.hasActiveUser;
         session["currentRole"] = stepRoleName(report.currentRole);
         session["hasUpcomingDragStep"] = report.hasUpcomingDragStep;
+        session["stepTargetSpeedKmh"] = report.stepTargetSpeedKmh;
+        session["stepSetIncline"] = report.stepSetIncline;
         session["avgHeartRateBpm"] = report.avgHeartRateBpm;
         session["maxHeartRateBpm"] = report.maxHeartRateBpm;
         session["maxSpeedKmh"] = report.maxSpeedKmh;
