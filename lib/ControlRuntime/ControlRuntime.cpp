@@ -443,26 +443,28 @@ bool ControlRuntime::stopControlTask(uint32_t timeoutMs) {
         cleanExit = (xSemaphoreTake(exitSem_, pdMS_TO_TICKS(timeoutMs)) == pdTRUE);
     }
 
-    if (taskHandle_ != nullptr) {
-        // Task must be removed either way to avoid a permanently stuck reference, but a
-        // forced (non-clean) deletion means the task may still have been mid-execution and
-        // could reference exitSem_ - do not delete it in that case.
-        vTaskDelete(taskHandle_);
-        taskHandle_ = nullptr;
-    }
-    taskRunning_ = false;
-    stopRequested_ = false;
-
     if (cleanExit) {
+        taskHandle_ = nullptr;
         if (exitSem_ != nullptr) {
             vSemaphoreDelete(exitSem_);
             exitSem_ = nullptr;
         }
-    } else if (diagnostics_ != nullptr) {
-        // Forced termination: report it, and deliberately leak exitSem_ rather than risk a
-        // use-after-free on a task that may not have actually stopped touching it yet.
-        diagnostics_->reportFault(FaultCode::SystemWatchdogWarning, millis());
+    } else {
+        if (taskHandle_ != nullptr) {
+            // Task must be removed either way to avoid a permanently stuck reference, but a
+            // forced (non-clean) deletion means the task may still have been mid-execution and
+            // could reference exitSem_ - do not delete it in that case.
+            vTaskDelete(taskHandle_);
+            taskHandle_ = nullptr;
+        }
+        if (diagnostics_ != nullptr) {
+            // Forced termination: report it, and deliberately leak exitSem_ rather than risk a
+            // use-after-free on a task that may not have actually stopped touching it yet.
+            diagnostics_->reportFault(FaultCode::SystemWatchdogWarning, millis());
+        }
     }
+    taskRunning_ = false;
+    stopRequested_ = false;
 
     return cleanExit;
 }
@@ -509,10 +511,12 @@ void ControlRuntime::runTaskLoop() {
     }
 
     taskRunning_ = false;
+    TaskHandle_t localHandle = taskHandle_;
+    taskHandle_ = nullptr;
     if (exitSem_ != nullptr) {
         xSemaphoreGive(exitSem_);
     }
-    vTaskSuspend(NULL);
+    vTaskDelete(localHandle);
 }
 
 void ControlRuntime::processQueuedCommands(uint32_t nowMs) {

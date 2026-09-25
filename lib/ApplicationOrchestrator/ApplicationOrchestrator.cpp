@@ -270,20 +270,11 @@ bool ApplicationOrchestrator::end(uint32_t timeoutMs) {
         return false;
     }
 
-    TaskHandle_t cleanTaskToDelete = nullptr;
     portENTER_CRITICAL(&metricsMux_);
-    if (taskHandle_ != nullptr) {
-        cleanTaskToDelete = taskHandle_;
-        taskHandle_ = nullptr;
-    }
+    taskHandle_ = nullptr;
     running_ = false;
     initialized_ = false;
     portEXIT_CRITICAL(&metricsMux_);
-
-    // Safely delete the task OUTSIDE the spinlock
-    if (cleanTaskToDelete != nullptr) {
-        vTaskDelete(cleanTaskToDelete);
-    }
 
     // Step 4: Signal Core 0 BLE Lifecycle Task to terminate cleanly
     bool cleanBleExit = true;
@@ -296,7 +287,6 @@ bool ApplicationOrchestrator::end(uint32_t timeoutMs) {
 
         // Step 6 & 7: Handshake resolution
         if (cleanBleExit) {
-            vTaskDelete(bleTaskHandle_);
             bleTaskHandle_ = nullptr;
             vSemaphoreDelete(bleExitSem_);
             bleExitSem_ = nullptr;
@@ -457,14 +447,15 @@ void ApplicationOrchestrator::runBleTask() {
         bleMgr->end();
     }
 
-    // Signal confirmation semaphore and self-suspend
+    // Signal confirmation semaphore and self-delete
+    TaskHandle_t localHandle = bleTaskHandle_;
+    bleTaskHandle_ = nullptr;
     SemaphoreHandle_t sem = bleExitSem_;
     if (sem != nullptr) {
         xSemaphoreGive(sem);
     }
 
-    // STRICT RULE: After xSemaphoreGive(), perform NO further member access
-    vTaskSuspend(NULL);
+    vTaskDelete(localHandle);
 }
 
 bool ApplicationOrchestrator::executePipelineStep(const ApplicationTickContext& context) {
@@ -669,13 +660,15 @@ void ApplicationOrchestrator::runLoop() {
 
     portENTER_CRITICAL(&metricsMux_);
     running_ = false;
+    TaskHandle_t localHandle = taskHandle_;
+    taskHandle_ = nullptr;
     portEXIT_CRITICAL(&metricsMux_);
 
     if (exitSem_ != nullptr) {
         xSemaphoreGive(exitSem_);
     }
 
-    vTaskDelete(nullptr);
+    vTaskDelete(localHandle);
 }
 
 void ApplicationOrchestrator::updateBleConfig(const BleConfig& cfg) {
