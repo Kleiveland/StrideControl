@@ -30,8 +30,8 @@ void ControlCoordinator::tick(
                 "[FreshStart] Manual mode: staged safe defaults speed=1.0 km/h, incline=0.0%%");
         } else {
             // Interval mode, fresh start only, Warmup step specifically:
-            // If the Warmup step's own configured target speed is 0/unset: send speed=1.0
-            if (sessionSnap.currentStep.targetSpeedKmh < 0.5f) {
+            // If the Warmup step's own configured target speed is 0/unset (SpeedMode::FREE): send speed=1.0
+            if (!sessionSnap.hasSpeedTarget || sessionSnap.currentStep.targetSpeedKmh < 0.5f) {
                 dispatcher.stageSpeedTarget(1.0f, ctx);
                 DiagnosticsLog::instance().addEntryf(
                     "[FreshStart] Interval mode: Warmup speed unset -> staged default speed=1.0 km/h");
