@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include "../WorkoutEngine/WorkoutExecutionTypes.h"
+#include "../WorkoutSession/WorkoutSessionTypes.h"
 #include "../CsafeInterface/CsafeTypes.h"
 
 namespace stridecontrol {
@@ -54,6 +55,12 @@ struct TelemetryReport {
     bool continuationWindowActive = false;
     uint32_t continuationWindowRemainingMs = 0;
     uint32_t actualStepDurationsMs[MAX_EXPANDED_WORKOUT_STEPS] = {};
+    bool hasManualPrefix = false;
+    uint32_t manualDurationMs = 0;
+    uint8_t manualSpeedProfile[SPEED_PROFILE_SAMPLES_PER_STEP] = {};
+    uint8_t activeStepSpeedProfile[SPEED_PROFILE_SAMPLES_PER_STEP] = {};
+    uint8_t completedStepProfilesCount = 0;
+    uint8_t completedStepProfiles[MAX_COMPLETED_STEP_PROFILES][SPEED_PROFILE_SAMPLES_PER_STEP] = {};
     uint64_t maintenanceDistanceMeters = 0;
     uint64_t maintenanceTimeSeconds = 0;
     bool maintenanceSavePending = false;

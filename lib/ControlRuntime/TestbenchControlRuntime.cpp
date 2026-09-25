@@ -236,7 +236,9 @@ void TestbenchControlRuntime::end() {
 }
 
 bool TestbenchControlRuntime::armWorkout(const WorkoutDefinition& def, uint32_t nowMs) {
-    if (!initialized_ || session_.isActive() || rampTestTracker_.active()) {
+    const bool isManualActive = session_.isActive() &&
+        (session_.getSnapshot().workoutId == WorkoutSession::kFreeRunWorkoutId);
+    if (!initialized_ || (session_.isActive() && !isManualActive) || rampTestTracker_.active()) {
         return false;
     }
     if (!workoutEngine_.loadWorkout(def)) {
@@ -812,8 +814,10 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             }
             case ControlCommandType::ArmWorkout: {
-                if (session_.isActive() || rampTestTracker_.active()) {
-                    Serial.println("[TestbenchControlRuntime] Cannot arm workout: session or ramp test already active");
+                const bool isManualActive = session_.isActive() &&
+                    (session_.getSnapshot().workoutId == WorkoutSession::kFreeRunWorkoutId);
+                if ((session_.isActive() && !isManualActive) || rampTestTracker_.active()) {
+                    Serial.println("[TestbenchControlRuntime] Cannot arm workout: structured session or ramp test already active");
                     break;
                 }
                 const WorkoutDefinition* def = SettingsService::instance().findWorkout(
@@ -821,7 +825,8 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 if (def != nullptr && workoutEngine_.loadWorkout(*def)) {
                     dispatcher_.clearForNewSession();
                     session_.armWorkout(&workoutEngine_.getExpandedWorkout(), cmdNowMs, cmd.data.arm.userId);
-                    Serial.printf("[TestbenchControlRuntime] Armed workout id=%u for user=%u\n", cmd.data.arm.workoutId, cmd.data.arm.userId);
+                    Serial.printf("[TestbenchControlRuntime] Armed workout id=%u for user=%u (transitionedFromManual=%d)\n",
+                        cmd.data.arm.workoutId, cmd.data.arm.userId, isManualActive ? 1 : 0);
                 } else {
                     Serial.printf("[TestbenchControlRuntime] FAILED to arm workout id=%u for user=%u (def=%p)\n", cmd.data.arm.workoutId, cmd.data.arm.userId, def);
                 }

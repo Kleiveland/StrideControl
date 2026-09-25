@@ -264,6 +264,28 @@ void WebServerManager::registerRoutes() {
             actualDurations.add(report.actualStepDurationsMs[i]);
         }
 
+        if (report.hasManualPrefix && report.manualDurationMs > 0) {
+            JsonObject manSeg = session["manualSegment"].to<JsonObject>();
+            manSeg["durationMs"] = report.manualDurationMs;
+            JsonArray manProf = manSeg["profile"].to<JsonArray>();
+            for (size_t s = 0; s < SPEED_PROFILE_SAMPLES_PER_STEP; ++s) {
+                manProf.add(report.manualSpeedProfile[s]);
+            }
+        }
+
+        JsonArray activeProf = session["activeStepProfile"].to<JsonArray>();
+        for (size_t s = 0; s < SPEED_PROFILE_SAMPLES_PER_STEP; ++s) {
+            activeProf.add(report.activeStepSpeedProfile[s]);
+        }
+
+        JsonArray completedProfiles = session["completedStepProfiles"].to<JsonArray>();
+        for (uint8_t i = 0; i < report.completedStepProfilesCount && i < MAX_COMPLETED_STEP_PROFILES; ++i) {
+            JsonArray stepProf = completedProfiles.add<JsonArray>();
+            for (size_t s = 0; s < SPEED_PROFILE_SAMPLES_PER_STEP; ++s) {
+                stepProf.add(report.completedStepProfiles[i][s]);
+            }
+        }
+
         JsonObject hr = doc["heartRate"].to<JsonObject>();
         hr["bpm"] = report.heartRateBpm;
         hr["valid"] = report.heartRateValid;

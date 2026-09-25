@@ -98,6 +98,12 @@ public:
         report.continuationWindowActive = telem.sessionSnapshot.continuationWindowActive;
         report.continuationWindowRemainingMs = telem.sessionSnapshot.continuationWindowRemainingMs;
         memcpy(report.actualStepDurationsMs, telem.sessionSnapshot.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
+        report.hasManualPrefix = telem.sessionSnapshot.hasManualPrefix;
+        report.manualDurationMs = telem.sessionSnapshot.manualDurationMs;
+        memcpy(report.manualSpeedProfile, telem.sessionSnapshot.manualSpeedProfile, sizeof(report.manualSpeedProfile));
+        memcpy(report.activeStepSpeedProfile, telem.sessionSnapshot.activeStepSpeedProfile, sizeof(report.activeStepSpeedProfile));
+        report.completedStepProfilesCount = telem.sessionSnapshot.completedStepProfilesCount;
+        memcpy(report.completedStepProfiles, telem.sessionSnapshot.completedStepProfiles, sizeof(report.completedStepProfiles));
         report.maintenanceDistanceMeters = telem.snapshot.maintenance.totalDistanceMeters;
         report.maintenanceTimeSeconds = telem.snapshot.maintenance.totalTimeSeconds;
         report.maintenanceSavePending = telem.snapshot.maintenance.savePending;
@@ -220,6 +226,12 @@ public:
         report.continuationWindowActive = sessSnap.continuationWindowActive;
         report.continuationWindowRemainingMs = sessSnap.continuationWindowRemainingMs;
         memcpy(report.actualStepDurationsMs, sessSnap.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
+        report.hasManualPrefix = sessSnap.hasManualPrefix;
+        report.manualDurationMs = sessSnap.manualDurationMs;
+        memcpy(report.manualSpeedProfile, sessSnap.manualSpeedProfile, sizeof(report.manualSpeedProfile));
+        memcpy(report.activeStepSpeedProfile, sessSnap.activeStepSpeedProfile, sizeof(report.activeStepSpeedProfile));
+        report.completedStepProfilesCount = sessSnap.completedStepProfilesCount;
+        memcpy(report.completedStepProfiles, sessSnap.completedStepProfiles, sizeof(report.completedStepProfiles));
         report.maintenanceDistanceMeters = snap.maintenance.totalDistanceMeters;
         report.maintenanceTimeSeconds = snap.maintenance.totalTimeSeconds;
         report.maintenanceSavePending = snap.maintenance.savePending;

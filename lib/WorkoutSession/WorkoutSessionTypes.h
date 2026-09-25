@@ -66,6 +66,9 @@ struct WorkoutSessionConfig {
     uint32_t speedAdjustmentPromptDurationMs = 15000;   // 15-second prompt duration during REST step
 };
 
+static constexpr size_t SPEED_PROFILE_SAMPLES_PER_STEP = 16;
+static constexpr size_t MAX_COMPLETED_STEP_PROFILES = 24;
+
 /**
  * @brief Copy-safe, immutable snapshot of the active workout session state.
  */
@@ -138,6 +141,14 @@ struct WorkoutSessionSnapshot {
     float appliedWorkSpeedShiftKmh = 0.0f;
     uint32_t speedAdjustmentPromptExpiresMs = 0;
     uint32_t actualStepDurationsMs[MAX_EXPANDED_WORKOUT_STEPS] = {};
+
+    // Speed profile history & manual prefix visualization
+    bool hasManualPrefix = false;
+    uint32_t manualDurationMs = 0;
+    uint8_t manualSpeedProfile[SPEED_PROFILE_SAMPLES_PER_STEP] = {};
+    uint8_t activeStepSpeedProfile[SPEED_PROFILE_SAMPLES_PER_STEP] = {};
+    uint8_t completedStepProfilesCount = 0;
+    uint8_t completedStepProfiles[MAX_COMPLETED_STEP_PROFILES][SPEED_PROFILE_SAMPLES_PER_STEP] = {};
 
     // Diagnostics & Sequence
     uint32_t snapshotTimestampMs = 0;

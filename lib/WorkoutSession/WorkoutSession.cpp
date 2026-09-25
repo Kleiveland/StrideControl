@@ -126,7 +126,28 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, 
 
     workout_ = workout;
 
+    const bool transitioningFromManual = (snapshot_.state == WorkoutSessionState::Running ||
+                                          snapshot_.state == WorkoutSessionState::Suspended) &&
+                                         (snapshot_.workoutId == kFreeRunWorkoutId);
+
+    if (transitioningFromManual) {
+        finalizeManualProfile();
+    } else {
+        hasManualPrefix_ = false;
+        manualDurationMs_ = 0;
+        memset(manualSpeedProfile_, 0, sizeof(manualSpeedProfile_));
+    }
+    completedStepProfilesCount_ = 0;
+    memset(completedStepProfiles_, 0, sizeof(completedStepProfiles_));
+    memset(activeStepSpeedProfile_, 0, sizeof(activeStepSpeedProfile_));
+    lastSpeedSampleTimestampMs_ = nowMs;
+    lastRecordedBin_ = 0;
+
     snapshot_ = WorkoutSessionSnapshot{};
+    snapshot_.hasManualPrefix = hasManualPrefix_;
+    snapshot_.manualDurationMs = manualDurationMs_;
+    memcpy(snapshot_.manualSpeedProfile, manualSpeedProfile_, sizeof(snapshot_.manualSpeedProfile));
+    snapshot_.completedStepProfilesCount = 0;
     snapshot_.state = WorkoutSessionState::Armed;
     snapshot_.initialized = true;
     snapshot_.active = true;
@@ -239,6 +260,15 @@ bool WorkoutSession::startFreeRun(uint32_t nowMs, uint8_t userId) {
         // Fresh start (from Idle, or a different user than the one who paused) - full reset,
         // mirroring armWorkout()'s reset block exactly.
         snapshot_ = WorkoutSessionSnapshot{};
+        hasManualPrefix_ = false;
+        manualDurationMs_ = 0;
+        manualSlotDurationMs_ = 1000;
+        lastSpeedSampleTimestampMs_ = nowMs;
+        lastRecordedBin_ = 0;
+        memset(manualSpeedProfile_, 0, sizeof(manualSpeedProfile_));
+        completedStepProfilesCount_ = 0;
+        memset(completedStepProfiles_, 0, sizeof(completedStepProfiles_));
+        memset(activeStepSpeedProfile_, 0, sizeof(activeStepSpeedProfile_));
         snapshot_.sessionGeneration = ++sessionGeneration_;
         intentSequence_ = 0;
         totalElapsedTimeMs_ = 0;
@@ -367,11 +397,24 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
 
     if (hasPriorStep_ && snapshot_.currentStepIndex < MAX_EXPANDED_WORKOUT_STEPS) {
         actualStepDurationsMs_[snapshot_.currentStepIndex] = stepElapsedMs_;
+        finalizeActiveStepProfile();
     }
     hasPriorStep_ = true;
 
     snapshot_.currentStepIndex = stepIndex;
     snapshot_.currentStep = workout_->steps[stepIndex];
+
+    const float initSpd = (workout_->steps[stepIndex].targetSpeedKmh > 0.0f)
+        ? workout_->steps[stepIndex].targetSpeedKmh
+        : 1.0f;
+    const uint8_t initSpdByte = static_cast<uint8_t>(constrain(static_cast<int>(roundf(initSpd * 10.0f)), 0, 255));
+    for (size_t i = 0; i < SPEED_PROFILE_SAMPLES_PER_STEP; ++i) {
+        activeStepSpeedProfile_[i] = initSpdByte;
+    }
+    memcpy(snapshot_.activeStepSpeedProfile, activeStepSpeedProfile_, sizeof(snapshot_.activeStepSpeedProfile));
+    lastRecordedBin_ = 0;
+    lastSpeedSampleTimestampMs_ = nowMs;
+
     if (workout_->steps[stepIndex].segmentId != speedAdjustmentShiftSegmentId_) {
         speedAdjustmentShiftAppliedKmh_ = 0.0f;
         speedAdjustmentShiftSegmentId_ = workout_->steps[stepIndex].segmentId;
@@ -546,6 +589,7 @@ void WorkoutSession::advanceStep(uint32_t nowMs, double currentRunnerDistanceKm)
     if (snapshot_.currentStepIndex + 1 >= workout_->totalSteps) {
         if (hasPriorStep_ && snapshot_.currentStepIndex < MAX_EXPANDED_WORKOUT_STEPS) {
             actualStepDurationsMs_[snapshot_.currentStepIndex] = stepElapsedMs_;
+            finalizeActiveStepProfile();
         }
         if (snapshot_.currentStep.role == StepRole::COOLDOWN) {
             // Nedjogg completion: enter CompletionPending, do NOT stop or auto-complete
@@ -759,6 +803,12 @@ void WorkoutSession::update(
         snapshot_.maxSpeedKmh = maxSpeedKmh_;
         snapshot_.heartRateEverValid = heartRateEverValid_;
         memcpy(snapshot_.actualStepDurationsMs, actualStepDurationsMs_, sizeof(snapshot_.actualStepDurationsMs));
+        snapshot_.hasManualPrefix = hasManualPrefix_;
+        snapshot_.manualDurationMs = manualDurationMs_;
+        memcpy(snapshot_.manualSpeedProfile, manualSpeedProfile_, sizeof(snapshot_.manualSpeedProfile));
+        memcpy(snapshot_.activeStepSpeedProfile, activeStepSpeedProfile_, sizeof(snapshot_.activeStepSpeedProfile));
+        snapshot_.completedStepProfilesCount = completedStepProfilesCount_;
+        memcpy(snapshot_.completedStepProfiles, completedStepProfiles_, sizeof(snapshot_.completedStepProfiles));
         return;
     }
 
@@ -800,6 +850,12 @@ void WorkoutSession::update(
         }
         if (applicationSnapshot.runner.runnerSpeedKmh > maxSpeedKmh_) {
             maxSpeedKmh_ = applicationSnapshot.runner.runnerSpeedKmh;
+        }
+
+        // Sample speed every 1000ms
+        if (nowMs - lastSpeedSampleTimestampMs_ >= 1000) {
+            lastSpeedSampleTimestampMs_ = nowMs;
+            recordSpeedSample(applicationSnapshot.speed.speedKmh, nowMs);
         }
 
         // Active step progression
@@ -899,6 +955,12 @@ void WorkoutSession::update(
         snapshot_.restExtensionSeconds = restExtensionSecondsTotal_;
         snapshot_.appliedWorkSpeedShiftKmh = speedAdjustmentShiftAppliedKmh_;
         memcpy(snapshot_.actualStepDurationsMs, actualStepDurationsMs_, sizeof(snapshot_.actualStepDurationsMs));
+        snapshot_.hasManualPrefix = hasManualPrefix_;
+        snapshot_.manualDurationMs = manualDurationMs_;
+        memcpy(snapshot_.manualSpeedProfile, manualSpeedProfile_, sizeof(snapshot_.manualSpeedProfile));
+        memcpy(snapshot_.activeStepSpeedProfile, activeStepSpeedProfile_, sizeof(snapshot_.activeStepSpeedProfile));
+        snapshot_.completedStepProfilesCount = completedStepProfilesCount_;
+        memcpy(snapshot_.completedStepProfiles, completedStepProfiles_, sizeof(snapshot_.completedStepProfiles));
         return;
     }
 }
@@ -1059,6 +1121,14 @@ bool WorkoutSession::finalizeSession(uint32_t nowMs) {
     if (!initialized_) {
         return false;
     }
+    finalizeActiveStepProfile();
+    snapshot_.hasManualPrefix = hasManualPrefix_;
+    snapshot_.manualDurationMs = manualDurationMs_;
+    memcpy(snapshot_.manualSpeedProfile, manualSpeedProfile_, sizeof(snapshot_.manualSpeedProfile));
+    memcpy(snapshot_.activeStepSpeedProfile, activeStepSpeedProfile_, sizeof(snapshot_.activeStepSpeedProfile));
+    snapshot_.completedStepProfilesCount = completedStepProfilesCount_;
+    memcpy(snapshot_.completedStepProfiles, completedStepProfiles_, sizeof(snapshot_.completedStepProfiles));
+
     snapshot_.state = WorkoutSessionState::Completed;
     snapshot_.active = false;
     snapshot_.suspended = false;
@@ -1103,6 +1173,107 @@ bool WorkoutSession::isActive() const {
 
 bool WorkoutSession::isSuspended() const {
     return snapshot_.suspended;
+}
+
+void WorkoutSession::recordSpeedSample(float currentSpeedKmh, uint32_t nowMs) {
+    (void)nowMs;
+    const uint8_t spdByte = static_cast<uint8_t>(constrain(static_cast<int>(roundf(currentSpeedKmh * 10.0f)), 0, 255));
+
+    if (snapshot_.workoutId == kFreeRunWorkoutId) {
+        // FreeRun / Manual mode: dynamic hierarchical downsampling into 16 bins
+        manualDurationMs_ = stepElapsedMs_;
+        uint32_t slot = stepElapsedMs_ / manualSlotDurationMs_;
+
+        while (slot >= SPEED_PROFILE_SAMPLES_PER_STEP) {
+            // Compress existing 16 slots into first 8 slots
+            for (size_t i = 0; i < SPEED_PROFILE_SAMPLES_PER_STEP / 2; ++i) {
+                manualSpeedProfile_[i] = static_cast<uint8_t>(
+                    (static_cast<uint16_t>(manualSpeedProfile_[2 * i]) + manualSpeedProfile_[2 * i + 1]) / 2);
+            }
+            for (size_t i = SPEED_PROFILE_SAMPLES_PER_STEP / 2; i < SPEED_PROFILE_SAMPLES_PER_STEP; ++i) {
+                manualSpeedProfile_[i] = spdByte;
+            }
+            manualSlotDurationMs_ *= 2;
+            slot = stepElapsedMs_ / manualSlotDurationMs_;
+        }
+        if (slot >= SPEED_PROFILE_SAMPLES_PER_STEP) {
+            slot = SPEED_PROFILE_SAMPLES_PER_STEP - 1;
+        }
+
+        if (slot > lastRecordedBin_) {
+            for (size_t b = lastRecordedBin_ + 1; b <= slot; ++b) {
+                manualSpeedProfile_[b] = spdByte;
+            }
+        }
+        manualSpeedProfile_[slot] = spdByte;
+        for (size_t b = slot + 1; b < SPEED_PROFILE_SAMPLES_PER_STEP; ++b) {
+            manualSpeedProfile_[b] = spdByte;
+        }
+        lastRecordedBin_ = static_cast<uint8_t>(slot);
+        memcpy(activeStepSpeedProfile_, manualSpeedProfile_, sizeof(activeStepSpeedProfile_));
+    } else {
+        // Structured Interval Step: map stepElapsedMs_ / targetDurationMs to 0..15
+        uint32_t targetMs = runtimeStepTargetDurationMs_;
+        if (targetMs == 0) {
+            targetMs = 60000; // fallback to 60s for distance or unmeasured steps
+        }
+        const float frac = static_cast<float>(stepElapsedMs_) / static_cast<float>(targetMs);
+        const uint8_t bin = static_cast<uint8_t>(
+            constrain(static_cast<int>(frac * SPEED_PROFILE_SAMPLES_PER_STEP), 0, static_cast<int>(SPEED_PROFILE_SAMPLES_PER_STEP - 1)));
+
+        if (bin > lastRecordedBin_) {
+            for (size_t b = lastRecordedBin_ + 1; b <= bin; ++b) {
+                activeStepSpeedProfile_[b] = spdByte;
+            }
+        }
+        activeStepSpeedProfile_[bin] = spdByte;
+        for (size_t b = bin + 1; b < SPEED_PROFILE_SAMPLES_PER_STEP; ++b) {
+            activeStepSpeedProfile_[b] = spdByte;
+        }
+        lastRecordedBin_ = bin;
+    }
+    memcpy(snapshot_.activeStepSpeedProfile, activeStepSpeedProfile_, sizeof(snapshot_.activeStepSpeedProfile));
+}
+
+void WorkoutSession::finalizeActiveStepProfile() {
+    if (snapshot_.workoutId == kFreeRunWorkoutId) {
+        finalizeManualProfile();
+        return;
+    }
+    // Fill any unreached bins at step end with last recorded speed
+    const uint8_t lastSpd = activeStepSpeedProfile_[lastRecordedBin_];
+    for (size_t b = lastRecordedBin_ + 1; b < SPEED_PROFILE_SAMPLES_PER_STEP; ++b) {
+        activeStepSpeedProfile_[b] = lastSpd;
+    }
+    if (snapshot_.currentStepIndex < MAX_COMPLETED_STEP_PROFILES) {
+        memcpy(completedStepProfiles_[snapshot_.currentStepIndex], activeStepSpeedProfile_, sizeof(activeStepSpeedProfile_));
+        if (snapshot_.currentStepIndex >= completedStepProfilesCount_) {
+            completedStepProfilesCount_ = snapshot_.currentStepIndex + 1;
+        }
+        snapshot_.completedStepProfilesCount = completedStepProfilesCount_;
+        memcpy(snapshot_.completedStepProfiles, completedStepProfiles_, sizeof(snapshot_.completedStepProfiles));
+    }
+}
+
+void WorkoutSession::finalizeManualProfile() {
+    hasManualPrefix_ = true;
+    manualDurationMs_ = stepElapsedMs_;
+    // Stretch filled slots across all 16 slots if fewer than 16 slots were populated
+    const uint8_t filledCount = (lastRecordedBin_ < (SPEED_PROFILE_SAMPLES_PER_STEP - 1))
+        ? (lastRecordedBin_ + 1)
+        : static_cast<uint8_t>(SPEED_PROFILE_SAMPLES_PER_STEP);
+    if (filledCount > 0 && filledCount < SPEED_PROFILE_SAMPLES_PER_STEP) {
+        uint8_t temp[SPEED_PROFILE_SAMPLES_PER_STEP];
+        memcpy(temp, manualSpeedProfile_, sizeof(temp));
+        for (size_t i = 0; i < SPEED_PROFILE_SAMPLES_PER_STEP; ++i) {
+            size_t src = (i * filledCount) / SPEED_PROFILE_SAMPLES_PER_STEP;
+            if (src >= filledCount) src = filledCount - 1;
+            manualSpeedProfile_[i] = temp[src];
+        }
+    }
+    snapshot_.hasManualPrefix = hasManualPrefix_;
+    snapshot_.manualDurationMs = manualDurationMs_;
+    memcpy(snapshot_.manualSpeedProfile, manualSpeedProfile_, sizeof(snapshot_.manualSpeedProfile));
 }
 
 const char* WorkoutSession::version() {

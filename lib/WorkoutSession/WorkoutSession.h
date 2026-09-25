@@ -85,6 +85,9 @@ private:
     void startStep(uint8_t stepIndex, uint32_t nowMs, double currentRunnerDistanceKm);
     void advanceStep(uint32_t nowMs, double currentRunnerDistanceKm);
     void emitStepCommandIntent(const ExpandedStep& step, bool forceReissue = false);
+    void recordSpeedSample(float currentSpeedKmh, uint32_t nowMs);
+    void finalizeActiveStepProfile();
+    void finalizeManualProfile();
 
     WorkoutSessionConfig config_{};
     const ExpandedWorkout* workout_ = nullptr;
@@ -172,6 +175,17 @@ private:
     uint8_t desiredGuiUserId_ = 0;
     bool desiredGuiIsManual_ = false;
     static constexpr uint32_t kFreeRunDurationSeconds = 36000; // 10 hours - effectively indefinite
+
+    // Speed profile buffers & sampling
+    uint8_t activeStepSpeedProfile_[SPEED_PROFILE_SAMPLES_PER_STEP] = {};
+    uint8_t completedStepProfiles_[MAX_COMPLETED_STEP_PROFILES][SPEED_PROFILE_SAMPLES_PER_STEP] = {};
+    uint8_t completedStepProfilesCount_ = 0;
+    bool hasManualPrefix_ = false;
+    uint32_t manualDurationMs_ = 0;
+    uint8_t manualSpeedProfile_[SPEED_PROFILE_SAMPLES_PER_STEP] = {};
+    uint32_t manualSlotDurationMs_ = 1000; // 1s initial slot duration, doubles dyadically on overflow
+    uint32_t lastSpeedSampleTimestampMs_ = 0;
+    uint8_t lastRecordedBin_ = 0;
 };
 
 } // namespace stridecontrol

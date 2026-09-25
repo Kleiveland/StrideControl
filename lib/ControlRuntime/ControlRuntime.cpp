@@ -354,8 +354,10 @@ bool ControlRuntime::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs) 
     if (!initialized_ || workout == nullptr || workout->totalSteps == 0) {
         return false;
     }
-    // Prevent workout loading or rebinding while session or ramp test is active
-    if (session_.isActive() || rampTestTracker_.active()) {
+    const bool isManualActive = session_.isActive() &&
+        (session_.getSnapshot().workoutId == WorkoutSession::kFreeRunWorkoutId);
+    // Prevent workout loading or rebinding while session or ramp test is active (allow manual transition)
+    if ((session_.isActive() && !isManualActive) || rampTestTracker_.active()) {
         return false;
     }
     dispatcher_.clearForNewSession();
@@ -623,8 +625,10 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             }
             case ControlCommandType::ArmWorkout: {
-                if (session_.isActive() || rampTestTracker_.active()) {
-                    Serial.println("[ControlRuntime] Cannot arm workout: session or ramp test already active");
+                const bool isManualActive = session_.isActive() &&
+                    (session_.getSnapshot().workoutId == WorkoutSession::kFreeRunWorkoutId);
+                if ((session_.isActive() && !isManualActive) || rampTestTracker_.active()) {
+                    Serial.println("[ControlRuntime] Cannot arm workout: structured session or ramp test already active");
                     break;
                 }
                 const WorkoutDefinition* def = SettingsService::instance().findWorkout(
@@ -632,7 +636,8 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 if (def != nullptr && workoutEngine_.loadWorkout(*def)) {
                     dispatcher_.clearForNewSession();
                     session_.armWorkout(&workoutEngine_.getExpandedWorkout(), cmdNowMs, cmd.data.arm.userId);
-                    Serial.printf("[ControlRuntime] Armed workout id=%u for user=%u\n", cmd.data.arm.workoutId, cmd.data.arm.userId);
+                    Serial.printf("[ControlRuntime] Armed workout id=%u for user=%u (transitionedFromManual=%d)\n",
+                        cmd.data.arm.workoutId, cmd.data.arm.userId, isManualActive ? 1 : 0);
                 } else {
                     Serial.printf("[ControlRuntime] FAILED to arm workout id=%u for user=%u (def=%p)\n", cmd.data.arm.workoutId, cmd.data.arm.userId, def);
                 }
