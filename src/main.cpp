@@ -57,8 +57,9 @@ public:
         report.stepIndex = telem.sessionSnapshot.currentStepIndex;
         report.stepRemainingMs = telem.sessionSnapshot.stepRemainingMs;
         report.stepElapsedMs = telem.sessionSnapshot.stepElapsedMs;
-        report.targetSpeedKmh = telem.simTargetSpeedKmh;
-        report.targetInclinePct = telem.simTargetInclinePct;
+        const stridecontrol::StagedTargets staged = runtime_.getStagedTargets();
+        report.targetSpeedKmh = telem.sessionSnapshot.hasSpeedTarget ? telem.sessionSnapshot.targetSpeedKmh : staged.speedKmh;
+        report.targetInclinePct = telem.sessionSnapshot.hasInclineTarget ? static_cast<float>(telem.sessionSnapshot.targetInclinePct) : staged.inclinePct;
         report.runnerSpeedKmh = telem.snapshot.runner.runnerSpeedKmh;
         report.beltDistanceKm = runtime_.getComposite().getVirtualTreadmill().getOdometerKm();
         const auto runnerLoc = runtime_.getComposite().getVirtualTreadmill().getRunnerLocation();

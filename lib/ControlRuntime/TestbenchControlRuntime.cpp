@@ -730,9 +730,10 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 break;
             case ControlCommandType::Pause:
                 session_.suspend(cmdNowMs);
+                composite_.stageStop(cmdNowMs);
                 break;
             case ControlCommandType::Resume:
-                if (!session_.isActive() && !rampTestTracker_.active()) {
+                if ((!session_.isActive() || session_.isSuspended()) && !rampTestTracker_.active()) {
                     composite_.stageQuickStart(cmdNowMs);
                     composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
                 }
