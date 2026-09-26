@@ -985,6 +985,12 @@
                 <div class="hero-lbl-scaled">TID IGJEN</div>
                 <div class="hero-time-interval">02:48</div>
                 
+                <div class="interval-action-zone">
+                    <div class="btn-act-action rest clickable" id="btn-kutt-drag" style="max-width: 540px;">KUTT DRAG</div>
+                    <div class="btn-act-action work clickable" id="btn-goto-drag-run" style="max-width: 540px;">START DRAG NÅ</div>
+                    <div class="btn-act-action rest clickable" id="btn-extend-rest-run">+30 SEKUNDER</div>
+                </div>
+
                 <div class="timeline-box-massive">
                     <div class="timeline-header-clean">
                         <span id="runWorkoutTitle">3-2-1 X 2</span>
@@ -1003,12 +1009,7 @@
                 </div>
             </div>
 
-            <div id="interval-speed-mount" style="display: none; width: 100%; margin-bottom: 15px;"></div>
-            <div class="interval-action-zone">
-                <div class="btn-act-action rest clickable" id="btn-kutt-drag" style="max-width: 540px;">KUTT DRAG</div>
-                <div class="btn-act-action work clickable" id="btn-goto-drag-run" style="max-width: 540px;">START DRAG NÅ</div>
-                <div class="btn-act-action rest clickable" id="btn-extend-rest-run">+30 SEKUNDER</div>
-            </div>
+            <div id="interval-speed-mount" style="width: 100%; height: 140px; display: flex; align-items: center; justify-content: center;"></div>
         </div>
 
         <!-- =================================================================== -->
@@ -3661,9 +3662,6 @@
         function restoreManualQuickKeyRows() {
             const spdRow = document.getElementById('manual-speed-row');
             const viewManual = document.getElementById('view-manual');
-            const intSpdMount = document.getElementById('interval-speed-mount');
-
-            if (intSpdMount) intSpdMount.style.display = 'none';
 
             if (viewManual && spdRow && spdRow.parentElement !== viewManual) {
                 viewManual.appendChild(spdRow);
@@ -3708,13 +3706,11 @@
 
             const showSpeed = isAllowedRole && speedUnset;
 
-            // Speed Quick-Key Row (Immediately above .interval-action-zone)
+            // Speed Quick-Key Row (at the bottom of #view-interval-run in #interval-speed-mount)
             if (showSpeed) {
                 mountQuickKeyRow(spdRow, intSpdMount);
                 spdRow.style.display = 'flex';
-                intSpdMount.style.display = 'block';
             } else {
-                intSpdMount.style.display = 'none';
                 spdRow.style.display = 'none';
             }
         }
