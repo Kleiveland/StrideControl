@@ -113,6 +113,10 @@ public:
     uint8_t getSpeedAdaptationLog(SpeedAdaptationLogEntry* outEntries, uint8_t maxEntries) const override {
         return speedLearningTracker_.getAuditLog(outEntries, maxEntries);
     }
+    DeadTimePhase getDeadTimeTrackerPhase() const override { return deadTimeTracker_.phase(); }
+    uint32_t getMeasuredDeadTimeMs() const override { return deadTimeTracker_.measuredDeadTimeMs(); }
+    uint32_t getDeadTimeCountdownDurationMs() const override { return deadTimeTracker_.countdownDurationMs(); }
+    uint32_t getDeadTimeMotorLagMs() const override { return deadTimeTracker_.motorDeadTimeMs(); }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
     bool isEmergencyStopActive() const { return console_.isEmergencyStopActive(); }
@@ -173,6 +177,7 @@ private:
     RampTestTracker rampTestTracker_;
     InclineCommissioningTracker inclineTracker_;
     SpeedLearningTracker speedLearningTracker_;
+    DeadTimeTracker deadTimeTracker_;
 
     bool initialized_ = false;
     uint32_t lastAuthoritativeTimestampMs_ = 0;

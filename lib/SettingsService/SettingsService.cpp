@@ -782,8 +782,8 @@ bool SettingsService::validateRampCalibrationConfig(const RampCalibrationConfig&
         }
     };
 
-    if (c.deadTimeMs > 5000) {
-        setErr("deadTimeMs exceeds 5000 ms limit");
+    if (c.deadTimeMs > 15000) {
+        setErr("deadTimeMs exceeds 15000 ms limit");
         return false;
     }
     for (int i = 0; i < 3; ++i) {
