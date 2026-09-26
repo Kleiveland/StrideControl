@@ -1,4 +1,6 @@
 #include "VirtualTreadmill.h"
+#include "../WorkoutSession/WorkoutSession.h"
+#include <Arduino.h>
 #include <cmath>
 #include <algorithm>
 
@@ -26,6 +28,7 @@ void VirtualTreadmill::resetModelUs(uint64_t initialTimeUs) {
     actualInclinePct_ = 0.0f;
     targetInclinePct_ = 0.0f;
     odometerKm_ = 0.0;
+    speedDeadTimeRemainingMs_ = 0;
 
     fractionalTachoPulses_ = 0.0;
     totalTachoPulses_ = 0;
@@ -113,6 +116,11 @@ bool VirtualTreadmill::tick(const SimulationTick& tick) {
                 csafeState_.reportedState = CsafeMachineState::InUse;
                 csafeState_.rawStateByte = 0x85;
                 csafeState_.stateNibble = 0x05;
+                if (config_.useRealisticRamping && std::fabs(pendingStartSpeedKmh_ - actualSpeedKmh_) > 0.05f) {
+                    if (speedDeadTimeRemainingMs_ == 0) {
+                        speedDeadTimeRemainingMs_ = config_.deadTimeMs;
+                    }
+                }
                 targetSpeedKmh_ = pendingStartSpeedKmh_;
                 targetInclinePct_ = pendingStartInclinePct_;
             } else {
@@ -168,6 +176,7 @@ bool VirtualTreadmill::tick(const SimulationTick& tick) {
 void VirtualTreadmill::updateSpeed(uint32_t deltaMs) {
     if (directBeltSpeedKmh_ > 0.0f && !eStopActive_) {
         actualSpeedKmh_ = directBeltSpeedKmh_;
+        speedDeadTimeRemainingMs_ = 0;
         return;
     }
 
@@ -176,6 +185,7 @@ void VirtualTreadmill::updateSpeed(uint32_t deltaMs) {
 
     // When E-Stop is active, target is forced to 0.0 with eStopDeceleration
     if (eStopActive_) {
+        speedDeadTimeRemainingMs_ = 0;
         effectiveTarget = 0.0f;
         const float maxDecel = config_.eStopDecelerationKmhPerSec * dtSec;
         if (actualSpeedKmh_ > 0.0f) {
@@ -194,17 +204,98 @@ void VirtualTreadmill::updateSpeed(uint32_t deltaMs) {
         effectiveTarget = 0.0f;
     }
 
-    if (actualSpeedKmh_ < effectiveTarget) {
-        const float maxAccel = config_.accelerationKmhPerSec * dtSec;
-        actualSpeedKmh_ += maxAccel;
-        if (actualSpeedKmh_ > effectiveTarget) {
-            actualSpeedKmh_ = effectiveTarget;
+    if (config_.useRealisticRamping) {
+        // Handle motor command dead-time countdown
+        if (speedDeadTimeRemainingMs_ > 0) {
+            if (deltaMs >= speedDeadTimeRemainingMs_) {
+                deltaMs -= speedDeadTimeRemainingMs_;
+                speedDeadTimeRemainingMs_ = 0;
+                // Remaining deltaMs in this tick is used for ramping
+            } else {
+                speedDeadTimeRemainingMs_ -= deltaMs;
+                return; // Belt holds velocity during dead-time
+            }
         }
-    } else if (actualSpeedKmh_ > effectiveTarget) {
-        const float maxDecel = config_.normalDecelerationKmhPerSec * dtSec;
-        actualSpeedKmh_ -= maxDecel;
+
+        float v = actualSpeedKmh_;
+        const float v_target = effectiveTarget;
+        float t_rem = static_cast<float>(deltaMs);
+
+        while (t_rem > 0.001f && std::fabs(v - v_target) > 0.0001f) {
+            const bool accelerating = (v_target > v);
+            int zone = 0;
+            if (accelerating) {
+                if (v < WorkoutSession::kSpeedZoneBoundsKmh[1]) {
+                    zone = 0; // [0.8, 6.0)
+                } else if (v < WorkoutSession::kSpeedZoneBoundsKmh[2]) {
+                    zone = 1; // [6.0, 14.0)
+                } else {
+                    zone = 2; // [14.0, 20.0+]
+                }
+            } else {
+                if (v > WorkoutSession::kSpeedZoneBoundsKmh[2]) {
+                    zone = 2; // (14.0, 20.0+]
+                } else if (v > WorkoutSession::kSpeedZoneBoundsKmh[1]) {
+                    zone = 1; // (6.0, 14.0]
+                } else {
+                    zone = 0; // [0.0, 6.0]
+                }
+            }
+
+            const float msPerKmh = (accelerating ? config_.accelMsPerKmh[zone] : config_.decelMsPerKmh[zone])
+                                   * std::max(1.0f, config_.loadMultiplier);
+            const float effectiveMsPerKmh = std::max(10.0f, msPerKmh); // Guard against div-by-zero
+
+            if (accelerating) {
+                const float v_bound = (zone < 2) ? WorkoutSession::kSpeedZoneBoundsKmh[zone + 1] : config_.maxSpeedKmh;
+                const float v_next = std::min(v_target, v_bound);
+                const float delta_v_needed = v_next - v;
+                if (delta_v_needed <= 0.0001f) {
+                    v = v_next;
+                    break;
+                }
+                const float time_needed_ms = delta_v_needed * effectiveMsPerKmh;
+
+                if (t_rem < time_needed_ms) {
+                    v += t_rem / effectiveMsPerKmh;
+                    t_rem = 0.0f;
+                } else {
+                    v = v_next;
+                    t_rem -= time_needed_ms;
+                }
+            } else {
+                const float v_bound = (zone > 0) ? WorkoutSession::kSpeedZoneBoundsKmh[zone] : 0.0f;
+                const float v_next = std::max(v_target, v_bound);
+                const float delta_v_needed = v - v_next;
+                if (delta_v_needed <= 0.0001f) {
+                    v = v_next;
+                    break;
+                }
+                const float time_needed_ms = delta_v_needed * effectiveMsPerKmh;
+
+                if (t_rem < time_needed_ms) {
+                    v -= t_rem / effectiveMsPerKmh;
+                    t_rem = 0.0f;
+                } else {
+                    v = v_next;
+                    t_rem -= time_needed_ms;
+                }
+            }
+        }
+        actualSpeedKmh_ = v;
+    } else {
         if (actualSpeedKmh_ < effectiveTarget) {
-            actualSpeedKmh_ = effectiveTarget;
+            const float maxAccel = config_.accelerationKmhPerSec * dtSec;
+            actualSpeedKmh_ += maxAccel;
+            if (actualSpeedKmh_ > effectiveTarget) {
+                actualSpeedKmh_ = effectiveTarget;
+            }
+        } else if (actualSpeedKmh_ > effectiveTarget) {
+            const float maxDecel = config_.normalDecelerationKmhPerSec * dtSec;
+            actualSpeedKmh_ -= maxDecel;
+            if (actualSpeedKmh_ < effectiveTarget) {
+                actualSpeedKmh_ = effectiveTarget;
+            }
         }
     }
 
@@ -383,13 +474,20 @@ void VirtualTreadmill::updateInclinePulses(float prevIncline, float currIncline)
 
 void VirtualTreadmill::setTargetSpeedKmh(float speedKmh) {
     directBeltSpeedKmh_ = 0.0f;
-    if (speedKmh < 0.0f) {
-        targetSpeedKmh_ = 0.0f;
-    } else if (speedKmh > config_.maxSpeedKmh) {
-        targetSpeedKmh_ = config_.maxSpeedKmh;
-    } else {
-        targetSpeedKmh_ = speedKmh;
+    float newTarget = speedKmh;
+    if (newTarget < 0.0f) {
+        newTarget = 0.0f;
+    } else if (newTarget > config_.maxSpeedKmh) {
+        newTarget = config_.maxSpeedKmh;
     }
+
+    if (config_.useRealisticRamping && std::fabs(newTarget - targetSpeedKmh_) > 0.05f) {
+        if (speedDeadTimeRemainingMs_ == 0) {
+            speedDeadTimeRemainingMs_ = config_.deadTimeMs;
+        }
+    }
+
+    targetSpeedKmh_ = newTarget;
 
     if (targetSpeedKmh_ > 0.0f) {
         if (csafeState_.qualifiedState == CsafeMachineState::Ready ||
@@ -405,6 +503,7 @@ void VirtualTreadmill::setTargetSpeedKmh(float speedKmh) {
 void VirtualTreadmill::setDirectBeltSpeedKmh(float speedKmh) {
     directBeltSpeedKmh_ = (speedKmh > config_.maxSpeedKmh) ? config_.maxSpeedKmh : (speedKmh < 0.0f ? 0.0f : speedKmh);
     actualSpeedKmh_ = directBeltSpeedKmh_;
+    speedDeadTimeRemainingMs_ = 0;
 }
 
 void VirtualTreadmill::setTargetInclinePct(float inclinePct) {
@@ -420,6 +519,7 @@ void VirtualTreadmill::setTargetInclinePct(float inclinePct) {
 void VirtualTreadmill::setEmergencyStop(bool active) {
     eStopActive_ = active;
     if (active) {
+        speedDeadTimeRemainingMs_ = 0;
         csafeState_.online = false;
         csafeState_.machineStateFresh = false;
         csafeState_.linkStatus = CsafeLinkStatus::TimedOut;
@@ -457,12 +557,18 @@ void VirtualTreadmill::onConsoleQuickStart(float resumeSpeedKmh, float resumeInc
         csafeState_.reportedState = CsafeMachineState::InUse;
         csafeState_.rawStateByte = 0x85;
         csafeState_.stateNibble = 0x05;
+        if (config_.useRealisticRamping && std::fabs(pendingStartSpeedKmh_ - actualSpeedKmh_) > 0.05f) {
+            if (speedDeadTimeRemainingMs_ == 0) {
+                speedDeadTimeRemainingMs_ = config_.deadTimeMs;
+            }
+        }
         targetSpeedKmh_ = pendingStartSpeedKmh_;
         targetInclinePct_ = pendingStartInclinePct_;
     }
 }
 
 void VirtualTreadmill::onConsoleStop() {
+    speedDeadTimeRemainingMs_ = 0;
     if (csafeState_.qualifiedState == CsafeMachineState::InUse ||
         csafeState_.qualifiedState == CsafeMachineState::Starting) {
         // 1st stop press while running/starting: transition to Paused (0x04)
@@ -535,6 +641,10 @@ bool VirtualTreadmill::isFaultActive(VirtualTreadmillFault fault) const {
 
 void VirtualTreadmill::clearAllFaults() {
     activeFaultsMask_ = 0;
+}
+
+void VirtualTreadmill::setConfiguration(const VirtualTreadmillConfig& config) {
+    config_ = config;
 }
 
 const char* VirtualTreadmill::version() {

@@ -79,6 +79,7 @@ public:
     const WorkoutSessionConfig& getConfig() const { return config_; }
 
     static constexpr uint16_t kFreeRunWorkoutId = 65535;
+    static constexpr float kSpeedZoneBoundsKmh[4] = {0.8f, 6.0f, 14.0f, 20.0f}; // 3 zones: [0]-[1], [1]-[2], [2]-[3]
     static const char* version();
 
 private:
@@ -146,7 +147,6 @@ private:
     static constexpr float kArrivalInclineTolerancePct = 0.5f;
     static constexpr uint32_t kArrivalTimeoutMs = 10000; // Max wait past nominal step end before proceeding anyway
     static constexpr float kInclineMsPerPct = 3233.0f; // (49000+48000)/2/15, from DESIGN_GUIDE.md's measured full-range incline travel
-    static constexpr float kSpeedZoneBoundsKmh[4] = {0.8f, 6.0f, 14.0f, 20.0f}; // 3 zones: [0]-[1], [1]-[2], [2]-[3]
 
     uint32_t estimateSpeedRampMs(float fromKmh, float toKmh) const;
 

@@ -118,6 +118,17 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     runnerDynamics_.begin();
     inclineVerifier_.begin();
 
+    const RampCalibrationConfig rampCfg = SettingsService::instance().getRampCalibrationConfig();
+    VirtualTreadmillConfig vtCfg = composite_.getVirtualTreadmill().getConfig();
+    vtCfg.useRealisticRamping = true;
+    vtCfg.deadTimeMs = rampCfg.deadTimeMs;
+    vtCfg.loadMultiplier = rampCfg.loadMultiplier;
+    for (size_t i = 0; i < 3; ++i) {
+        vtCfg.accelMsPerKmh[i] = rampCfg.accelMsPerKmh[i];
+        vtCfg.decelMsPerKmh[i] = rampCfg.decelMsPerKmh[i];
+    }
+    composite_.getVirtualTreadmill().setConfiguration(vtCfg);
+
     // 2. Initialize ApplicationOrchestrator in ExternalStep mode
     Serial.printf("[Testbench][BLE] Pre-init heap: free=%u, largest_free_block=%u, min_free=%u\n",
                   ESP.getFreeHeap(), ESP.getMaxAllocHeap(), ESP.getMinFreeHeap());

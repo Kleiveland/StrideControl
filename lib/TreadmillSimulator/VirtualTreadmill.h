@@ -150,6 +150,13 @@ struct VirtualTreadmillConfig {
 
     // CSAFE audible countdown duration (Physical T610 3-2-1 countdown)
     uint32_t startingCountdownMs = 3000;
+
+    // Realistic zone-based ramping & transport delay (defaults preserve flat-rate behavior in tests)
+    bool useRealisticRamping = false;
+    uint32_t deadTimeMs = 0;
+    float accelMsPerKmh[3] = {2000.0f, 800.0f, 1200.0f};
+    float decelMsPerKmh[3] = {1500.0f, 700.0f, 1000.0f};
+    float loadMultiplier = 1.0f;
 };
 
 // =============================================================================
@@ -214,6 +221,7 @@ public:
     uint64_t getTotalPhysicalPulses() const { return totalTachoPulses_; }
 
     const VirtualTreadmillConfig& getConfig() const { return config_; }
+    void setConfiguration(const VirtualTreadmillConfig& config);
 
     static const char* version();
 
@@ -238,6 +246,7 @@ private:
     float actualInclinePct_ = 0.0f;
     float targetInclinePct_ = 0.0f;
     double odometerKm_ = 0.0;
+    uint32_t speedDeadTimeRemainingMs_ = 0;
 
     // Pulse synthesis fractional accumulators
     double fractionalTachoPulses_ = 0.0;
