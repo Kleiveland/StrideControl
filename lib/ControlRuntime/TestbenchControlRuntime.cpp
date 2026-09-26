@@ -504,6 +504,14 @@ void TestbenchControlRuntime::runTaskLoop() {
             nowMs
         );
 
+        deadTimeTracker_.update(
+            snapshot.speed.speedKmh,
+            snapshot.speed.measurementValid,
+            snapshot.csafe.qualifiedState,
+            console_.isEmergencyStopActive(),
+            nowMs
+        );
+
         if (rampTestTracker_.targetDispatchRequested()) {
             composite_.submitSpeedTarget(rampTestTracker_.targetSpeedKmh(), nowMs);
             rampTestTracker_.acknowledgeTargetDispatched();
@@ -992,6 +1000,15 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
             }
             case ControlCommandType::AbortInclineCommissioning: {
                 inclineTracker_.abort(cmdNowMs);
+                break;
+            }
+            case ControlCommandType::ArmDeadTimeMeasurement: {
+                const auto snap = getSnapshot();
+                deadTimeTracker_.arm(cmdNowMs, snap.speed.speedKmh, snap.csafe.qualifiedState);
+                break;
+            }
+            case ControlCommandType::AbortDeadTimeMeasurement: {
+                deadTimeTracker_.abort();
                 break;
             }
             case ControlCommandType::None:

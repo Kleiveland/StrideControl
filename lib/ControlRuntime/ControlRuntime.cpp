@@ -198,6 +198,14 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         nowMs
     );
 
+    deadTimeTracker_.update(
+        snapshot.speed.speedKmh,
+        snapshot.speed.measurementValid,
+        snapshot.csafe.qualifiedState,
+        console_.isEmergencyStopActive(),
+        nowMs
+    );
+
     if (rampTestTracker_.targetDispatchRequested()) {
         TargetContext ctx;
         ctx.origin = TargetOrigin::Commissioning;
@@ -805,6 +813,15 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
             }
             case ControlCommandType::AbortInclineCommissioning: {
                 inclineTracker_.abort(cmdNowMs);
+                break;
+            }
+            case ControlCommandType::ArmDeadTimeMeasurement: {
+                const auto snap = orchestrator_ ? orchestrator_->getSnapshot() : ApplicationSnapshot{};
+                deadTimeTracker_.arm(cmdNowMs, snap.speed.speedKmh, snap.csafe.qualifiedState);
+                break;
+            }
+            case ControlCommandType::AbortDeadTimeMeasurement: {
+                deadTimeTracker_.abort();
                 break;
             }
             case ControlCommandType::None:
