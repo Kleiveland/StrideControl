@@ -174,6 +174,8 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
     rampTestTracker_.reset();
     inclineTracker_.reset();
+    speedLearningTracker_.setActiveSpeedConfig(speedCalibration_.getConfiguration());
+    speedLearningTracker_.resetSession();
 
     if (commandQueue_ == nullptr) {
         commandQueue_ = xQueueCreate(kCommandQueueDepth, sizeof(ControlCommand));
@@ -506,6 +508,33 @@ void TestbenchControlRuntime::runTaskLoop() {
         if (inclineTracker_.isHomedSettled()) {
             requestInclineCommissioningAction(true, true);
             inclineTracker_.onHomedConfirmed(nowMs);
+        }
+
+        const float simCommandedSpeed = composite_.getVirtualTreadmill().getTargetSpeedKmh();
+        const auto learningSessSnap = session_.getSnapshot();
+
+        speedLearningTracker_.setActiveSpeedConfig(speedCalibration_.getConfiguration());
+        speedLearningTracker_.update(
+            snapshot.speed.speedKmh,
+            snapshot.speed.measurementValid,
+            simCommandedSpeed,
+            snapshot.csafe.qualifiedState,
+            false,
+            console_.isEmergencyStopActive(),
+            learningSessSnap.rampPreFireActive,
+            nowMs
+        );
+
+        SpeedConfig candidateCfg = speedCalibration_.getConfiguration();
+        if (speedLearningTracker_.checkBeltStoppedTrigger(snapshot.speed.speedKmh, snapshot.csafe.qualifiedState, candidateCfg, nowMs)) {
+            char errBuf[64]{0};
+            if (SpeedCalibration::validateCandidate(candidateCfg, errBuf, sizeof(errBuf))) {
+                SettingsService::instance().saveSpeedConfig(candidateCfg);
+                speedCalibration_.setConfiguration(candidateCfg);
+                speedLearningTracker_.setActiveSpeedConfig(candidateCfg);
+                Serial.printf("[Testbench][SpeedLearningTracker] Auto-learned calibration updated and saved to NVS (%u points)!\n", candidateCfg.pointCount);
+                DiagnosticsLog::instance().addEntryf("[SpeedLearning] Auto-learned calibration updated and saved to NVS (%u points)", candidateCfg.pointCount);
+            }
         }
 
         if (simHeartRateFromSpeedEnabled_) {

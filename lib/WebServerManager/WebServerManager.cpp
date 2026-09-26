@@ -1251,7 +1251,33 @@ void WebServerManager::registerRoutes() {
         serializeJson(doc, *stream);
         request->send(stream);
     };
-    server_.on("/api/v1/calibration/speed", HTTP_GET, speedCalibrationGetHandler);
+    // GET /api/v1/calibration/speed/learning/log: Return read-only automatic learning audit log
+    server_.on("/api/v1/calibration/speed/learning/log", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        stream->addHeader("Access-Control-Allow-Origin", "*");
+        stream->addHeader("Cache-Control", "no-cache");
+        JsonDocument doc;
+        JsonArray arr = doc["entries"].to<JsonArray>();
+        if (commandStager_ != nullptr) {
+            std::array<SpeedAdaptationLogEntry, 8> entries{};
+            const uint8_t count = commandStager_->getSpeedAdaptationLog(entries.data(), static_cast<uint8_t>(entries.size()));
+            for (uint8_t i = 0; i < count; ++i) {
+                JsonObject obj = arr.add<JsonObject>();
+                obj["timestampMs"] = entries[i].timestampMs;
+                obj["measuredPhysicalSpeedKmh"] = entries[i].measuredPhysicalSpeedKmh;
+                obj["previousCommandKmh"] = entries[i].previousCommandKmh;
+                obj["newCommandKmh"] = entries[i].newCommandKmh;
+                obj["deltaKmh"] = entries[i].deltaKmh;
+                obj["accumulatedSteadySeconds"] = entries[i].accumulatedSteadySeconds;
+                obj["confidencePct"] = entries[i].confidencePct;
+            }
+            doc["count"] = count;
+        } else {
+            doc["count"] = 0;
+        }
+        serializeJson(doc, *stream);
+        request->send(stream);
+    });
 
     // GET /api/v1/calibration/speed/calculate?speed=X: Query calculateCommand result
     server_.on("/api/v1/calibration/speed/calculate", HTTP_GET, [this](AsyncWebServerRequest* request) {
@@ -1277,6 +1303,9 @@ void WebServerManager::registerRoutes() {
         serializeJson(doc, *stream);
         request->send(stream);
     });
+
+    // GET /api/v1/calibration/speed: Return SpeedConfig (sensor factor, max speed, command points)
+    server_.on("/api/v1/calibration/speed", HTTP_GET, speedCalibrationGetHandler);
 
     // POST /api/v1/calibration/speed/sensor: Save one-point sensor calibration factor
     auto speedSensorCalHandler = [this](AsyncWebServerRequest* request) {

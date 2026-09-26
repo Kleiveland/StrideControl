@@ -5,6 +5,7 @@
 #include "../InclineCommissioningTracker/InclineCommissioningTracker.h"
 #include "../SpeedCalibration/SpeedCalibrationTypes.h"
 #include "../SettingsService/SettingsServiceTypes.h"
+#include "../SpeedLearningTracker/SpeedLearningTracker.h"
 
 namespace stridecontrol {
 
@@ -89,6 +90,7 @@ public:
     virtual SpeedCalibrationResult calculateSpeedCommand(float physicalSpeedKmh) const {
         return SpeedCalibrationResult(physicalSpeedKmh, physicalSpeedKmh, SpeedCalibrationResultStatus::IdentityFallback);
     }
+    virtual uint8_t getSpeedAdaptationLog(SpeedAdaptationLogEntry* outEntries, uint8_t maxEntries) const { return 0; }
 };
 
 } // namespace stridecontrol

@@ -103,9 +103,15 @@ public:
     InclineCommissioningPhase getInclineCommissioningPhase() const override { return inclineTracker_.phase(); }
     uint8_t getInclineCommissioningPointCount() const override { return inclineTracker_.pointCount(); }
     bool didInclineCommissioningTimeOut() const override { return inclineTracker_.timedOut(); }
-    void onSpeedConfigUpdated(const SpeedConfig& config) override { calibration_.setConfiguration(config); }
+    void onSpeedConfigUpdated(const SpeedConfig& config) override {
+        calibration_.setConfiguration(config);
+        speedLearningTracker_.setActiveSpeedConfig(config);
+    }
     SpeedCalibrationResult calculateSpeedCommand(float physicalSpeedKmh) const override {
         return calibration_.calculateCommand(physicalSpeedKmh);
+    }
+    uint8_t getSpeedAdaptationLog(SpeedAdaptationLogEntry* outEntries, uint8_t maxEntries) const override {
+        return speedLearningTracker_.getAuditLog(outEntries, maxEntries);
     }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
@@ -166,6 +172,7 @@ private:
 
     RampTestTracker rampTestTracker_;
     InclineCommissioningTracker inclineTracker_;
+    SpeedLearningTracker speedLearningTracker_;
 
     bool initialized_ = false;
     uint32_t lastAuthoritativeTimestampMs_ = 0;

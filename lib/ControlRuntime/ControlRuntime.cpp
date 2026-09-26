@@ -39,6 +39,8 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     dispatcher_.begin();
     rampTestTracker_.reset();
     inclineTracker_.reset();
+    speedLearningTracker_.setActiveSpeedConfig(calibration_.getConfiguration());
+    speedLearningTracker_.resetSession();
 
     initialized_ = true;
     lastAuthoritativeTimestampMs_ = 0;
@@ -214,6 +216,33 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
     if (inclineTracker_.isHomedSettled()) {
         requestInclineCommissioningAction(true, true);
         inclineTracker_.onHomedConfirmed(nowMs);
+    }
+
+    const auto ctrlSnap = controller_.getSnapshot();
+    const float commandedSpeed = ctrlSnap.correctedConsoleSpeedValid ? ctrlSnap.correctedConsoleSpeedKmh : ctrlSnap.acceptedPhysicalSpeedTargetKmh;
+    const auto sessSnap = session_.getSnapshot();
+
+    speedLearningTracker_.update(
+        snapshot.speed.speedKmh,
+        snapshot.speed.measurementValid,
+        commandedSpeed,
+        snapshot.csafe.qualifiedState,
+        controller_.isBusy(),
+        console_.isEmergencyStopActive(),
+        sessSnap.rampPreFireActive,
+        nowMs
+    );
+
+    SpeedConfig candidateCfg = calibration_.getConfiguration();
+    if (speedLearningTracker_.checkBeltStoppedTrigger(snapshot.speed.speedKmh, snapshot.csafe.qualifiedState, candidateCfg, nowMs)) {
+        char errBuf[64]{0};
+        if (SpeedCalibration::validateCandidate(candidateCfg, errBuf, sizeof(errBuf))) {
+            SettingsService::instance().saveSpeedConfig(candidateCfg);
+            calibration_.setConfiguration(candidateCfg);
+            speedLearningTracker_.setActiveSpeedConfig(candidateCfg);
+            Serial.printf("[SpeedLearningTracker] Auto-learned calibration updated and saved to NVS (%u points)!\n", candidateCfg.pointCount);
+            DiagnosticsLog::instance().addEntryf("[SpeedLearning] Auto-learned calibration updated and saved to NVS (%u points)", candidateCfg.pointCount);
+        }
     }
 
     // E-Stop Detection (authoritative hardware GPIO 18, independent of snapshot authority)

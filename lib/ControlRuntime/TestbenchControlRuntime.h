@@ -33,6 +33,7 @@
 #include "InclineVerifier.h"
 #include "RampTestTracker.h"
 #include "SpeedCalibration.h"
+#include "../SpeedLearningTracker/SpeedLearningTracker.h"
 
 namespace stridecontrol {
 
@@ -100,9 +101,15 @@ public:
     InclineCommissioningPhase getInclineCommissioningPhase() const override { return inclineTracker_.phase(); }
     uint8_t getInclineCommissioningPointCount() const override { return inclineTracker_.pointCount(); }
     bool didInclineCommissioningTimeOut() const override { return inclineTracker_.timedOut(); }
-    void onSpeedConfigUpdated(const SpeedConfig& config) override { speedCalibration_.setConfiguration(config); }
+    void onSpeedConfigUpdated(const SpeedConfig& config) override {
+        speedCalibration_.setConfiguration(config);
+        speedLearningTracker_.setActiveSpeedConfig(config);
+    }
     SpeedCalibrationResult calculateSpeedCommand(float physicalSpeedKmh) const override {
         return speedCalibration_.calculateCommand(physicalSpeedKmh);
+    }
+    uint8_t getSpeedAdaptationLog(SpeedAdaptationLogEntry* outEntries, uint8_t maxEntries) const override {
+        return speedLearningTracker_.getAuditLog(outEntries, maxEntries);
     }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
@@ -225,6 +232,7 @@ private:
     WorkoutEngine workoutEngine_;
     RampTestTracker rampTestTracker_;
     InclineCommissioningTracker inclineTracker_;
+    SpeedLearningTracker speedLearningTracker_;
 
     ApplicationSnapshot publishedSnapshot_{};
     WorkoutSessionSnapshot publishedSessionSnapshot_{};
