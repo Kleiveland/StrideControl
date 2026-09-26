@@ -1948,6 +1948,125 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/v1/commissioning/ramptest/save", HTTP_POST, rampTestSaveHandler, nullptr, commandBodyBuffer);
 
+    // =======================================================================
+    // DEAD-TIME CALIBRATION ENDPOINTS
+    // =======================================================================
+
+    // POST /api/v1/calibration/deadtime/arm
+    auto deadTimeArmHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::ArmDeadTimeMeasurement;
+        cmd.timestampMs = millis();
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"armed\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/v1/calibration/deadtime/arm", HTTP_POST, deadTimeArmHandler);
+
+    // GET /api/v1/calibration/deadtime/status
+    server_.on("/api/v1/calibration/deadtime/status", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+
+        AsyncResponseStream* stream = request->beginResponseStream("application/json");
+        stream->addHeader("Access-Control-Allow-Origin", "*");
+        stream->addHeader("Cache-Control", "no-cache");
+        JsonDocument doc;
+        doc["phase"] = deadTimePhaseToString(commandStager_->getDeadTimeTrackerPhase());
+        doc["measuredDeadTimeMs"] = commandStager_->getMeasuredDeadTimeMs();
+        doc["countdownDurationMs"] = commandStager_->getDeadTimeCountdownDurationMs();
+        doc["motorDeadTimeMs"] = commandStager_->getDeadTimeMotorLagMs();
+        doc["savedDeadTimeMs"] = SettingsService::instance().getRampCalibrationConfig().deadTimeMs;
+        serializeJson(doc, *stream);
+        request->send(stream);
+    });
+
+    // POST /api/v1/calibration/deadtime/save
+    auto deadTimeSaveHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) {
+                free(request->_tempObject);
+                request->_tempObject = nullptr;
+            }
+            return;
+        }
+
+        uint32_t deadTimeMs = 0;
+        if (request->_tempObject) {
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received == buffer->capacity && buffer->received > 0) {
+                JsonDocument doc;
+                DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+                if (!err && doc["deadTimeMs"].is<uint32_t>()) {
+                    deadTimeMs = doc["deadTimeMs"].as<uint32_t>();
+                }
+            }
+            free(buffer);
+            request->_tempObject = nullptr;
+        }
+
+        if (deadTimeMs == 0 && commandStager_ != nullptr) {
+            deadTimeMs = commandStager_->getMeasuredDeadTimeMs();
+        }
+
+        if (deadTimeMs == 0) {
+            request->send(400, "application/json", "{\"error\":\"No valid dead time to save\"}");
+            return;
+        }
+
+        RampCalibrationConfig cfg = SettingsService::instance().getRampCalibrationConfig();
+        cfg.deadTimeMs = deadTimeMs;
+        cfg.calibrated = true;
+        cfg.calibratedAtMs = millis();
+#if defined(STRIDECONTROL_TESTBENCH)
+        cfg.source = CalibrationSource::Simulated;
+#else
+        cfg.source = CalibrationSource::PhysicalCommissioning;
+#endif
+
+        char errBuf[64]{0};
+        if (!SettingsService::validateRampCalibrationConfig(cfg, errBuf, sizeof(errBuf))) {
+            JsonDocument errDoc;
+            errDoc["error"] = String("Validation failed: ") + (errBuf[0] ? errBuf : "invalid bounds");
+            AsyncResponseStream* stream = request->beginResponseStream("application/json");
+            stream->setCode(400);
+            serializeJson(errDoc, *stream);
+            request->send(stream);
+            return;
+        }
+
+        const bool ok = SettingsService::instance().saveRampCalibrationConfig(cfg);
+        request->send(ok ? 200 : 500, "application/json",
+            ok ? String("{\"status\":\"saved\",\"deadTimeMs\":") + deadTimeMs + "}"
+               : "{\"error\":\"save_failed\"}");
+    };
+    server_.on("/api/v1/calibration/deadtime/save", HTTP_POST, deadTimeSaveHandler, nullptr, commandBodyBuffer);
+
+    // POST /api/v1/calibration/deadtime/abort
+    auto deadTimeAbortHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::AbortDeadTimeMeasurement;
+        cmd.timestampMs = millis();
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"aborted\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/v1/calibration/deadtime/abort", HTTP_POST, deadTimeAbortHandler);
+
     // POST /api/v1/commissioning/incline/homing/start
     auto inclineHomingStartHandler = [this](AsyncWebServerRequest* request) {
         if (commandStager_ == nullptr) {

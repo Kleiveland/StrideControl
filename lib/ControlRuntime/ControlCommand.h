@@ -6,6 +6,7 @@
 #include "../SpeedCalibration/SpeedCalibrationTypes.h"
 #include "../SettingsService/SettingsServiceTypes.h"
 #include "../SpeedLearningTracker/SpeedLearningTracker.h"
+#include "../DeadTimeTracker/DeadTimeTracker.h"
 
 namespace stridecontrol {
 
@@ -33,7 +34,9 @@ enum class ControlCommandType : uint8_t {
     StartInclineHoming,
     StartInclineMeasurePoint,
     SaveInclineCalibration,
-    AbortInclineCommissioning
+    AbortInclineCommissioning,
+    ArmDeadTimeMeasurement,
+    AbortDeadTimeMeasurement
 };
 
 struct ControlCommand {
@@ -91,6 +94,10 @@ public:
         return SpeedCalibrationResult(physicalSpeedKmh, physicalSpeedKmh, SpeedCalibrationResultStatus::IdentityFallback);
     }
     virtual uint8_t getSpeedAdaptationLog(SpeedAdaptationLogEntry* outEntries, uint8_t maxEntries) const { return 0; }
+    virtual DeadTimePhase getDeadTimeTrackerPhase() const { return DeadTimePhase::Idle; }
+    virtual uint32_t getMeasuredDeadTimeMs() const { return 0; }
+    virtual uint32_t getDeadTimeCountdownDurationMs() const { return 0; }
+    virtual uint32_t getDeadTimeMotorLagMs() const { return 0; }
 };
 
 } // namespace stridecontrol
