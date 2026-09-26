@@ -4034,41 +4034,118 @@
             }
         }
 
-        // GUI-COUNTDOWN: Shared 3-2-1 countdown overlay (Apple Watch style)
+        // GUI-COUNTDOWN: Dynamic dead-time stretched 3-2-1 countdown overlay
         let countdownActive = false;
         let lastCsafeStateForCountdown = null;
+        let configuredDeadTimeMs = null; // Dynamically loaded from backend RampCalibrationConfig.deadTimeMs
+        let countdownTimers = [];
+
+        function clearCountdownTimers() {
+            countdownTimers.forEach(id => clearTimeout(id));
+            countdownTimers = [];
+        }
+
+        function fetchSpeedAndRampCapabilities() {
+            fetch('/api/v1/capabilities/speed')
+                .then(r => r.json())
+                .then(data => {
+                    if (typeof data.maxAchievableSpeedKmh === 'number' && data.maxAchievableSpeedKmh > 0) {
+                        maxAchievableSpeedKmh = data.maxAchievableSpeedKmh;
+                    }
+                    if (typeof data.deadTimeMs === 'number' && data.deadTimeMs > 0) {
+                        configuredDeadTimeMs = data.deadTimeMs;
+                    }
+                })
+                .catch(() => {});
+        }
 
         function triggerCountdownIfNeeded(csafeState) {
             const enteringStarting = (csafeState === 'STARTING' && lastCsafeStateForCountdown !== 'STARTING');
             lastCsafeStateForCountdown = csafeState;
             if (enteringStarting && !countdownActive) {
+                fetchSpeedAndRampCapabilities();
                 runCountdown();
             }
         }
 
         function runCountdown() {
+            clearCountdownTimers();
             countdownActive = true;
             const overlay = document.getElementById('countdown-overlay');
             const numberEl = document.getElementById('countdown-number');
             if (!overlay || !numberEl) { countdownActive = false; return; }
+
+            // Stretched countdown across real, dynamically-read deadTimeMs
+            // Fallback floor: 3000ms (1000ms/digit) if deadTimeMs is null or below a 300ms safety floor
+            const totalDurationMs = (typeof configuredDeadTimeMs === 'number' && configuredDeadTimeMs >= 300)
+                ? configuredDeadTimeMs
+                : 3000;
+            const stepMs = totalDurationMs / 3;
+
             overlay.style.display = 'flex';
-            let count = 3;
-            numberEl.innerText = String(count);
-            const interval = setInterval(() => {
-                count--;
-                if (count <= 0) {
-                    clearInterval(interval);
-                    overlay.style.display = 'none';
-                    countdownActive = false;
-                } else {
-                    numberEl.innerText = String(count);
+            numberEl.innerText = '3';
+
+            const t1 = setTimeout(() => {
+                numberEl.innerText = '2';
+            }, stepMs);
+
+            const t2 = setTimeout(() => {
+                numberEl.innerText = '1';
+            }, stepMs * 2);
+
+            const t3 = setTimeout(() => {
+                overlay.style.display = 'none';
+                countdownActive = false;
+                clearCountdownTimers();
+            }, totalDurationMs);
+
+            countdownTimers.push(t1, t2, t3);
+        }
+
+        const LUBE_ALERT_SVG_HTML = '<div class="lube-alert-icon-wrap" style="display:inline-flex;align-items:center;justify-content:center;pointer-events:none;flex-shrink:0;margin:0 14px;height:48px;" title="Smøring påkrevd"><svg class="lube-alert-icon" viewBox="0 0 50 32" width="75" height="48" fill="none" stroke="#fdb813" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M 16 15 H 24 L 27 17.5 L 38 10.5 L 40 14 L 29 23.5 H 16 Z" /><path d="M 18.5 7 H 22 C 22.8 7 23.5 7.7 23.5 8.5 V 10.5 C 23.5 11.3 22.8 12 22 12 H 21.3 V 15 H 19.2 V 12 H 18.5 C 17.7 12 17 11.3 17 10.5 V 8.5 C 17 7.7 17.7 7 18.5 7 Z" fill="#fdb813" stroke="none" /><path d="M 16 11.5 L 12.5 8.5 L 10 15.5 L 16 19.5" /><path d="M 40 17 C 40 17 42.5 20.8 42.5 22.8 C 42.5 24.3 41.4 25.5 40 25.5 C 38.6 25.5 37.5 24.3 37.5 22.8 C 37.5 20.8 40 17 40 17 Z" fill="#fdb813" stroke="none" /></svg></div>';
+
+        function isLubricationDue(maint) {
+            if (!maint || typeof maint !== 'object') return false;
+            if (maint.lubricationDue === true) return true;
+            if (maint.lastLubricationDate && typeof maint.lastLubricationTimeSeconds === 'number' && maint.lastLubricationTimeSeconds > 0) {
+                const intervalH = maint.lubricationIntervalHours || 50;
+                const intervalDays = maint.lubricationIntervalDays || 60;
+                const totalSec = maint.timeSeconds || 0;
+                const hoursSince = Math.max(0, (totalSec - maint.lastLubricationTimeSeconds) / 3600);
+                const lastDate = new Date(maint.lastLubricationDate + 'T00:00:00');
+                const elapsedDays = Math.max(0, Math.floor((Date.now() - lastDate.getTime()) / 86400000));
+                if (hoursSince >= intervalH || elapsedDays >= intervalDays) {
+                    return true;
                 }
-            }, 1000);
+            } else {
+                return true;
+            }
+            return false;
+        }
+
+        function updateLubricationAlert(maint) {
+            const due = isLubricationDue(maint);
+            const existing = document.querySelectorAll('.lube-alert-icon-wrap');
+            if (due) {
+                if (existing.length === 0) {
+                    document.querySelectorAll('.util-left').forEach(container => {
+                        const clock = container.querySelector('.sys-clock');
+                        if (clock && clock.nextSibling) {
+                            clock.insertAdjacentHTML('afterend', LUBE_ALERT_SVG_HTML);
+                        } else {
+                            container.insertAdjacentHTML('beforeend', LUBE_ALERT_SVG_HTML);
+                        }
+                    });
+                }
+            } else {
+                existing.forEach(el => el.remove());
+            }
         }
 
         function renderAuthoritativeTelemetry(telem) {
             if (!telem || typeof telem !== 'object') return;
 
+            updateLubricationAlert(telem.maintenance);
             triggerCountdownIfNeeded(telem.csafe?.machineState);
 
             const spd = telem.speed?.kmh;
@@ -4662,14 +4739,7 @@
         function initApp() {
             setDashboardHotkeysEnabled(false);
             initSettingsAndHotkeysUI();
-            fetch('/api/v1/capabilities/speed')
-                .then(r => r.json())
-                .then(data => {
-                    if (typeof data.maxAchievableSpeedKmh === 'number' && data.maxAchievableSpeedKmh > 0) {
-                        maxAchievableSpeedKmh = data.maxAchievableSpeedKmh;
-                    }
-                })
-                .catch(() => {});
+            fetchSpeedAndRampCapabilities();
             fetchSystemSettings();
             pollTelemetry();
             setInterval(pollTelemetry, TELEMETRY_POLL_INTERVAL_MS);

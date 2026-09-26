@@ -1220,6 +1220,7 @@ void WebServerManager::registerRoutes() {
         JsonDocument doc;
         doc["maxAchievableSpeedKmh"] = maxAchievableSpeedKmh;
         doc["verified"] = verified;
+        doc["deadTimeMs"] = SettingsService::instance().getRampCalibrationConfig().deadTimeMs;
         serializeJson(doc, *stream);
         request->send(stream);
     };
