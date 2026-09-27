@@ -309,6 +309,16 @@ void WebServerManager::registerRoutes() {
         doc["targetInclinePct"] = report.targetInclinePct;
         doc["droppedEvents"] = report.droppedEventsCount;
 
+        // Physical macro-button observation (Proposal B)
+        doc["physicalButtonCount"] = report.physicalButtonCount;
+        if (report.lastPhysicalButtonName != nullptr) {
+            JsonObject physBtn = doc["lastPhysicalButton"].to<JsonObject>();
+            physBtn["button"] = report.lastPhysicalButtonName;
+            physBtn["action"] = report.lastPhysicalButtonAction;
+            physBtn["timestampMs"] = report.lastPhysicalButtonTimestampMs;
+            physBtn["durationMs"] = report.lastPhysicalButtonDurationMs;
+        }
+
         AsyncResponseStream* stream = request->beginResponseStream("application/json");
         stream->addHeader("Access-Control-Allow-Origin", "*");
         stream->addHeader("Cache-Control", "no-cache");
@@ -771,6 +781,71 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/control/speed", HTTP_POST, speedHandler, nullptr, commandBodyBuffer);
     server_.on("/api/v1/control/speed", HTTP_POST, speedHandler, nullptr, commandBodyBuffer);
+
+    // POST /api/v1/control/button - virtual keyboard key injection (Proposal A)
+    auto buttonHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) { free(request->_tempObject); request->_tempObject = nullptr; }
+            return;
+        }
+        if (commandStager_ == nullptr) {
+            if (request->_tempObject) { free(request->_tempObject); request->_tempObject = nullptr; }
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        const char* btnStr = nullptr;
+        if (request->_tempObject) {
+            auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+            if (buffer->received == buffer->capacity && buffer->received > 0) {
+                JsonDocument doc;
+                if (!deserializeJson(doc, buffer->data(), buffer->received)) {
+                    btnStr = doc["button"] | "";
+                }
+            }
+            free(buffer);
+            request->_tempObject = nullptr;
+        }
+        if (btnStr == nullptr || btnStr[0] == '\0') {
+            if (request->hasParam("button")) {
+                btnStr = request->getParam("button")->value().c_str();
+            }
+        }
+        if (btnStr == nullptr || btnStr[0] == '\0') {
+            request->send(400, "application/json", "{\"error\":\"missing button parameter\"}");
+            return;
+        }
+        ButtonId btnId = ButtonId::Unknown;
+        if      (strcmp(btnStr, "Num0")           == 0) btnId = ButtonId::Num0;
+        else if (strcmp(btnStr, "Num1")           == 0) btnId = ButtonId::Num1;
+        else if (strcmp(btnStr, "Num2")           == 0) btnId = ButtonId::Num2;
+        else if (strcmp(btnStr, "Num3")           == 0) btnId = ButtonId::Num3;
+        else if (strcmp(btnStr, "Num4")           == 0) btnId = ButtonId::Num4;
+        else if (strcmp(btnStr, "Num5")           == 0) btnId = ButtonId::Num5;
+        else if (strcmp(btnStr, "Num6")           == 0) btnId = ButtonId::Num6;
+        else if (strcmp(btnStr, "Num7")           == 0) btnId = ButtonId::Num7;
+        else if (strcmp(btnStr, "Num8")           == 0) btnId = ButtonId::Num8;
+        else if (strcmp(btnStr, "Num9")           == 0) btnId = ButtonId::Num9;
+        else if (strcmp(btnStr, "Enter")          == 0) btnId = ButtonId::Enter;
+        else if (strcmp(btnStr, "Clear")          == 0) btnId = ButtonId::Clear;
+        else if (strcmp(btnStr, "InstantSpeed")   == 0) btnId = ButtonId::InstantSpeed;
+        else if (strcmp(btnStr, "InstantIncline") == 0) btnId = ButtonId::InstantIncline;
+        else if (strcmp(btnStr, "SpeedPlus")      == 0) btnId = ButtonId::SpeedPlus;
+        else if (strcmp(btnStr, "SpeedMinus")     == 0) btnId = ButtonId::SpeedMinus;
+        if (btnId == ButtonId::Unknown) {
+            request->send(400, "application/json", "{\"error\":\"unknown_button\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.type = ControlCommandType::PressButton;
+        cmd.timestampMs = millis();
+        cmd.data.pressButton.button = btnId;
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/v1/control/button", HTTP_POST, buttonHandler, nullptr, commandBodyBuffer);
 
     auto workoutSelectHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {
@@ -2826,9 +2901,19 @@ void WebServerManager::registerRoutes() {
             cmd.timestampMs = millis();
 
             if (strcmp(btn, "QuickStart") == 0) {
+#if defined(STRIDECONTROL_TESTBENCH)
+                if (simRuntime_ != nullptr) {
+                    simRuntime_->injectPhysicalButton(ButtonId::QuickStart);
+                }
+#endif
                 cmd.type = ControlCommandType::QuickStart;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "Stop") == 0) {
+#if defined(STRIDECONTROL_TESTBENCH)
+                if (simRuntime_ != nullptr) {
+                    simRuntime_->injectPhysicalButton(ButtonId::Stop);
+                }
+#endif
                 cmd.type = ControlCommandType::Stop;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "EmergencyStop") == 0) {
@@ -2861,18 +2946,38 @@ void WebServerManager::registerRoutes() {
                 request->send(200, "application/json", "{\"status\":\"ok\"}");
                 return;
             } else if (strcmp(btn, "SpeedPlus") == 0) {
+#if defined(STRIDECONTROL_TESTBENCH)
+                if (simRuntime_ != nullptr) {
+                    simRuntime_->injectPhysicalButton(ButtonId::SpeedPlus);
+                }
+#endif
                 cmd.type = ControlCommandType::StepSpeed;
                 cmd.data.stepSpeed.deltaSpeedKmh = 0.5f;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "SpeedMinus") == 0) {
+#if defined(STRIDECONTROL_TESTBENCH)
+                if (simRuntime_ != nullptr) {
+                    simRuntime_->injectPhysicalButton(ButtonId::SpeedMinus);
+                }
+#endif
                 cmd.type = ControlCommandType::StepSpeed;
                 cmd.data.stepSpeed.deltaSpeedKmh = -0.5f;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "InclinePlus") == 0) {
+#if defined(STRIDECONTROL_TESTBENCH)
+                if (simRuntime_ != nullptr) {
+                    simRuntime_->injectPhysicalButton(ButtonId::InclinePlus);
+                }
+#endif
                 cmd.type = ControlCommandType::StepIncline;
                 cmd.data.stepIncline.deltaInclinePct = 0.5f;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "InclineMinus") == 0) {
+#if defined(STRIDECONTROL_TESTBENCH)
+                if (simRuntime_ != nullptr) {
+                    simRuntime_->injectPhysicalButton(ButtonId::InclineMinus);
+                }
+#endif
                 cmd.type = ControlCommandType::StepIncline;
                 cmd.data.stepIncline.deltaInclinePct = -0.5f;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;

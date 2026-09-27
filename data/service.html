@@ -101,7 +101,7 @@ header{height:66px;border-bottom:1px solid #1f2328;display:flex;align-items:cent
 
 <script>
 const $=id=>document.getElementById(id),sleep=ms=>new Promise(r=>setTimeout(r,ms));let req=400,selectedUserIndex=0,pendingImport=null,validatedUserJson=null;
-let lastEstopState=false,isTestbench=false,rampTestInProgress=false,rampAborted=false;
+let lastEstopState=false,lastPhysicalButtonCount=0,isTestbench=false,rampTestInProgress=false,rampAborted=false;
 const raw={READY:'0x01',STARTING:'0x08',IN_USE:'0x85',PAUSED:'0x04',TIMED_OUT:'--',OFFLINE:'--'};
 const active={maxSpeedKmh:'25.0',maxInclinePct:'15.0',digitHoldMs:'82',digitPauseMs:'150',preEnterPauseMs:'200',enterHoldMs:'82',postClearPauseMs:'300',relayHoldMs:'80',relayPauseMs:'80',ackTimeoutMs:'450',imuOffsetDeg:'0.0',imuToleranceDeg:'0.5',lubricationIntervalHours:'50',lubricationIntervalDays:'60',lastLubricationDate:'',lubricationHoursAtService:'',totalTimeHours:'428.58',totalDistanceKm:'3842'};
 let users=[{id:1,name:'Christine',preferredHrMac:'C4:7C:8D:11:20:31',preferredHrName:'Polar H10',hvileSpeedKmh:5,dragSpeedKmh:12,speedQuickKeys:[5,6,7,8,9,10,11,12],inclineQuickKeys:[0,1,2,3,4,6,8,10],selectedWorkoutId:101,workouts:[{id:101,name:'Kortintervall 45/15',durationMin:23,steps:4},{id:102,name:'Terskel 4x4',durationMin:38,steps:4}]},{id:2,name:'Jonas',preferredHrMac:'',preferredHrName:'Ikke valgt',hvileSpeedKmh:6,dragSpeedKmh:15,speedQuickKeys:[5,6,8,10,12,14,15,16],inclineQuickKeys:[0,1,2,3,4,5,6,8],selectedWorkoutId:201,workouts:[{id:201,name:'Kortintervall 45/15',durationMin:23,steps:4}]},{id:3,name:'Julie',preferredHrMac:'D2:19:52:A4:80:0B',preferredHrName:'Garmin HRM-Pro',hvileSpeedKmh:5.5,dragSpeedKmh:13,speedQuickKeys:[5,6,7,8,10,11,12,13],inclineQuickKeys:[0,1,2,3,4,6,8,10],selectedWorkoutId:301,workouts:[{id:301,name:'Terskel 4x4',durationMin:38,steps:4}]},{id:4,name:'Kristian',preferredHrMac:'AA:BB:CC:DD:EE:FF',preferredHrName:'Polar H10',hvileSpeedKmh:6,dragSpeedKmh:16,speedQuickKeys:[4,6,8,10,12,14,16,18],inclineQuickKeys:[0,1,2,4,6,8,10,12],selectedWorkoutId:401,workouts:[{id:401,name:'20 × 45/15',durationMin:45,steps:4},{id:402,name:'Terskel 4x4',durationMin:38,steps:4},{id:403,name:'Rolig langjogg',durationMin:45,steps:1}]}];
@@ -196,6 +196,23 @@ function updateOverview(data){
       log('Fysisk input: Nødstopp tilbakestilt');
     }
   }
+
+  if(!estop && data.physicalButtonCount!==undefined && data.physicalButtonCount!==lastPhysicalButtonCount){
+    lastPhysicalButtonCount=data.physicalButtonCount;
+    const pb=data.lastPhysicalButton;
+    if(pb&&pb.button&&pb.button!=='unknown'&&pb.button!=='None'){
+      const actionStr=pb.action||'Pressed';
+      $('physical').textContent=pb.button+' ('+actionStr+')';
+      $('physical').className='';
+      const pMeta=$('physicalMeta');
+      if(pMeta){
+        const durStr=pb.durationMs?(pb.durationMs+' ms'):'';
+        const timeStr=pb.timestampMs?new Date(pb.timestampMs).toLocaleTimeString():'';
+        pMeta.textContent=[durStr,timeStr].filter(Boolean).join(' · ');
+      }
+      log('Fysisk tast: '+pb.button+' ('+actionStr+') '+(pb.durationMs||0)+' ms');
+    }
+  }
 }
 
 async function fetchTelemetry(){
@@ -246,11 +263,35 @@ async function sendKey(k,b){
       log('CMD '+id+' feil: '+e.message);
     }
   }else{
-    await sleep(300);
-    b.classList.remove('active');
-    const elapsed=Math.round(performance.now()-startT);
-    command([id,k,'Completed','SimulatedSingle','1',elapsed+' ms']);
-    log('CMD '+id+' tast simulert: '+k);
+    const keyMap={
+      '0':'Num0','1':'Num1','2':'Num2','3':'Num3','4':'Num4',
+      '5':'Num5','6':'Num6','7':'Num7','8':'Num8','9':'Num9',
+      'Enter':'Enter','Clear':'Clear',
+      'Inst. Speed':'InstantSpeed','Inst. Incline':'InstantIncline'
+    };
+    const btnId=keyMap[k]||k;
+    try{
+      const res=await fetch('/api/v1/control/button',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({button:btnId})
+      });
+      const elapsed=Math.round(performance.now()-startT);
+      b.classList.remove('active');
+      if(res.ok){
+        command([id,k,'Completed','Injected ('+btnId+')','1',elapsed+' ms']);
+        log('CMD '+id+' tast sendt: '+k+' ('+btnId+')');
+      }else{
+        const err=await res.json().catch(()=>({}));
+        command([id,k,'Failed',err.error||res.statusText,'1',elapsed+' ms']);
+        log('CMD '+id+' feilet: '+(err.error||res.statusText));
+      }
+    }catch(e){
+      const elapsed=Math.round(performance.now()-startT);
+      b.classList.remove('active');
+      command([id,k,'NetworkError',e.message,'1',elapsed+' ms']);
+      log('CMD '+id+' feil: '+e.message);
+    }
   }
 }
 

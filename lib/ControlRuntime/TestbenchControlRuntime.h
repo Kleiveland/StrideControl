@@ -89,6 +89,24 @@ public:
     CommandExecutionStatus getCommandExecutionStatus() const;
     void publishCommandExecutionStatus();
     void requestInclineCommissioningAction(bool confirmHomed, bool zeroImu);
+    void getLastPhysicalButton(const char*& name, const char*& action,
+                               uint32_t& tsMs, uint32_t& durMs, uint32_t& count) const {
+        portENTER_CRITICAL(&physicalButtonMux_);
+        name   = lastPhysicalButtonName_;
+        action = lastPhysicalButtonAction_;
+        tsMs   = lastPhysicalButtonTimestampMs_;
+        durMs  = lastPhysicalButtonDurationMs_;
+        count  = physicalButtonCount_;
+        portEXIT_CRITICAL(&physicalButtonMux_);
+    }
+    bool injectPhysicalButton(ButtonId btn, uint32_t durationMs = 80) {
+        PhysicalButtonEvent ev{};
+        ev.button = btn;
+        ev.action = PhysicalButtonAction::Pressed;
+        ev.timestampMs = millis();
+        ev.durationMs = durationMs;
+        return console_.injectPhysicalButtonEvent(ev);
+    }
 
     bool isRampTestActive() const override { return rampTestTracker_.active(); }
     bool isRampTestComplete() const override { return rampTestTracker_.complete(); }
@@ -302,6 +320,14 @@ private:
     bool connectionWarningActive_ = false;
     bool wasAuthoritative_ = false;
     uint32_t minFreeStackBytes_ = 8192;
+
+    // Last observed physical macro-button (populated from panelTask events)
+    mutable portMUX_TYPE physicalButtonMux_ = portMUX_INITIALIZER_UNLOCKED;
+    const char* lastPhysicalButtonName_ = nullptr;
+    const char* lastPhysicalButtonAction_ = nullptr;
+    uint32_t lastPhysicalButtonTimestampMs_ = 0;
+    uint32_t lastPhysicalButtonDurationMs_ = 0;
+    uint32_t physicalButtonCount_ = 0;
 
     static constexpr uint32_t kPeriodMs = 20; // 50 Hz
     static constexpr uint32_t kTaskStackSize = 8192;

@@ -360,6 +360,15 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
                 // Physical incline adjustment is handled by treadmill hardware independently.
                 // Observed passively via snapshot.incline.estimatedInclinePct; no outbound command.
             }
+
+            // Capture last pressed macro-button for telemetry (all 6 Phase-D buttons).
+            portENTER_CRITICAL(&physicalButtonMux_);
+            lastPhysicalButtonName_   = buttonName(btnEvent.button);
+            lastPhysicalButtonAction_ = (btnEvent.action == PhysicalButtonAction::Pressed) ? "Pressed" : "Released";
+            lastPhysicalButtonTimestampMs_ = eventTs;
+            lastPhysicalButtonDurationMs_  = btnEvent.durationMs;
+            physicalButtonCount_++;
+            portEXIT_CRITICAL(&physicalButtonMux_);
         }
 
         // 2. Execute sequenced coordinator tick (session.update followed by dispatcher.update)
@@ -379,10 +388,19 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
 
         csafeStateInitialized_ = false;
 
-        // Unconditionally drain physical button queue even when authority is lost, but do not trigger Stop
+        // Unconditionally drain physical button queue even when authority is lost, but do not trigger Stop.
+        // Physical button observations are still recorded for diagnostic display in Service Console.
         PhysicalButtonEvent btnEvent{};
         while (console_.receivePhysicalButtonEvent(btnEvent)) {
-            // Drained without action while unauthoritative
+            if (btnEvent.action == PhysicalButtonAction::Pressed) {
+                portENTER_CRITICAL(&physicalButtonMux_);
+                lastPhysicalButtonName_   = buttonName(btnEvent.button);
+                lastPhysicalButtonAction_ = "Pressed";
+                lastPhysicalButtonTimestampMs_ = (btnEvent.timestampMs != 0) ? btnEvent.timestampMs : nowMs;
+                lastPhysicalButtonDurationMs_  = btnEvent.durationMs;
+                physicalButtonCount_++;
+                portEXIT_CRITICAL(&physicalButtonMux_);
+            }
         }
 
         // 3. LOST SNAPSHOT POLICY:
@@ -839,6 +857,18 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 portENTER_CRITICAL(&deadTimeMux_);
                 deadTimeTracker_.abort();
                 portEXIT_CRITICAL(&deadTimeMux_);
+                break;
+            }
+            case ControlCommandType::PressButton: {
+                // Single-key injection via Service Console virtual keyboard.
+                // Submits directly through ConsoleInterface so it joins the existing command
+                // queue and respects controller busy/idle state the same way any other command.
+                if (!rampTestTracker_.active()) {
+                    TreadmillCommand tCmd{};
+                    tCmd.type = CommandType::PressButton;
+                    tCmd.button = cmd.data.pressButton.button;
+                    console_.submit(tCmd, 0);
+                }
                 break;
             }
             case ControlCommandType::None:

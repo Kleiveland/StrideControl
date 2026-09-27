@@ -7,6 +7,7 @@
 #include "../SettingsService/SettingsServiceTypes.h"
 #include "../SpeedLearningTracker/SpeedLearningTracker.h"
 #include "../DeadTimeTracker/DeadTimeTracker.h"
+#include "../ConsoleInterface/ConsoleTypes.h"
 
 namespace stridecontrol {
 
@@ -36,7 +37,8 @@ enum class ControlCommandType : uint8_t {
     SaveInclineCalibration,
     AbortInclineCommissioning,
     ArmDeadTimeMeasurement,
-    AbortDeadTimeMeasurement
+    AbortDeadTimeMeasurement,
+    PressButton
 };
 
 struct ControlCommand {
@@ -72,6 +74,9 @@ struct ControlCommand {
             float commandedPct;
             uint8_t expectedDirection; // cast to/from InclineDirection
         } inclineMeasurePoint;
+        struct {
+            ButtonId button;
+        } pressButton;
     } data{};
 };
 
@@ -101,3 +106,5 @@ public:
 };
 
 } // namespace stridecontrol
+
+

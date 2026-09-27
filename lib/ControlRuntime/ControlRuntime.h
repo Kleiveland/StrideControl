@@ -225,6 +225,26 @@ private:
     uint32_t loopCount_ = 0;
     uint32_t deadlineMissCount_ = 0;
     uint32_t overrunCount_ = 0;
+
+    // Last observed physical macro-button (published cross-core under snapshotMux_)
+    mutable portMUX_TYPE physicalButtonMux_ = portMUX_INITIALIZER_UNLOCKED;
+    const char* lastPhysicalButtonName_ = nullptr;
+    const char* lastPhysicalButtonAction_ = nullptr;
+    uint32_t lastPhysicalButtonTimestampMs_ = 0;
+    uint32_t lastPhysicalButtonDurationMs_ = 0;
+    uint32_t physicalButtonCount_ = 0;
+
+public:
+    void getLastPhysicalButton(const char*& name, const char*& action,
+                               uint32_t& tsMs, uint32_t& durMs, uint32_t& count) const {
+        portENTER_CRITICAL(&physicalButtonMux_);
+        name   = lastPhysicalButtonName_;
+        action = lastPhysicalButtonAction_;
+        tsMs   = lastPhysicalButtonTimestampMs_;
+        durMs  = lastPhysicalButtonDurationMs_;
+        count  = physicalButtonCount_;
+        portEXIT_CRITICAL(&physicalButtonMux_);
+    }
 };
 
 } // namespace stridecontrol

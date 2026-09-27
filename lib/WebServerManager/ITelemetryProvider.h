@@ -66,6 +66,13 @@ struct TelemetryReport {
     uint64_t maintenanceDistanceMeters = 0;
     uint64_t maintenanceTimeSeconds = 0;
     bool maintenanceSavePending = false;
+
+    // Passive physical macro-button observation (QuickStart/Stop/Speed+/-/Incline+/-)
+    const char* lastPhysicalButtonName = nullptr;  ///< nullptr = no event received yet
+    const char* lastPhysicalButtonAction = nullptr;
+    uint32_t lastPhysicalButtonTimestampMs = 0;
+    uint32_t lastPhysicalButtonDurationMs = 0;
+    uint32_t physicalButtonCount = 0;
 };
 
 /**

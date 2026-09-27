@@ -110,6 +110,10 @@ public:
         report.maintenanceDistanceMeters = telem.snapshot.maintenance.totalDistanceMeters;
         report.maintenanceTimeSeconds = telem.snapshot.maintenance.totalTimeSeconds;
         report.maintenanceSavePending = telem.snapshot.maintenance.savePending;
+        runtime_.getLastPhysicalButton(
+            report.lastPhysicalButtonName, report.lastPhysicalButtonAction,
+            report.lastPhysicalButtonTimestampMs, report.lastPhysicalButtonDurationMs,
+            report.physicalButtonCount);
         return true;
     }
 
@@ -240,6 +244,10 @@ public:
         report.maintenanceDistanceMeters = snap.maintenance.totalDistanceMeters;
         report.maintenanceTimeSeconds = snap.maintenance.totalTimeSeconds;
         report.maintenanceSavePending = snap.maintenance.savePending;
+        systemManager_.getControlRuntime().getLastPhysicalButton(
+            report.lastPhysicalButtonName, report.lastPhysicalButtonAction,
+            report.lastPhysicalButtonTimestampMs, report.lastPhysicalButtonDurationMs,
+            report.physicalButtonCount);
         return true;
     }
 
