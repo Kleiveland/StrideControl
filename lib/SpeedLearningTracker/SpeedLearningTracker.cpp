@@ -397,11 +397,13 @@ bool SpeedLearningTracker::checkBeltStoppedTrigger(
                 if (!evaluateFactoryBaselineSafety(measuredKmh, commandedKmh)) continue;
                 if (!evaluateCrossPointConsistency(measuredKmh, commandedKmh)) continue;
 
-                // Candidate qualifies! Find existing point in activeConfigInOut or insert
+                // Candidate qualifies! Work on a temporary copy to guarantee atomic pre-validated commit
+                SpeedConfig tempConfig = activeConfigInOut;
+
                 int8_t matchIdx = -1;
-                for (size_t p = 0; p < activeConfigInOut.pointCount; ++p) {
-                    const float tol = std::max(config_.hybridMergeAbsKmh, config_.hybridMergePct * activeConfigInOut.points[p].measuredPhysicalSpeedKmh);
-                    if (std::fabs(measuredKmh - activeConfigInOut.points[p].measuredPhysicalSpeedKmh) <= tol) {
+                for (size_t p = 0; p < tempConfig.pointCount; ++p) {
+                    const float tol = std::max(config_.hybridMergeAbsKmh, config_.hybridMergePct * tempConfig.points[p].measuredPhysicalSpeedKmh);
+                    if (std::fabs(measuredKmh - tempConfig.points[p].measuredPhysicalSpeedKmh) <= tol) {
                         matchIdx = static_cast<int8_t>(p);
                         break;
                     }
@@ -411,7 +413,7 @@ bool SpeedLearningTracker::checkBeltStoppedTrigger(
                 float newCmd = commandedKmh;
 
                 if (matchIdx >= 0) {
-                    prevCmd = activeConfigInOut.points[matchIdx].treadmillCommandKmh;
+                    prevCmd = tempConfig.points[matchIdx].treadmillCommandKmh;
                     const float alpha = computeAdaptiveAlpha(conf, cand.updateCountLifetime);
                     float delta = alpha * (commandedKmh - prevCmd);
                     delta = std::max(-config_.maxAdaptationStepKmh, std::min(config_.maxAdaptationStepKmh, delta));
@@ -422,21 +424,21 @@ bool SpeedLearningTracker::checkBeltStoppedTrigger(
                     }
 
                     newCmd = prevCmd + delta;
-                    activeConfigInOut.points[matchIdx].measuredPhysicalSpeedKmh = measuredKmh;
-                    activeConfigInOut.points[matchIdx].treadmillCommandKmh = newCmd;
+                    tempConfig.points[matchIdx].measuredPhysicalSpeedKmh = measuredKmh;
+                    tempConfig.points[matchIdx].treadmillCommandKmh = newCmd;
                 } else {
                     // New-point insertion case:
                     // If current table already has valid interpolation/extrapolation (pointCount >= 2),
                     // check whether candidate's own measured value already matches what the current table predicts.
-                    if (activeConfigInOut.commandMapValid && activeConfigInOut.pointCount >= 2) {
-                        const float cPred = predictCommand(activeConfigInOut, measuredKmh);
+                    if (tempConfig.commandMapValid && tempConfig.pointCount >= 2) {
+                        const float cPred = predictCommand(tempConfig, measuredKmh);
                         if (std::fabs(commandedKmh - cPred) <= config_.newPointPredictionToleranceKmh) {
                             // Table already predicts this speed within tolerance: skip redundant point insertion
                             continue;
                         }
                     }
 
-                    if (activeConfigInOut.pointCount >= kMaxSpeedCalibrationPoints) {
+                    if (tempConfig.pointCount >= kMaxSpeedCalibrationPoints) {
                         continue; // Table full
                     }
 
@@ -446,29 +448,48 @@ bool SpeedLearningTracker::checkBeltStoppedTrigger(
                     delta = std::max(-config_.maxAdaptationStepKmh, std::min(config_.maxAdaptationStepKmh, delta));
                     newCmd = prevCmd + delta;
 
-                    const size_t insertIdx = activeConfigInOut.pointCount++;
-                    activeConfigInOut.points[insertIdx].measuredPhysicalSpeedKmh = measuredKmh;
-                    activeConfigInOut.points[insertIdx].treadmillCommandKmh = newCmd;
+                    const size_t insertIdx = tempConfig.pointCount++;
+                    tempConfig.points[insertIdx].measuredPhysicalSpeedKmh = measuredKmh;
+                    tempConfig.points[insertIdx].treadmillCommandKmh = newCmd;
                 }
 
                 // Sort points ascending by measuredPhysicalSpeedKmh
-                std::sort(activeConfigInOut.points.begin(), activeConfigInOut.points.begin() + activeConfigInOut.pointCount,
+                std::sort(tempConfig.points.begin(), tempConfig.points.begin() + tempConfig.pointCount,
                     [](const SpeedCalibrationPoint& a, const SpeedCalibrationPoint& b) {
                         return a.measuredPhysicalSpeedKmh < b.measuredPhysicalSpeedKmh;
                     });
 
-                // Update validity flag if >= 2 points
-                if (activeConfigInOut.pointCount >= 2) {
-                    bool strictlyAscending = true;
-                    for (size_t p = 1; p < activeConfigInOut.pointCount; ++p) {
-                        if (activeConfigInOut.points[p].measuredPhysicalSpeedKmh <= activeConfigInOut.points[p - 1].measuredPhysicalSpeedKmh ||
-                            activeConfigInOut.points[p].treadmillCommandKmh <= activeConfigInOut.points[p - 1].treadmillCommandKmh) {
+                // Pre-validation: verify strict ascending monotonicity on BOTH physical speed and treadmill command
+                bool strictlyAscending = true;
+                if (tempConfig.pointCount >= 2) {
+                    for (size_t p = 1; p < tempConfig.pointCount; ++p) {
+                        if (tempConfig.points[p].measuredPhysicalSpeedKmh <= tempConfig.points[p - 1].measuredPhysicalSpeedKmh ||
+                            tempConfig.points[p].treadmillCommandKmh <= tempConfig.points[p - 1].treadmillCommandKmh) {
                             strictlyAscending = false;
                             break;
                         }
                     }
-                    activeConfigInOut.commandMapValid = strictlyAscending;
                 }
+
+                if (!strictlyAscending) {
+                    // Pre-check failed: reject this candidate to protect active table integrity
+                    SpeedAdaptationLogEntry rejEntry{};
+                    rejEntry.timestampMs = nowMs;
+                    rejEntry.measuredPhysicalSpeedKmh = measuredKmh;
+                    rejEntry.previousCommandKmh = prevCmd;
+                    rejEntry.newCommandKmh = prevCmd; // Unchanged
+                    rejEntry.deltaKmh = 0.0f;          // 0 delta committed
+                    rejEntry.accumulatedSteadySeconds = static_cast<float>(cand.sampleCount) / 50.0f;
+                    rejEntry.confidencePct = 0;        // 0% confidence denotes rejected adaptation
+                    appendAuditLog(rejEntry);
+                    continue; // Preserve activeConfigInOut unmodified
+                }
+
+                // Pre-check passed! Safe to commit to activeConfigInOut
+                if (tempConfig.pointCount >= 2) {
+                    tempConfig.commandMapValid = true;
+                }
+                activeConfigInOut = tempConfig;
 
                 cand.updateCountLifetime++;
 
