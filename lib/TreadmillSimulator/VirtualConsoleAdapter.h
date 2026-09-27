@@ -14,7 +14,7 @@ namespace stridecontrol {
  * 
  * Captures command intents only (no electrical/matrix/pull-up simulation):
  * - QuickStart: Starts at 1.0 km/h, clears E-Stop latch
- * - SpeedPlus / SpeedMinus: +/- 0.1 km/h step, clamped [0.8, 22.0]
+ * - SpeedPlus / SpeedMinus: +/- 0.1 km/h step, clamped [0.8, 25.0]
  * - InclinePlus / InclineMinus: +/- 0.5 % step, clamped [0.0, 15.0]
  * - SetSpeed / SetIncline: Direct target setting clamped to valid ranges
  * - Stop: Ramps speed target to 0.0 km/h (pause)
@@ -54,7 +54,7 @@ public:
                 if (target <= 0.0f) {
                     treadmill_.setTargetSpeedKmh(0.0f);
                 } else {
-                    target = std::max(0.8f, std::min(22.0f, target));
+                    target = std::max(0.8f, std::min(25.0f, target));
                     treadmill_.setTargetSpeedKmh(target);
                 }
                 return true;
@@ -72,7 +72,7 @@ public:
                 speedCommandsCount_++;
                 float current = treadmill_.getTargetSpeedKmh();
                 float next = (current < 0.8f) ? 0.8f : (std::round((current + 0.1f) * 10.0f) / 10.0f);
-                next = std::min(22.0f, next);
+                next = std::min(25.0f, next);
                 treadmill_.setTargetSpeedKmh(next);
                 return true;
             }
@@ -114,7 +114,7 @@ public:
                         speedCommandsCount_++;
                         float current = treadmill_.getTargetSpeedKmh();
                         float next = (current < 0.8f) ? 0.8f : (std::round((current + 0.1f) * 10.0f) / 10.0f);
-                        next = std::min(22.0f, next);
+                        next = std::min(25.0f, next);
                         treadmill_.setTargetSpeedKmh(next);
                         return true;
                     }

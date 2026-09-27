@@ -2006,7 +2006,7 @@ void WebServerManager::registerRoutes() {
             if (buffer->received == buffer->capacity && buffer->received > 0) {
                 JsonDocument doc;
                 DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
-                if (!err && doc["deadTimeMs"].is<uint32_t>()) {
+                if (!err && (doc["deadTimeMs"].is<uint32_t>() || doc["deadTimeMs"].is<int>() || doc["deadTimeMs"].is<long>() || doc["deadTimeMs"].is<float>())) {
                     deadTimeMs = doc["deadTimeMs"].as<uint32_t>();
                 }
             }

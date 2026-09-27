@@ -118,12 +118,9 @@ bool VirtualTreadmill::tick(const SimulationTick& tick) {
                 csafeState_.stateNibble = 0x05;
                 if (config_.useRealisticRamping && std::fabs(pendingStartSpeedKmh_ - actualSpeedKmh_) > 0.05f) {
                     if (speedDeadTimeRemainingMs_ == 0) {
-                        const uint32_t alreadyElapsedMs = config_.startingCountdownMs;
-                        const uint32_t remainingAfterCountdown = (config_.deadTimeMs > alreadyElapsedMs)
-                            ? (config_.deadTimeMs - alreadyElapsedMs) : 0;
                         constexpr uint32_t kSimStartupSensorLatencyMs = 1500;
-                        speedDeadTimeRemainingMs_ = (remainingAfterCountdown > kSimStartupSensorLatencyMs)
-                            ? (remainingAfterCountdown - kSimStartupSensorLatencyMs) : 0;
+                        speedDeadTimeRemainingMs_ = (config_.deadTimeMs > kSimStartupSensorLatencyMs)
+                            ? (config_.deadTimeMs - kSimStartupSensorLatencyMs) : 0;
                     }
                 }
                 targetSpeedKmh_ = pendingStartSpeedKmh_;

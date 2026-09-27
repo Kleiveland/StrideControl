@@ -105,6 +105,16 @@ public:
         speedCalibration_.setConfiguration(config);
         speedLearningTracker_.setActiveSpeedConfig(config);
     }
+    void onRampCalibrationConfigUpdated(const RampCalibrationConfig& config) {
+        VirtualTreadmillConfig vtCfg = composite_.getVirtualTreadmill().getConfig();
+        vtCfg.deadTimeMs = config.deadTimeMs;
+        vtCfg.loadMultiplier = config.loadMultiplier;
+        for (size_t i = 0; i < 3; ++i) {
+            vtCfg.accelMsPerKmh[i] = config.accelMsPerKmh[i];
+            vtCfg.decelMsPerKmh[i] = config.decelMsPerKmh[i];
+        }
+        composite_.getVirtualTreadmill().setConfig(vtCfg);
+    }
     SpeedCalibrationResult calculateSpeedCommand(float physicalSpeedKmh) const override {
         return speedCalibration_.calculateCommand(physicalSpeedKmh);
     }

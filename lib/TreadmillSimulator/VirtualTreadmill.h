@@ -131,7 +131,7 @@ enum class VirtualTreadmillFault : uint16_t {
 
 struct VirtualTreadmillConfig {
     // Physical limits
-    float maxSpeedKmh = 22.0f;
+    float maxSpeedKmh = 25.0f;
     float minSpeedKmh = 0.5f;
 
     // Dynamics (Provisional defaults unless calibrated)
