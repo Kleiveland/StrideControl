@@ -178,8 +178,44 @@ static bool runVirtualConsoleUnitTests() {
         allPassed &= p;
         DiagnosticsLog::instance().addEntryf("[TEST] test_interrupted_request_id_preservation_on_repeated_stop: %s", p ? "PASSED" : "FAILED");
     }
+    // 12. test_clear_incline_target_resets_all_eight_fields
+    {
+        WorkoutDispatcher dispatcher;
+        dispatcher.begin();
 
-    DiagnosticsLog::instance().addEntryf("[UNITY TEST SUITE] 11 Tests 0 Failures 0 Ignored - %s", allPassed ? "OK" : "FAIL");
+        TargetContext ctx;
+        ctx.origin = TargetOrigin::SessionManualAdjustment;
+        ctx.sessionGeneration = 42;
+        ctx.stepIndex = 3;
+        ctx.timestampMs = 5000;
+
+        dispatcher.stageInclineTarget(6.5f, ctx);
+        StagedTargets staged = dispatcher.getStagedTargets();
+        bool p = staged.pendingIncline &&
+                 (std::fabs(staged.inclinePct - 6.5f) < 0.001f) &&
+                 (staged.inclineOrigin == TargetOrigin::SessionManualAdjustment) &&
+                 (staged.inclineSessionGeneration == 42) &&
+                 (staged.inclineIntentSequence == 0) &&
+                 (staged.inclineStepIndex == 3) &&
+                 !staged.inclineIsPreFire &&
+                 (staged.inclineStagedTimestampMs == 5000);
+
+        dispatcher.clearInclineTarget();
+        staged = dispatcher.getStagedTargets();
+        p = p && !staged.pendingIncline &&
+                 (std::fabs(staged.inclinePct - 0.0f) < 0.001f) &&
+                 (staged.inclineOrigin == TargetOrigin::None) &&
+                 (staged.inclineSessionGeneration == 0) &&
+                 (staged.inclineIntentSequence == 0) &&
+                 (staged.inclineStepIndex == 0) &&
+                 !staged.inclineIsPreFire &&
+                 (staged.inclineStagedTimestampMs == 0);
+
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_clear_incline_target_resets_all_eight_fields: %s", p ? "PASSED" : "FAILED");
+    }
+
+    DiagnosticsLog::instance().addEntryf("[UNITY TEST SUITE] 12 Tests 0 Failures 0 Ignored - %s", allPassed ? "OK" : "FAIL");
     return allPassed;
 }
 
