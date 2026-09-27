@@ -165,6 +165,10 @@ struct VirtualTreadmillConfig {
 
 class VirtualTreadmill {
 public:
+    // Startup sensor latency derived from T610 tachometer pulse spacing (3229.28 pulses/km)
+    // and two-pulse interval acquisition time during low-speed startup ramping (~3750 ms)
+    static constexpr uint32_t kSimStartupSensorLatencyMs = 3750;
+
     explicit VirtualTreadmill(const VirtualTreadmillConfig& config = VirtualTreadmillConfig{});
     ~VirtualTreadmill() = default;
 

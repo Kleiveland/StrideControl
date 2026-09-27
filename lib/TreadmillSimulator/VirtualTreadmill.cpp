@@ -118,7 +118,6 @@ bool VirtualTreadmill::tick(const SimulationTick& tick) {
                 csafeState_.stateNibble = 0x05;
                 if (config_.useRealisticRamping && std::fabs(pendingStartSpeedKmh_ - actualSpeedKmh_) > 0.05f) {
                     if (speedDeadTimeRemainingMs_ == 0) {
-                        constexpr uint32_t kSimStartupSensorLatencyMs = 1500;
                         speedDeadTimeRemainingMs_ = (config_.deadTimeMs > kSimStartupSensorLatencyMs)
                             ? (config_.deadTimeMs - kSimStartupSensorLatencyMs) : 0;
                     }
@@ -486,7 +485,6 @@ void VirtualTreadmill::setTargetSpeedKmh(float speedKmh) {
     if (config_.useRealisticRamping && std::fabs(newTarget - targetSpeedKmh_) > 0.05f) {
         if (speedDeadTimeRemainingMs_ == 0) {
             if (actualSpeedKmh_ <= 0.05f) {
-                constexpr uint32_t kSimStartupSensorLatencyMs = 1500;
                 speedDeadTimeRemainingMs_ = (config_.deadTimeMs > kSimStartupSensorLatencyMs)
                     ? (config_.deadTimeMs - kSimStartupSensorLatencyMs) : 0;
             } else {
@@ -567,7 +565,6 @@ void VirtualTreadmill::onConsoleQuickStart(float resumeSpeedKmh, float resumeInc
         csafeState_.stateNibble = 0x05;
         if (config_.useRealisticRamping && std::fabs(pendingStartSpeedKmh_ - actualSpeedKmh_) > 0.05f) {
             if (speedDeadTimeRemainingMs_ == 0) {
-                constexpr uint32_t kSimStartupSensorLatencyMs = 1500;
                 speedDeadTimeRemainingMs_ = (config_.deadTimeMs > kSimStartupSensorLatencyMs)
                     ? (config_.deadTimeMs - kSimStartupSensorLatencyMs) : 0;
             }

@@ -113,7 +113,7 @@ public:
             vtCfg.accelMsPerKmh[i] = config.accelMsPerKmh[i];
             vtCfg.decelMsPerKmh[i] = config.decelMsPerKmh[i];
         }
-        composite_.getVirtualTreadmill().setConfig(vtCfg);
+        composite_.getVirtualTreadmill().setConfiguration(vtCfg);
     }
     SpeedCalibrationResult calculateSpeedCommand(float physicalSpeedKmh) const override {
         return speedCalibration_.calculateCommand(physicalSpeedKmh);
