@@ -246,6 +246,8 @@ void WebServerManager::registerRoutes() {
         session["hasUpcomingDragStep"] = report.hasUpcomingDragStep;
         session["stepTargetSpeedKmh"] = report.stepTargetSpeedKmh;
         session["stepSetIncline"] = report.stepSetIncline;
+        session["hasSpeedTarget"] = report.hasSpeedTarget;
+        session["hasInclineTarget"] = report.hasInclineTarget;
         session["avgHeartRateBpm"] = report.avgHeartRateBpm;
         session["maxHeartRateBpm"] = report.maxHeartRateBpm;
         session["maxSpeedKmh"] = report.maxSpeedKmh;
@@ -307,6 +309,8 @@ void WebServerManager::registerRoutes() {
         doc["elapsedTimeMs"] = report.totalElapsedTimeMs;
         doc["targetSpeedKmh"] = report.targetSpeedKmh;
         doc["targetInclinePct"] = report.targetInclinePct;
+        doc["hasSpeedTarget"] = report.hasSpeedTarget;
+        doc["hasInclineTarget"] = report.hasInclineTarget;
         doc["droppedEvents"] = report.droppedEventsCount;
 
         // Physical macro-button observation (Proposal B)

@@ -4179,7 +4179,7 @@
             if (manSpdVal && manSpdLbl) {
                 manSpdVal.innerText = spdStr;
                 const isRunning = telem.session?.state === 'Running';
-                if (isRunning && typeof telem.targetSpeedKmh === 'number' && typeof spd === 'number' &&
+                if (isRunning && telem.session?.hasSpeedTarget === true && typeof telem.targetSpeedKmh === 'number' && typeof spd === 'number' &&
                     Math.abs(telem.targetSpeedKmh - spd) > 0.2) {
                     manSpdLbl.classList.add('active-spd');
                     manSpdVal.classList.add('active-spd');
@@ -4202,7 +4202,7 @@
             if (manIncVal && manIncLbl) {
                 manIncVal.innerText = incStr;
                 const isRunning = telem.session?.state === 'Running';
-                if (isRunning && typeof telem.targetInclinePct === 'number' && typeof inc === 'number' &&
+                if (isRunning && telem.session?.hasInclineTarget === true && typeof telem.targetInclinePct === 'number' && typeof inc === 'number' &&
                     Math.abs(telem.targetInclinePct - inc) > 0.2) {
                     manIncLbl.classList.add('active-inc');
                     manIncVal.classList.add('active-inc');
@@ -4360,7 +4360,7 @@
                 if (txt === 'FART') {
                     val.innerText = spdStr;
                     const sub = col.querySelector('.ramp-adjust-sub');
-                    if (isRunning && typeof telem.targetSpeedKmh === 'number' && typeof spd === 'number' &&
+                    if (isRunning && telem.session?.hasSpeedTarget === true && typeof telem.targetSpeedKmh === 'number' && typeof spd === 'number' &&
                         Math.abs(telem.targetSpeedKmh - spd) > 0.2) {
                         lbl.classList.add('active-spd');
                         val.classList.add('active-spd');
@@ -4377,7 +4377,7 @@
                 } else if (txt === 'STIGNING') {
                     val.innerText = incStr;
                     const sub = col.querySelector('.ramp-adjust-sub');
-                    if (isRunning && typeof telem.targetInclinePct === 'number' && typeof inc === 'number' &&
+                    if (isRunning && telem.session?.hasInclineTarget === true && typeof telem.targetInclinePct === 'number' && typeof inc === 'number' &&
                         Math.abs(telem.targetInclinePct - inc) > 0.2) {
                         lbl.classList.add('active-inc');
                         val.classList.add('active-inc');

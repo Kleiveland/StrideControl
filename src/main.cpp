@@ -60,6 +60,8 @@ public:
         const stridecontrol::StagedTargets staged = runtime_.getStagedTargets();
         report.targetSpeedKmh = telem.sessionSnapshot.hasSpeedTarget ? telem.sessionSnapshot.targetSpeedKmh : staged.speedKmh;
         report.targetInclinePct = telem.sessionSnapshot.hasInclineTarget ? static_cast<float>(telem.sessionSnapshot.targetInclinePct) : staged.inclinePct;
+        report.hasSpeedTarget = telem.sessionSnapshot.hasSpeedTarget;
+        report.hasInclineTarget = telem.sessionSnapshot.hasInclineTarget;
         report.runnerSpeedKmh = telem.snapshot.runner.runnerSpeedKmh;
         report.beltDistanceKm = runtime_.getComposite().getVirtualTreadmill().getOdometerKm();
         const auto runnerLoc = runtime_.getComposite().getVirtualTreadmill().getRunnerLocation();
@@ -204,6 +206,8 @@ public:
         report.stepElapsedMs = sessSnap.stepElapsedMs;
         report.targetSpeedKmh = sessSnap.hasSpeedTarget ? sessSnap.targetSpeedKmh : staged.speedKmh;
         report.targetInclinePct = sessSnap.hasInclineTarget ? static_cast<float>(sessSnap.targetInclinePct) : staged.inclinePct;
+        report.hasSpeedTarget = sessSnap.hasSpeedTarget;
+        report.hasInclineTarget = sessSnap.hasInclineTarget;
         report.runnerSpeedKmh = snap.runner.runnerSpeedKmh;
         report.beltDistanceKm = snap.runner.validatedDistanceKm;
         report.runnerPresence = stridecontrol::runnerPresenceName(snap.runner.presence);

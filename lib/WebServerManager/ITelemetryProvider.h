@@ -26,6 +26,8 @@ struct TelemetryReport {
     uint32_t stepElapsedMs = 0;
     float targetSpeedKmh = 0.0f;
     float targetInclinePct = 0.0f;
+    bool hasSpeedTarget = false;
+    bool hasInclineTarget = false;
     float runnerSpeedKmh = 0.0f;
     double beltDistanceKm = 0.0;
     const char* runnerPresence = "UNKNOWN";
