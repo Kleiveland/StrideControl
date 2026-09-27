@@ -767,6 +767,9 @@ It does not measure pulses, execute commands, own GPIO, write NVS, or own HTML/A
 
 ### 8.3 Automatic Command Learning
 
+Implemented as `SpeedLearningTracker`, fully automatic (no manual approval step - a deliberate
+deviation from an earlier assumption; see 14.6).
+
 Example:
 
 ```text
@@ -776,20 +779,50 @@ Stable measured result:     14.8 km/h
 Future corrected command:   approximately 15.2 km/h
 ```
 
-The correction is applied only the next time that speed is requested. The active command is not continuously adjusted while the belt is running.
+The correction is applied only the next time that speed is requested. The active command is not
+continuously adjusted while the belt is running.
 
-A learning candidate may be created only when:
+The table is NOT limited to fixed speed buckets - it grows dynamically at whatever exact speeds
+the runner actually holds, capped at 10 concurrent tracked candidates (matching
+`kMaxSpeedCalibrationPoints`) with lowest-confidence eviction beyond that cap.
 
-- SpeedSensor is valid and fresh.
-- The command is known.
-- The normal transition period is complete.
-- Speed is stable for approved observation criteria.
-- No command, relay correction, startup, shutdown, recovery, or unresolved control operation is active.
-- The point is within the valid calibration range.
+A single observation window requires: CSAFE genuinely `InUse`, the commanded speed unchanged for
+>= 8 seconds (settling), a subsequent 30-second stable-speed window (peak-to-peak <= 0.15 km/h),
+no E-stop/pending command/countdown/ramp-test active. Evidence accumulates via Welford's algorithm
+ACROSS THE WHOLE SESSION, not as discrete counted windows - any 30-second stable period counts,
+wherever/whenever it occurs, with no requirement that windows be consecutive. A 3-tap median
+pre-filter protects the running variance calculation from a single-tick transient (a stumble, a
+momentary sensor spike) within an otherwise-valid window.
 
-Learned observations remain in RAM while the belt runs. Persistent writes occur only when the belt is stopped and only through `SettingsService`.
+At session end (belt genuinely stopped, 3-second debounce), an accumulated estimate is only
+committed if confidence >= 75% (requiring >= 45s of accumulated steady time with sigma <= 0.08
+km/h). Two independent checks then gate acceptance:
 
-A single observation must not immediately overwrite an established point. Minimum evidence, outlier rejection, bounded adaptation, and acceptance confidence must be specified and tested before implementation approval.
+- Cross-point consistency: the candidate must agree with what neighboring calibrated points
+  already predict via linear interpolation (tolerance 0.4 km/h, slope bounded to [0.75, 1.35]).
+  Outside the table's known range, prediction uses linear slope continuation from the outermost
+  segment (not flat clamping), reflecting the non-zero intercept of real motor/inverter transfer
+  behavior - see 8.4.
+- Absolute factory-baseline safety guardrail: checked against the immutable, compile-time factory
+  ROM baseline curve (never the mutable, already-adjusted SpeedConfig), rejecting any drift beyond
+  ±15% / ±2.0 km/h from true physical limits. This specifically prevents multi-session "creeping"
+  drift, where a series of individually-small adjustments (each measured only against the
+  previous, already-drifted value) could otherwise walk the calibration arbitrarily far from
+  reality.
+
+Accepted corrections are applied via confidence-adaptive EWMA (higher existing confidence/history
+reduces the weight of one new observation), not a flat clamp - bounding the maximum change any
+single session can make to an established point while still allowing genuine, gradual drift to be
+tracked over time.
+
+A "dirty" flag gates NVS writes: a session's accumulated change is only persisted if it moved an
+existing point meaningfully (beyond a negligible-noise threshold); a session that only absorbed
+microscopic noise triggers zero flash writes. A genuinely new candidate is only inserted if it
+would meaningfully improve interpolation accuracy at that speed - skipped if the current table
+already predicts it within tolerance, avoiding a wasted table slot and an unnecessary write.
+
+All tracker state uses single-precision `float` only (no `double`), for ESP32-S3 hardware FPU
+compatibility and RAM economy (~432 bytes static, zero heap allocation).
 
 ### 8.4 Correction Table and Interpolation
 
@@ -804,7 +837,7 @@ Each calibration point distinguishes:
 
 Interpolate the required command linearly between surrounding validated points.
 
-Do not silently extrapolate outside the validated range unless a bounded extrapolation policy is separately approved and tested.
+A bounded extrapolation policy is implemented. Outside the validated range, prediction uses linear slope continuation from the outermost known segment, bounded by strict monotonicity and the absolute factory-baseline safety guardrail - never unbounded silent extrapolation.
 
 The corrected command cannot exceed the maximum command accepted by the treadmill, currently 25.0 km/h.
 
@@ -1527,7 +1560,8 @@ This is a separate PC-oriented HTML interface for:
 
 - external speed reference calibration
 - SpeedCalibration table inspection
-- automatic learning candidate approval
+- automatic learning audit log (read-only)
+- SpeedLearningTracker commits automatically with no manual approval step; the page surfaces what was applied, for transparency only
 - maximum achievable speed commissioning
 - configuration validation and rollback
 - raw IMU and sensor telemetry
