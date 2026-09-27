@@ -144,8 +144,42 @@ static bool runVirtualConsoleUnitTests() {
         allPassed &= p;
         DiagnosticsLog::instance().addEntryf("[TEST] test_software_sink_button_press_bridge: %s", p ? "PASSED" : "FAILED");
     }
+    // 11. test_interrupted_request_id_preservation_on_repeated_stop
+    {
+        ConsoleInterface c; c.begin(ConsoleExecutionMode::SoftwareSink);
+        VirtualTreadmill tm; VirtualConsoleAdapter ad(tm); c.registerCommandSink(&ad);
+        SpeedCalibration cal; DiagnosticsService diag;
+        TreadmillController ctrl(c, cal, diag);
+        ctrl.begin();
 
-    DiagnosticsLog::instance().addEntryf("[UNITY TEST SUITE] 10 Tests 0 Failures 0 Ignored - %s", allPassed ? "OK" : "FAIL");
+        bool p = ctrl.submitSpeedTarget(12.0f, 1000);
+        const uint32_t workReqId = ctrl.getSnapshot().activeRequestId;
+        p = p && (workReqId != 0) && ctrl.isBusy() && !ctrl.getSnapshot().interruptedRequestValid;
+
+        // 1st Stop
+        p = p && ctrl.submitStop(1005);
+        const uint32_t stop1ReqId = ctrl.getSnapshot().activeRequestId;
+        p = p && (stop1ReqId != workReqId) && ctrl.getSnapshot().interruptedRequestValid && (ctrl.getSnapshot().interruptedRequestId == workReqId);
+
+        // 2nd Stop (rapid / repeated) -> must NOT overwrite interruptedRequestId
+        p = p && ctrl.submitStop(1010);
+        const uint32_t stop2ReqId = ctrl.getSnapshot().activeRequestId;
+        p = p && (stop2ReqId != stop1ReqId) && ctrl.getSnapshot().interruptedRequestValid && (ctrl.getSnapshot().interruptedRequestId == workReqId);
+
+        ctrl.update(1015);
+        p = p && !ctrl.isBusy();
+
+        // Next work target -> resets interruptedRequestId
+        p = p && ctrl.submitSpeedTarget(12.0f, 2000);
+        p = p && !ctrl.getSnapshot().interruptedRequestValid && (ctrl.getSnapshot().interruptedRequestId == 0);
+
+        ctrl.end();
+        c.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_interrupted_request_id_preservation_on_repeated_stop: %s", p ? "PASSED" : "FAILED");
+    }
+
+    DiagnosticsLog::instance().addEntryf("[UNITY TEST SUITE] 11 Tests 0 Failures 0 Ignored - %s", allPassed ? "OK" : "FAIL");
     return allPassed;
 }
 

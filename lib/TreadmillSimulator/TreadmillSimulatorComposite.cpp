@@ -119,11 +119,12 @@ void TreadmillSimulatorComposite::applyDiscreteEvent(const StagedDiscreteEvent& 
             consoleAdapter_.onCommandIntent(cmd);
             break;
 
-        case StagedDiscreteEvent::Type::Stop:
+        case StagedDiscreteEvent::Type::Stop: {
+            const bool wasReadyBeforeStop = (treadmill_.getCsafeState().qualifiedState == CsafeMachineState::Ready);
             cmd.type = CommandType::PressButton;
             cmd.button = ButtonId::Stop;
             consoleAdapter_.onCommandIntent(cmd);
-            if (console_ != nullptr) {
+            if (console_ != nullptr && wasReadyBeforeStop) {
                 console_->injectPhysicalButtonEvent(PhysicalButtonEvent{
                     ButtonId::Stop,
                     PhysicalButtonAction::Pressed,
@@ -132,6 +133,7 @@ void TreadmillSimulatorComposite::applyDiscreteEvent(const StagedDiscreteEvent& 
                 });
             }
             break;
+        }
 
         case StagedDiscreteEvent::Type::EmergencyStop:
             consoleAdapter_.onEmergencyStop(true);

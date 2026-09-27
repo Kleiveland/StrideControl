@@ -407,6 +407,53 @@ void test_software_sink_button_press_bridge() {
     console.end();
 }
 
+void test_interrupted_request_id_preservation_on_repeated_stop() {
+    ConsoleInterface console;
+    console.begin(ConsoleExecutionMode::SoftwareSink);
+
+    VirtualTreadmill treadmill;
+    VirtualConsoleAdapter adapter(treadmill);
+    console.registerCommandSink(&adapter);
+
+    SpeedCalibration calibration;
+    DiagnosticsService diagnostics;
+    TreadmillController controller(console, calibration, diagnostics);
+    TEST_ASSERT_TRUE(controller.begin());
+
+    // 1. Submit Speed Target 12.0 km/h
+    TEST_ASSERT_TRUE(controller.submitSpeedTarget(12.0f, 1000));
+    const uint32_t workReqId = controller.getSnapshot().activeRequestId;
+    TEST_ASSERT_NOT_EQUAL(0, workReqId);
+    TEST_ASSERT_TRUE(controller.isBusy());
+    TEST_ASSERT_FALSE(controller.getSnapshot().interruptedRequestValid);
+
+    // 2. First Stop arrives while Speed command is in flight -> captures interruptedRequestId
+    TEST_ASSERT_TRUE(controller.submitStop(1005));
+    const uint32_t firstStopReqId = controller.getSnapshot().activeRequestId;
+    TEST_ASSERT_NOT_EQUAL(workReqId, firstStopReqId);
+    TEST_ASSERT_TRUE(controller.getSnapshot().interruptedRequestValid);
+    TEST_ASSERT_EQUAL_UINT32(workReqId, controller.getSnapshot().interruptedRequestId);
+
+    // 3. Second Stop arrives rapidly while first Stop is still active -> must NOT overwrite interruptedRequestId
+    TEST_ASSERT_TRUE(controller.submitStop(1010));
+    const uint32_t secondStopReqId = controller.getSnapshot().activeRequestId;
+    TEST_ASSERT_NOT_EQUAL(firstStopReqId, secondStopReqId);
+    TEST_ASSERT_TRUE(controller.getSnapshot().interruptedRequestValid);
+    TEST_ASSERT_EQUAL_UINT32(workReqId, controller.getSnapshot().interruptedRequestId);
+
+    // 4. Update controller to finish Stop command
+    controller.update(1015);
+    TEST_ASSERT_FALSE(controller.isBusy());
+
+    // 5. New work command submitted -> resets interruptedRequestId
+    TEST_ASSERT_TRUE(controller.submitSpeedTarget(12.0f, 2000));
+    TEST_ASSERT_FALSE(controller.getSnapshot().interruptedRequestValid);
+    TEST_ASSERT_EQUAL_UINT32(0, controller.getSnapshot().interruptedRequestId);
+
+    controller.end();
+    console.end();
+}
+
 void run_all_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_console_execution_modes);
@@ -419,6 +466,7 @@ void run_all_tests() {
     RUN_TEST(test_emergency_stop_contract);
     RUN_TEST(test_treadmill_controller_correlation);
     RUN_TEST(test_software_sink_button_press_bridge);
+    RUN_TEST(test_interrupted_request_id_preservation_on_repeated_stop);
     UNITY_END();
 }
 

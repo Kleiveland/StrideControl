@@ -133,6 +133,8 @@ bool TreadmillController::submitSpeedTarget(
     snapshot_.activeRequestId = reqId;
     snapshot_.activeRequestValid = true;
     snapshot_.activeCommandType = CommandType::SetSpeed;
+    snapshot_.interruptedRequestId = 0;
+    snapshot_.interruptedRequestValid = false;
 
     snapshot_.state = TreadmillControllerState::WaitingForResult;
     snapshot_.busy = true;
@@ -199,6 +201,8 @@ bool TreadmillController::submitInclineTarget(
     snapshot_.activeRequestId = reqId;
     snapshot_.activeRequestValid = true;
     snapshot_.activeCommandType = CommandType::SetIncline;
+    snapshot_.interruptedRequestId = 0;
+    snapshot_.interruptedRequestValid = false;
 
     snapshot_.state = TreadmillControllerState::WaitingForResult;
     snapshot_.busy = true;
@@ -225,8 +229,10 @@ bool TreadmillController::submitStop(uint32_t requestTimestampMs) {
 
     // Stop has explicit priority: abort any active in-flight macro before submission
     if (snapshot_.busy || console_.isActive()) {
-        snapshot_.interruptedRequestId = snapshot_.activeRequestId;
-        snapshot_.interruptedRequestValid = snapshot_.activeRequestValid;
+        if (snapshot_.activeRequestValid && snapshot_.activeCommandType != CommandType::PressButton) {
+            snapshot_.interruptedRequestId = snapshot_.activeRequestId;
+            snapshot_.interruptedRequestValid = true;
+        }
         console_.abortActiveCommand();
     }
 
