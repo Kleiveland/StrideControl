@@ -24,6 +24,9 @@ constexpr uint16_t BUZZER_EDGE_CAPACITY = 192;
 constexpr uint16_t BUZZER_EVENT_CAPACITY = 64;
 constexpr uint8_t PLAN_CAPACITY = 40;
 
+// Fast-path delta threshold for relay pulses (0.5 km/h + 0.005 km/h epsilon to absorb IEEE-754 float subtraction rounding)
+constexpr float kRelayFastPathDeltaThresholdKmh = 0.505f;
+
 struct BuzzerEdge { uint32_t us; uint8_t active; };
 struct BuzzerEvent {
   uint32_t sequence = 0; uint32_t startUs = 0; uint32_t endUs = 0;
@@ -417,7 +420,7 @@ struct ConsoleInterface::Impl {
       if (norm < 0.8f || norm > 25.0f) { err = "Speed out of range"; return false; }
 
       const float delta = norm - c.currentValue;
-      if (std::abs(delta) <= 0.5f && c.currentValue > 0.0f) {
+      if (std::abs(delta) <= kRelayFastPathDeltaThresholdKmh && c.currentValue > 0.0f) {
         // Fast path: close enough to reach with pure relay pulses, no digit re-entry needed.
         const int pulses = static_cast<int>(std::round(std::abs(delta) * 10.0f));
         for (int i = 0; i < pulses; i++) {
@@ -623,6 +626,7 @@ struct ConsoleInterface::Impl {
         active.store(false); return;
       }
 
+      sequenceRestarts++;
       emitEvent(c, CommandStatus::RecoveryRequired, failOutcome, ButtonId::Clear, failStep, n, 0, sequenceRestarts, failAck, "Digit error. Sending CLR", norm);
 
       AckMetrics clrAck{};
@@ -635,7 +639,6 @@ struct ConsoleInterface::Impl {
       }
 
       maintainBaseline(t, last, config.timing.postClearPauseMs);
-      sequenceRestarts++;
       emitEvent(c, CommandStatus::Retrying, ConsoleOutcome::NormalSingle, ButtonId::Clear, 0, n, 0, sequenceRestarts, clrAck, "CLR confirmed. Restarting digit sequence", norm);
     }
 
@@ -887,7 +890,24 @@ ConsoleOutcome ConsoleInterface::pressButton(ButtonId button, uint16_t holdMs, A
     cmd.button = button;
     cmd.value = 0.0f;
     bool ok = submit(cmd, 0);
-    return ok ? ConsoleOutcome::NormalSingle : ConsoleOutcome::Invalid;
+    if (ok) {
+      const uint32_t holdUs = static_cast<uint32_t>(holdMs) * 1000;
+      metrics = AckMetrics{};
+      metrics.startLatencyUs = 0;
+      metrics.completionLatencyUs = holdUs;
+      metrics.envelopeUs = holdUs;
+      metrics.activeUs = holdUs;
+      metrics.longestInternalGapUs = 0;
+      metrics.rawEdgeCount = 2;
+      metrics.segmentCount = 1;
+      metrics.eventCount = 1;
+      metrics.noisy = false;
+      metrics.late = false;
+      return ConsoleOutcome::NormalSingle;
+    } else {
+      metrics = AckMetrics{};
+      return ConsoleOutcome::Invalid;
+    }
   }
   if (impl_->active.exchange(true)) return ConsoleOutcome::HardwareError;
   impl_->abortRequested.store(false); PhaseTracker t{}; uint8_t last = 0xFF;

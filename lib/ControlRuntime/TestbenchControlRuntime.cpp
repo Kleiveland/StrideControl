@@ -6,8 +6,150 @@
 #include <Arduino.h>
 #include "../SettingsService/SettingsService.h"
 #include "../DiagnosticsLog/DiagnosticsLog.h"
+#include "../TreadmillSimulator/VirtualConsoleAdapter.h"
+#include "../TreadmillController/TreadmillController.h"
 
 namespace stridecontrol {
+
+namespace {
+
+static bool runVirtualConsoleUnitTests() {
+    bool allPassed = true;
+
+    // 1. test_console_execution_modes
+    {
+        ConsoleInterface c;
+        bool p = c.begin(ConsoleExecutionMode::SoftwareSink) && c.isReady() && (c.getExecutionMode() == ConsoleExecutionMode::SoftwareSink);
+        c.end();
+        p = p && !c.isReady();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_console_execution_modes: %s", p ? "PASSED" : "FAILED");
+    }
+    // 2. test_virtual_console_adapter_binding
+    {
+        ConsoleInterface c;
+        c.begin(ConsoleExecutionMode::SoftwareSink);
+        VirtualTreadmill tm;
+        VirtualConsoleAdapter ad(tm);
+        c.registerCommandSink(&ad);
+        bool p = (ad.getTotalCommandsReceived() == 0 && ad.getQuickStartCount() == 0 && ad.getStopCount() == 0 && ad.getEmergencyStopCount() == 0);
+        c.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_virtual_console_adapter_binding: %s", p ? "PASSED" : "FAILED");
+    }
+    // 3. test_t610_quickstart_contract
+    {
+        ConsoleInterface c;
+        c.begin(ConsoleExecutionMode::SoftwareSink);
+        VirtualTreadmillConfig cfg{}; cfg.startingCountdownMs = 0;
+        VirtualTreadmill tm(cfg);
+        VirtualConsoleAdapter ad(tm);
+        c.registerCommandSink(&ad);
+        tm.setEmergencyStop(true);
+        TreadmillCommand cmd{}; cmd.requestId = 101; cmd.type = CommandType::PressButton; cmd.button = ButtonId::QuickStart;
+        bool ok = c.submit(cmd, 0);
+        bool p = ok && (ad.getQuickStartCount() == 1) && !tm.isEStopActive() && std::fabs(tm.getTargetSpeedKmh() - 1.0f) < 0.001f;
+        c.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_t610_quickstart_contract: %s", p ? "PASSED" : "FAILED");
+    }
+    // 4. test_t610_delta_stepping_speed
+    {
+        ConsoleInterface c; c.begin(ConsoleExecutionMode::SoftwareSink);
+        VirtualTreadmillConfig cfg{}; cfg.startingCountdownMs = 0;
+        VirtualTreadmill tm(cfg); VirtualConsoleAdapter ad(tm); c.registerCommandSink(&ad);
+        TreadmillCommand qs{}; qs.type = CommandType::PressButton; qs.button = ButtonId::QuickStart; c.submit(qs, 0);
+        TreadmillCommand sp{}; sp.type = CommandType::PressSpeedPlus; c.submit(sp, 0);
+        bool p = std::fabs(tm.getTargetSpeedKmh() - 1.1f) < 0.001f;
+        TreadmillCommand sm{}; sm.type = CommandType::PressSpeedMinus; c.submit(sm, 0);
+        p = p && std::fabs(tm.getTargetSpeedKmh() - 1.0f) < 0.001f;
+        c.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_t610_delta_stepping_speed: %s", p ? "PASSED" : "FAILED");
+    }
+    // 5. test_t610_delta_stepping_incline
+    {
+        ConsoleInterface c; c.begin(ConsoleExecutionMode::SoftwareSink);
+        VirtualTreadmill tm; VirtualConsoleAdapter ad(tm); c.registerCommandSink(&ad);
+        TreadmillCommand inc{}; inc.type = CommandType::PressButton; inc.button = ButtonId::InclinePlus; c.submit(inc, 0);
+        bool p = std::fabs(tm.getTargetInclinePct() - 0.5f) < 0.001f;
+        c.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_t610_delta_stepping_incline: %s", p ? "PASSED" : "FAILED");
+    }
+    // 6. test_t610_direct_keypad_targets
+    {
+        ConsoleInterface c; c.begin(ConsoleExecutionMode::SoftwareSink);
+        VirtualTreadmill tm; VirtualConsoleAdapter ad(tm); c.registerCommandSink(&ad);
+        TreadmillCommand s{}; s.type = CommandType::SetSpeed; s.value = 8.5f; c.submit(s, 0);
+        bool p = std::fabs(tm.getTargetSpeedKmh() - 8.5f) < 0.001f;
+        c.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_t610_direct_keypad_targets: %s", p ? "PASSED" : "FAILED");
+    }
+    // 7. test_t610_stop_logic_pause
+    {
+        ConsoleInterface c; c.begin(ConsoleExecutionMode::SoftwareSink);
+        VirtualTreadmill tm; VirtualConsoleAdapter ad(tm); c.registerCommandSink(&ad);
+        TreadmillCommand s{}; s.type = CommandType::SetSpeed; s.value = 12.0f; c.submit(s, 0);
+        TreadmillCommand st{}; st.type = CommandType::PressButton; st.button = ButtonId::Stop; c.submit(st, 0);
+        bool p = std::fabs(tm.getTargetSpeedKmh() - 0.0f) < 0.001f && (ad.getStopCount() == 1);
+        c.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_t610_stop_logic_pause: %s", p ? "PASSED" : "FAILED");
+    }
+    // 8. test_emergency_stop_contract
+    {
+        ConsoleInterface c; c.begin(ConsoleExecutionMode::SoftwareSink);
+        VirtualTreadmill tm; VirtualConsoleAdapter ad(tm); c.registerCommandSink(&ad);
+        c.triggerEmergencyStop(true);
+        TreadmillCommand s{}; s.requestId = 51; s.type = CommandType::SetSpeed; s.value = 8.0f;
+        bool ok = c.submit(s, 0);
+        bool p = !ok && tm.isEStopActive() && (ad.getEmergencyStopCount() == 1);
+        c.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_emergency_stop_contract: %s", p ? "PASSED" : "FAILED");
+    }
+    // 9. test_treadmill_controller_correlation
+    {
+        ConsoleInterface c; c.begin(ConsoleExecutionMode::SoftwareSink);
+        VirtualTreadmill tm; VirtualConsoleAdapter ad(tm); c.registerCommandSink(&ad);
+        SpeedCalibration cal; DiagnosticsService diag;
+        TreadmillController ctrl(c, cal, diag);
+        ctrl.begin();
+        bool ok = ctrl.submitSpeedTarget(7.0f, 1000);
+        ctrl.update(1005);
+        bool p = ok && !ctrl.isBusy() && (ctrl.getSnapshot().state == TreadmillControllerState::Completed) && std::fabs(tm.getTargetSpeedKmh() - 7.0f) < 0.001f;
+        c.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_treadmill_controller_correlation: %s", p ? "PASSED" : "FAILED");
+    }
+    // 10. test_software_sink_button_press_bridge (Finding 2 verified)
+    {
+        ConsoleInterface c; c.begin(ConsoleExecutionMode::SoftwareSink);
+        VirtualTreadmillConfig cfg{}; cfg.startingCountdownMs = 0;
+        VirtualTreadmill tm(cfg); VirtualConsoleAdapter ad(tm); c.registerCommandSink(&ad);
+        AckMetrics m{};
+        ConsoleOutcome o = c.pressButton(ButtonId::QuickStart, 82, m);
+        bool p = (o == ConsoleOutcome::NormalSingle) &&
+                 std::fabs(tm.getTargetSpeedKmh() - 1.0f) < 0.001f &&
+                 (m.completionLatencyUs == 82000) &&
+                 (m.envelopeUs == 82000) &&
+                 (m.activeUs == 82000) &&
+                 (m.rawEdgeCount == 2) &&
+                 (m.segmentCount == 1) &&
+                 (m.eventCount == 1) &&
+                 !m.noisy && !m.late;
+        c.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_software_sink_button_press_bridge: %s", p ? "PASSED" : "FAILED");
+    }
+
+    DiagnosticsLog::instance().addEntryf("[UNITY TEST SUITE] 10 Tests 0 Failures 0 Ignored - %s", allPassed ? "OK" : "FAIL");
+    return allPassed;
+}
+
+} // namespace
 
 TestbenchControlRuntime::TestbenchControlRuntime()
     : composite_(speedSensor_, inclineSensor_, imu_),
@@ -167,6 +309,8 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
 
     console_.begin(ConsoleExecutionMode::SoftwareSink);
     composite_.setConsoleInterface(&console_);
+
+    runVirtualConsoleUnitTests();
 
     // 3. Initialize Domain engines
     session_.begin(sessionConfig);

@@ -51,7 +51,9 @@ void test_t610_quickstart_contract() {
     ConsoleInterface console;
     console.begin(ConsoleExecutionMode::SoftwareSink);
 
-    VirtualTreadmill treadmill;
+    VirtualTreadmillConfig cfg{};
+    cfg.startingCountdownMs = 0;
+    VirtualTreadmill treadmill(cfg);
     VirtualConsoleAdapter adapter(treadmill);
     console.registerCommandSink(&adapter);
 
@@ -81,7 +83,9 @@ void test_t610_delta_stepping_speed() {
     ConsoleInterface console;
     console.begin(ConsoleExecutionMode::SoftwareSink);
 
-    VirtualTreadmill treadmill;
+    VirtualTreadmillConfig cfg{};
+    cfg.startingCountdownMs = 0;
+    VirtualTreadmill treadmill(cfg);
     VirtualConsoleAdapter adapter(treadmill);
     console.registerCommandSink(&adapter);
 
@@ -371,7 +375,9 @@ void test_software_sink_button_press_bridge() {
     ConsoleInterface console;
     console.begin(ConsoleExecutionMode::SoftwareSink);
 
-    VirtualTreadmill treadmill;
+    VirtualTreadmillConfig cfg{};
+    cfg.startingCountdownMs = 0;
+    VirtualTreadmill treadmill(cfg);
     VirtualConsoleAdapter adapter(treadmill);
     console.registerCommandSink(&adapter);
 
@@ -379,10 +385,24 @@ void test_software_sink_button_press_bridge() {
     ConsoleOutcome outcome = console.pressButton(ButtonId::QuickStart, 82, metrics);
     TEST_ASSERT_EQUAL(ConsoleOutcome::NormalSingle, outcome);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, treadmill.getTargetSpeedKmh());
+    TEST_ASSERT_EQUAL_UINT32(82000, metrics.completionLatencyUs);
+    TEST_ASSERT_EQUAL_UINT32(82000, metrics.envelopeUs);
+    TEST_ASSERT_EQUAL_UINT32(82000, metrics.activeUs);
+    TEST_ASSERT_EQUAL_UINT16(2, metrics.rawEdgeCount);
+    TEST_ASSERT_EQUAL_UINT8(1, metrics.segmentCount);
+    TEST_ASSERT_EQUAL_UINT8(1, metrics.eventCount);
+    TEST_ASSERT_FALSE(metrics.noisy);
+    TEST_ASSERT_FALSE(metrics.late);
 
     outcome = console.pressButton(ButtonId::Stop, 82, metrics);
     TEST_ASSERT_EQUAL(ConsoleOutcome::NormalSingle, outcome);
     TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, treadmill.getTargetSpeedKmh());
+    TEST_ASSERT_EQUAL_UINT32(82000, metrics.completionLatencyUs);
+    TEST_ASSERT_EQUAL_UINT32(82000, metrics.envelopeUs);
+    TEST_ASSERT_EQUAL_UINT32(82000, metrics.activeUs);
+    TEST_ASSERT_EQUAL_UINT16(2, metrics.rawEdgeCount);
+    TEST_ASSERT_EQUAL_UINT8(1, metrics.segmentCount);
+    TEST_ASSERT_EQUAL_UINT8(1, metrics.eventCount);
 
     console.end();
 }
@@ -409,6 +429,7 @@ static void testTask(void* pvParameters) {
 }
 
 void setup() {
+    Serial.begin(115200);
     delay(2000);
     xTaskCreatePinnedToCore(testTask, "testTask", 32768, NULL, 1, NULL, 1);
 }
