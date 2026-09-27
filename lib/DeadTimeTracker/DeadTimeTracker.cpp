@@ -73,7 +73,7 @@ void DeadTimeTracker::update(float speedKmh, bool speedValid, CsafeMachineState 
         }
 
         case DeadTimePhase::MeasuringStarting: {
-            if (nowMs - quickStartTsMs_ >= config_.measurementTimeoutMs) {
+            if (nowMs - quickStartTsMs_ >= config_.startingTimeoutMs) {
                 phase_ = DeadTimePhase::TimedOut;
                 return;
             }
@@ -100,7 +100,7 @@ void DeadTimeTracker::update(float speedKmh, bool speedValid, CsafeMachineState 
         }
 
         case DeadTimePhase::MeasuringInUse: {
-            if (nowMs - quickStartTsMs_ >= config_.measurementTimeoutMs) {
+            if (nowMs - inUseTsMs_ >= config_.inUseTimeoutMs) {
                 phase_ = DeadTimePhase::TimedOut;
                 return;
             }

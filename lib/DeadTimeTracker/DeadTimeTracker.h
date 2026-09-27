@@ -18,9 +18,11 @@ enum class DeadTimePhase : uint8_t {
 const char* deadTimePhaseToString(DeadTimePhase phase);
 
 struct DeadTimeTrackerConfig {
-    float movementThresholdKmh = 0.05f;
+    float movementThresholdKmh = 0.0f;      // Trigger on first genuine valid speed measurement (> 0 km/h)
     uint32_t armTimeoutMs = 60000;          // 60s to press QuickStart
-    uint32_t measurementTimeoutMs = 15000;  // 15s max from QuickStart to movement
+    uint32_t startingTimeoutMs = 15000;     // 15s max waiting in Starting phase
+    uint32_t inUseTimeoutMs = 15000;        // 15s max waiting in InUse phase for motor movement
+    uint32_t measurementTimeoutMs = 15000;  // 15s max fallback
 };
 
 class DeadTimeTracker {
