@@ -454,6 +454,95 @@ void test_interrupted_request_id_preservation_on_repeated_stop() {
     console.end();
 }
 
+void test_clear_incline_target_resets_all_eight_fields() {
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    TargetContext ctx;
+    ctx.origin = TargetOrigin::SessionManualAdjustment;
+    ctx.sessionGeneration = 42;
+    ctx.stepIndex = 3;
+    ctx.timestampMs = 5000;
+
+    dispatcher.stageInclineTarget(6.5f, ctx);
+    StagedTargets staged = dispatcher.getStagedTargets();
+    TEST_ASSERT_TRUE(staged.pendingIncline);
+    TEST_ASSERT_EQUAL_FLOAT(6.5f, staged.inclinePct);
+    TEST_ASSERT_EQUAL(TargetOrigin::SessionManualAdjustment, staged.inclineOrigin);
+    TEST_ASSERT_EQUAL_UINT32(42, staged.inclineSessionGeneration);
+    TEST_ASSERT_EQUAL_UINT32(0, staged.inclineIntentSequence);
+    TEST_ASSERT_EQUAL_UINT8(3, staged.inclineStepIndex);
+    TEST_ASSERT_FALSE(staged.inclineIsPreFire);
+    TEST_ASSERT_EQUAL_UINT32(5000, staged.inclineStagedTimestampMs);
+
+    dispatcher.clearInclineTarget();
+    staged = dispatcher.getStagedTargets();
+    TEST_ASSERT_FALSE(staged.pendingIncline);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, staged.inclinePct);
+    TEST_ASSERT_EQUAL(TargetOrigin::None, staged.inclineOrigin);
+    TEST_ASSERT_EQUAL_UINT32(0, staged.inclineSessionGeneration);
+    TEST_ASSERT_EQUAL_UINT32(0, staged.inclineIntentSequence);
+    TEST_ASSERT_EQUAL_UINT8(0, staged.inclineStepIndex);
+    TEST_ASSERT_FALSE(staged.inclineIsPreFire);
+    TEST_ASSERT_EQUAL_UINT32(0, staged.inclineStagedTimestampMs);
+}
+
+void test_unknown_direction_window_pulse_incorporation() {
+    InclineSensor sensor;
+    InclineSensorConfig cfg{};
+    cfg.inputPin = GPIO_NUM_2;
+    cfg.movementStopTimeoutMs = 100;
+
+    InclineCalibration cal{};
+    cal.pulsesPerPercentUp = 3000.0f;
+    cal.pulsesPerPercentDown = 3000.0f;
+
+    TEST_ASSERT_TRUE(sensor.begin(cfg, cal, InclineObservationMode::SoftwareObservation));
+    VirtualInclineAdapter adapter(sensor);
+
+    // Initial state: homed at 0.0%
+    InclineState st0 = sensor.getState();
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, st0.estimatedInclinePct);
+
+    // 1. Inject pulses during an Unknown direction window (300 pulses = 0.10%)
+    InclinePulseObservation obs{};
+    obs.pulseCount = 300;
+    obs.direction = InclineDirection::Unknown;
+    obs.signalValid = true;
+
+    TEST_ASSERT_TRUE(adapter.injectObservation(obs, 100));
+    TEST_ASSERT_TRUE(sensor.evaluate(100));
+
+    InclineState st1 = sensor.getState();
+    TEST_ASSERT_TRUE(st1.moving);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.10f, st1.estimatedInclinePct);
+
+    // Stop settle at t = 300ms
+    TEST_ASSERT_TRUE(sensor.evaluate(300));
+    InclineState st2 = sensor.getState();
+    TEST_ASSERT_FALSE(st2.moving);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.10f, st2.estimatedInclinePct);
+
+    // 2. Reversal scenario: set expected direction to Down and inject Unknown-direction reversal pulses
+    sensor.setExpectedDirection(InclineDirection::Down);
+    obs.pulseCount = 150; // 150 pulses down = 0.05%
+    obs.direction = InclineDirection::Unknown;
+    TEST_ASSERT_TRUE(adapter.injectObservation(obs, 400));
+    TEST_ASSERT_TRUE(sensor.evaluate(400));
+
+    InclineState st3 = sensor.getState();
+    TEST_ASSERT_TRUE(st3.moving);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.05f, st3.estimatedInclinePct);
+
+    // Settle movement
+    TEST_ASSERT_TRUE(sensor.evaluate(600));
+    InclineState st4 = sensor.getState();
+    TEST_ASSERT_FALSE(st4.moving);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.05f, st4.estimatedInclinePct);
+
+    sensor.end();
+}
+
 void run_all_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_console_execution_modes);
@@ -467,6 +556,8 @@ void run_all_tests() {
     RUN_TEST(test_treadmill_controller_correlation);
     RUN_TEST(test_software_sink_button_press_bridge);
     RUN_TEST(test_interrupted_request_id_preservation_on_repeated_stop);
+    RUN_TEST(test_clear_incline_target_resets_all_eight_fields);
+    RUN_TEST(test_unknown_direction_window_pulse_incorporation);
     UNITY_END();
 }
 

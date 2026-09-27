@@ -413,6 +413,64 @@ void test_orchestrator_external_step_integration() {
     sensor.end();
 }
 
+void test_unknown_direction_window_pulse_incorporation() {
+    InclineSensor sensor;
+    InclineSensorConfig cfg{};
+    cfg.inputPin = GPIO_NUM_2;
+    cfg.movementStopTimeoutMs = 100;
+
+    InclineCalibration cal{};
+    cal.pulsesPerPercentUp = 3000.0f;
+    cal.pulsesPerPercentDown = 3000.0f;
+
+    TEST_ASSERT_TRUE(sensor.begin(cfg, cal, InclineObservationMode::SoftwareObservation));
+    VirtualInclineAdapter adapter(sensor);
+
+    // Initial state: homed at 0.0%
+    InclineState st0 = sensor.getState();
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.0f, st0.estimatedInclinePct);
+
+    // 1. Inject pulses during an Unknown direction window (e.g. 300 pulses = 0.10%)
+    InclinePulseObservation obs{};
+    obs.pulseCount = 300;
+    obs.direction = InclineDirection::Unknown;
+    obs.signalValid = true;
+
+    TEST_ASSERT_TRUE(adapter.injectObservation(obs, 100));
+    TEST_ASSERT_TRUE(sensor.evaluate(100));
+
+    // Movement must be qualified and position must reflect the 300 pulses (~0.10%), NOT 0.0%
+    InclineState st1 = sensor.getState();
+    TEST_ASSERT_TRUE(st1.moving);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.10f, st1.estimatedInclinePct);
+
+    // Stop movement at t = 300ms
+    TEST_ASSERT_TRUE(sensor.evaluate(300));
+    InclineState st2 = sensor.getState();
+    TEST_ASSERT_FALSE(st2.moving);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.10f, st2.estimatedInclinePct);
+
+    // 2. Reversal scenario: set expected direction to Down and inject Unknown-direction reversal pulses
+    sensor.setExpectedDirection(InclineDirection::Down);
+    obs.pulseCount = 150; // 150 pulses down = 0.05%
+    obs.direction = InclineDirection::Unknown;
+    TEST_ASSERT_TRUE(adapter.injectObservation(obs, 400));
+    TEST_ASSERT_TRUE(sensor.evaluate(400));
+
+    InclineState st3 = sensor.getState();
+    TEST_ASSERT_TRUE(st3.moving);
+    // Should have decremented from 0.10% by 0.05% -> 0.05%
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.05f, st3.estimatedInclinePct);
+
+    // Settle movement
+    TEST_ASSERT_TRUE(sensor.evaluate(600));
+    InclineState st4 = sensor.getState();
+    TEST_ASSERT_FALSE(st4.moving);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.05f, st4.estimatedInclinePct);
+
+    sensor.end();
+}
+
 void run_all_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_incline_initialization_modes);
@@ -426,6 +484,7 @@ void run_all_tests() {
     RUN_TEST(test_motor_stall_timeout);
     RUN_TEST(test_pulse_lost_fault);
     RUN_TEST(test_orchestrator_external_step_integration);
+    RUN_TEST(test_unknown_direction_window_pulse_incorporation);
     UNITY_END();
 }
 

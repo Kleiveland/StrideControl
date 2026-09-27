@@ -40,6 +40,8 @@ static PositionResult calculatePosition(
     float baselineInclinePct,
     uint64_t pulseDelta,
     InclineDirection direction,
+    InclineDirection expectedDirection,
+    InclineDirection lastKnownDirection,
     const InclineCalibration& calibration,
     const InclineSensorConfig& config) {
 
@@ -51,6 +53,41 @@ static PositionResult calculatePosition(
     delta = static_cast<float>(pulseDelta) / calibration.pulsesPerPercentUp;
   } else if (direction == InclineDirection::Down && calibration.pulsesPerPercentDown > 0.0f) {
     delta = -static_cast<float>(pulseDelta) / calibration.pulsesPerPercentDown;
+  } else if (pulseDelta > 0) {
+    // Audit Finding 8: Handle pulses occurring during Unknown direction window (reversals / uninitialized direction)
+    // 1. Resolve fallback direction: prioritize expectedDirection, then lastKnownDirection
+    InclineDirection fallbackDir = InclineDirection::Unknown;
+    if (expectedDirection != InclineDirection::Unknown) {
+      fallbackDir = expectedDirection;
+    } else if (lastKnownDirection != InclineDirection::Unknown) {
+      fallbackDir = lastKnownDirection;
+    }
+
+    // 2. Determine calibration factor denominator
+    float calFactor = 0.0f;
+    if (fallbackDir == InclineDirection::Up && calibration.pulsesPerPercentUp > 0.0f) {
+      calFactor = calibration.pulsesPerPercentUp;
+    } else if (fallbackDir == InclineDirection::Down && calibration.pulsesPerPercentDown > 0.0f) {
+      calFactor = calibration.pulsesPerPercentDown;
+    } else {
+      // Conservative average of Up and Down calibration factors
+      if (calibration.pulsesPerPercentUp > 0.0f && calibration.pulsesPerPercentDown > 0.0f) {
+        calFactor = 0.5f * (calibration.pulsesPerPercentUp + calibration.pulsesPerPercentDown);
+      } else if (calibration.pulsesPerPercentUp > 0.0f) {
+        calFactor = calibration.pulsesPerPercentUp;
+      } else if (calibration.pulsesPerPercentDown > 0.0f) {
+        calFactor = calibration.pulsesPerPercentDown;
+      }
+    }
+
+    if (calFactor > 0.0f) {
+      if (fallbackDir == InclineDirection::Down) {
+        delta = -static_cast<float>(pulseDelta) / calFactor;
+      } else {
+        // If Up or direction is truly ambiguous, assume net upward (or continuation)
+        delta = static_cast<float>(pulseDelta) / calFactor;
+      }
+    }
   }
 
   const float rawIncline = baselineInclinePct + delta;
@@ -94,6 +131,8 @@ struct ModelSnapshot {
   float baselineInclinePct = 0.0f;
   uint64_t baselineAcceptedPulseCount = 0;
   InclineDirection baselineDirection = InclineDirection::Unknown;
+  InclineDirection expectedDirection = InclineDirection::Unknown;
+  InclineDirection lastKnownDirection = InclineDirection::Unknown;
   InclineCalibration calibration;
   bool initialized = false;
   bool moving = false;
@@ -122,6 +161,7 @@ struct InclineSensor::Impl {
   bool positionTrusted = false;
   bool signalPresent = false;
   InclineDirection expectedDirection = InclineDirection::Unknown;
+  InclineDirection lastKnownDirection = InclineDirection::Unknown;
   
   uint32_t movementPulseCount = 0;
   uint32_t movementStartedMs = 0;
@@ -335,6 +375,8 @@ bool InclineSensor::applyCalibration(const InclineCalibration& newCal) {
     modelSnap.baselineInclinePct = impl_->baselineInclinePct;
     modelSnap.baselineAcceptedPulseCount = impl_->baselineAcceptedPulseCount;
     modelSnap.baselineDirection = impl_->baselineDirection;
+    modelSnap.expectedDirection = impl_->expectedDirection;
+    modelSnap.lastKnownDirection = impl_->lastKnownDirection;
     modelSnap.calibration = impl_->calibration;
     modelSnap.moving = impl_->moving;
     modelSnap.modelGeneration = impl_->modelGeneration;
@@ -344,6 +386,7 @@ bool InclineSensor::applyCalibration(const InclineCalibration& newCal) {
     if (modelSnap.moving && isrSnap.acceptedPulseCount >= modelSnap.baselineAcceptedPulseCount) {
       const uint64_t delta = isrSnap.acceptedPulseCount - modelSnap.baselineAcceptedPulseCount;
       posRes = calculatePosition(modelSnap.baselineInclinePct, delta, modelSnap.baselineDirection,
+                                 modelSnap.expectedDirection, modelSnap.lastKnownDirection,
                                  modelSnap.calibration, impl_->config);
     } else {
       posRes.value = modelSnap.baselineInclinePct;
@@ -390,6 +433,8 @@ bool InclineSensor::setExpectedDirection(InclineDirection newDirection) {
     modelSnap.baselineInclinePct = impl_->baselineInclinePct;
     modelSnap.baselineAcceptedPulseCount = impl_->baselineAcceptedPulseCount;
     modelSnap.baselineDirection = impl_->baselineDirection;
+    modelSnap.expectedDirection = impl_->expectedDirection;
+    modelSnap.lastKnownDirection = impl_->lastKnownDirection;
     modelSnap.calibration = impl_->calibration;
     modelSnap.moving = impl_->moving;
     modelSnap.modelGeneration = impl_->modelGeneration;
@@ -399,6 +444,7 @@ bool InclineSensor::setExpectedDirection(InclineDirection newDirection) {
     if (modelSnap.moving && isrSnap.acceptedPulseCount >= modelSnap.baselineAcceptedPulseCount) {
       const uint64_t delta = isrSnap.acceptedPulseCount - modelSnap.baselineAcceptedPulseCount;
       posRes = calculatePosition(modelSnap.baselineInclinePct, delta, modelSnap.baselineDirection,
+                                 modelSnap.expectedDirection, modelSnap.lastKnownDirection,
                                  modelSnap.calibration, impl_->config);
     } else {
       posRes.value = modelSnap.baselineInclinePct;
@@ -415,6 +461,9 @@ bool InclineSensor::setExpectedDirection(InclineDirection newDirection) {
       impl_->baselineAcceptedPulseCount = isrSnap.acceptedPulseCount;
       impl_->baselineDirection = newDirection;
       impl_->expectedDirection = newDirection;
+      if (newDirection != InclineDirection::Unknown) {
+        impl_->lastKnownDirection = newDirection;
+      }
 
       if (!modelSnap.moving) {
         impl_->minimumQualifiedBurstPulseCount = isrSnap.acceptedPulseCount;
@@ -486,6 +535,9 @@ bool InclineSensor::confirmHomedAtZero() {
     impl_->baselineInclinePct = 0.0f;
     impl_->baselineAcceptedPulseCount = isrSnap.acceptedPulseCount;
     impl_->baselineDirection = currentExpDir;
+    if (currentExpDir != InclineDirection::Unknown) {
+      impl_->lastKnownDirection = currentExpDir;
+    }
     impl_->homed = true;
     impl_->positionTrusted = true;
     impl_->positionLimitLatched = false;
@@ -548,6 +600,9 @@ bool InclineSensor::restorePosition(float inclinePct, bool trusted) {
     impl_->baselineInclinePct = inclinePct;
     impl_->baselineAcceptedPulseCount = isrSnap.acceptedPulseCount;
     impl_->baselineDirection = currentExpDir;
+    if (currentExpDir != InclineDirection::Unknown) {
+      impl_->lastKnownDirection = currentExpDir;
+    }
     impl_->positionTrusted = trusted;
     impl_->homed = false;
     impl_->positionLimitLatched = false;
@@ -582,6 +637,8 @@ void InclineSensor::Impl::evaluateInternal(uint32_t nowMs, uint32_t nowUs) {
   modelSnap.baselineInclinePct = baselineInclinePct;
   modelSnap.baselineAcceptedPulseCount = baselineAcceptedPulseCount;
   modelSnap.baselineDirection = baselineDirection;
+  modelSnap.expectedDirection = expectedDirection;
+  modelSnap.lastKnownDirection = lastKnownDirection;
   modelSnap.calibration = calibration;
   modelSnap.moving = moving;
   modelSnap.modelGeneration = modelGeneration;
@@ -595,7 +652,9 @@ void InclineSensor::Impl::evaluateInternal(uint32_t nowMs, uint32_t nowUs) {
   if (modelSnap.moving) {
     const uint32_t silenceUs = nowUs - isrSnap.lastAcceptedPulseUs;
     const uint64_t delta = (isrSnap.acceptedPulseCount >= modelSnap.baselineAcceptedPulseCount) ? (isrSnap.acceptedPulseCount - modelSnap.baselineAcceptedPulseCount) : 0;
-    const PositionResult posRes = calculatePosition(modelSnap.baselineInclinePct, delta, modelSnap.baselineDirection, modelSnap.calibration, config);
+    const PositionResult posRes = calculatePosition(modelSnap.baselineInclinePct, delta, modelSnap.baselineDirection,
+                                                   modelSnap.expectedDirection, modelSnap.lastKnownDirection,
+                                                   modelSnap.calibration, config);
 
     if (silenceUs >= (config.movementStopTimeoutMs * 1000UL)) {
       const uint32_t calcMovementPulseCount = static_cast<uint32_t>(std::min<uint64_t>(UINT32_MAX, isrSnap.acceptedPulseCount - modelSnap.movementPulseBaselineCount));
@@ -796,6 +855,8 @@ InclineState InclineSensor::getState() const {
   modelSnap.baselineInclinePct = impl_->baselineInclinePct;
   modelSnap.baselineAcceptedPulseCount = impl_->baselineAcceptedPulseCount;
   modelSnap.baselineDirection = impl_->baselineDirection;
+  modelSnap.expectedDirection = impl_->expectedDirection;
+  modelSnap.lastKnownDirection = impl_->lastKnownDirection;
   modelSnap.calibration = impl_->calibration;
   modelSnap.moving = impl_->moving;
   modelSnap.movementPulseBaselineCount = impl_->movementPulseBaselineCount;
@@ -812,7 +873,9 @@ InclineState InclineSensor::getState() const {
   float calcIncline = modelSnap.baselineInclinePct;
   if (state.moving && isrSnap.acceptedPulseCount >= modelSnap.baselineAcceptedPulseCount) {
     const uint64_t delta = isrSnap.acceptedPulseCount - modelSnap.baselineAcceptedPulseCount;
-    PositionResult res = calculatePosition(modelSnap.baselineInclinePct, delta, modelSnap.baselineDirection, modelSnap.calibration, impl_->config);
+    PositionResult res = calculatePosition(modelSnap.baselineInclinePct, delta, modelSnap.baselineDirection,
+                                           modelSnap.expectedDirection, modelSnap.lastKnownDirection,
+                                           modelSnap.calibration, impl_->config);
     calcIncline = res.value;
   }
   state.estimatedInclinePct = calcIncline;

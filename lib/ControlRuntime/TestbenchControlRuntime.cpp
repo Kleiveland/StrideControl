@@ -214,8 +214,58 @@ static bool runVirtualConsoleUnitTests() {
         allPassed &= p;
         DiagnosticsLog::instance().addEntryf("[TEST] test_clear_incline_target_resets_all_eight_fields: %s", p ? "PASSED" : "FAILED");
     }
+    // 13. test_unknown_direction_window_pulse_incorporation (Audit Finding 8)
+    {
+        InclineSensor sensor;
+        InclineSensorConfig cfg{};
+        cfg.inputPin = GPIO_NUM_2;
+        cfg.movementStopTimeoutMs = 100;
 
-    DiagnosticsLog::instance().addEntryf("[UNITY TEST SUITE] 12 Tests 0 Failures 0 Ignored - %s", allPassed ? "OK" : "FAIL");
+        InclineCalibration cal{};
+        cal.pulsesPerPercentUp = 3000.0f;
+        cal.pulsesPerPercentDown = 3000.0f;
+
+        bool p = sensor.begin(cfg, cal, InclineObservationMode::SoftwareObservation);
+        VirtualInclineAdapter adapter(sensor);
+
+        // Inject 300 pulses with direction = Unknown
+        InclinePulseObservation obs{};
+        obs.pulseCount = 300;
+        obs.direction = InclineDirection::Unknown;
+        obs.signalValid = true;
+
+        p &= adapter.injectObservation(obs, 100);
+        p &= sensor.evaluate(100);
+
+        InclineState st1 = sensor.getState();
+        p &= st1.moving && (std::fabs(st1.estimatedInclinePct - 0.10f) < 0.015f);
+
+        p &= sensor.evaluate(300); // stop settle
+        InclineState st2 = sensor.getState();
+        p &= !st2.moving && (std::fabs(st2.estimatedInclinePct - 0.10f) < 0.015f);
+
+        // Reversal with expected direction Down
+        sensor.setExpectedDirection(InclineDirection::Down);
+        obs.pulseCount = 150;
+        obs.direction = InclineDirection::Unknown;
+        p &= adapter.injectObservation(obs, 400);
+        p &= sensor.evaluate(400);
+
+        InclineState st3 = sensor.getState();
+        p &= st3.moving && (std::fabs(st3.estimatedInclinePct - 0.05f) < 0.015f);
+
+        p &= sensor.evaluate(600); // stop settle
+        InclineState st4 = sensor.getState();
+        p &= !st4.moving && (std::fabs(st4.estimatedInclinePct - 0.05f) < 0.015f);
+
+        sensor.end();
+        allPassed &= p;
+        DiagnosticsLog::instance().addEntryf("[TEST] test_unknown_direction_window_pulse_incorporation: %s", p ? "PASSED" : "FAILED");
+        Serial.printf("[TEST] test_unknown_direction_window_pulse_incorporation: %s\n", p ? "PASSED" : "FAILED");
+    }
+
+    DiagnosticsLog::instance().addEntryf("[UNITY TEST SUITE] 13 Tests 0 Failures 0 Ignored - %s", allPassed ? "OK" : "FAIL");
+    Serial.printf("[UNITY TEST SUITE] 13 Tests 0 Failures 0 Ignored - %s\n", allPassed ? "OK" : "FAIL");
     return allPassed;
 }
 
