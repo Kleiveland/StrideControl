@@ -39,8 +39,10 @@ bool ControlRuntime::begin(const WorkoutSessionConfig& sessionConfig) {
     dispatcher_.begin();
     rampTestTracker_.reset();
     inclineTracker_.reset();
+    portENTER_CRITICAL(&speedLearningMux_);
     speedLearningTracker_.setActiveSpeedConfig(calibration_.getConfiguration());
     speedLearningTracker_.resetSession();
+    portEXIT_CRITICAL(&speedLearningMux_);
 
     initialized_ = true;
     lastAuthoritativeTimestampMs_ = 0;
@@ -198,6 +200,7 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         nowMs
     );
 
+    portENTER_CRITICAL(&deadTimeMux_);
     deadTimeTracker_.update(
         snapshot.speed.speedKmh,
         snapshot.speed.measurementValid,
@@ -205,6 +208,7 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         console_.isEmergencyStopActive(),
         nowMs
     );
+    portEXIT_CRITICAL(&deadTimeMux_);
 
     if (rampTestTracker_.targetDispatchRequested()) {
         TargetContext ctx;
@@ -230,6 +234,7 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
     const float commandedSpeed = ctrlSnap.correctedConsoleSpeedValid ? ctrlSnap.correctedConsoleSpeedKmh : ctrlSnap.acceptedPhysicalSpeedTargetKmh;
     const auto sessSnap = session_.getSnapshot();
 
+    portENTER_CRITICAL(&speedLearningMux_);
     speedLearningTracker_.update(
         snapshot.speed.speedKmh,
         snapshot.speed.measurementValid,
@@ -240,14 +245,22 @@ void ControlRuntime::update(const ApplicationSnapshot& snapshot, uint32_t nowMs)
         sessSnap.rampPreFireActive,
         nowMs
     );
+    portEXIT_CRITICAL(&speedLearningMux_);
 
     SpeedConfig candidateCfg = calibration_.getConfiguration();
-    if (speedLearningTracker_.checkBeltStoppedTrigger(snapshot.speed.speedKmh, snapshot.csafe.qualifiedState, candidateCfg, nowMs)) {
+    bool speedLearningTriggered = false;
+    portENTER_CRITICAL(&speedLearningMux_);
+    speedLearningTriggered = speedLearningTracker_.checkBeltStoppedTrigger(snapshot.speed.speedKmh, snapshot.csafe.qualifiedState, candidateCfg, nowMs);
+    portEXIT_CRITICAL(&speedLearningMux_);
+
+    if (speedLearningTriggered) {
         char errBuf[64]{0};
         if (SpeedCalibration::validateCandidate(candidateCfg, errBuf, sizeof(errBuf))) {
             SettingsService::instance().saveSpeedConfig(candidateCfg);
             calibration_.setConfiguration(candidateCfg);
+            portENTER_CRITICAL(&speedLearningMux_);
             speedLearningTracker_.setActiveSpeedConfig(candidateCfg);
+            portEXIT_CRITICAL(&speedLearningMux_);
             Serial.printf("[SpeedLearningTracker] Auto-learned calibration updated and saved to NVS (%u points)!\n", candidateCfg.pointCount);
             DiagnosticsLog::instance().addEntryf("[SpeedLearning] Auto-learned calibration updated and saved to NVS (%u points)", candidateCfg.pointCount);
         }
@@ -817,11 +830,15 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
             }
             case ControlCommandType::ArmDeadTimeMeasurement: {
                 const auto snap = orchestrator_ ? orchestrator_->getSnapshot() : ApplicationSnapshot{};
+                portENTER_CRITICAL(&deadTimeMux_);
                 deadTimeTracker_.arm(cmdNowMs, snap.speed.speedKmh, snap.csafe.qualifiedState);
+                portEXIT_CRITICAL(&deadTimeMux_);
                 break;
             }
             case ControlCommandType::AbortDeadTimeMeasurement: {
+                portENTER_CRITICAL(&deadTimeMux_);
                 deadTimeTracker_.abort();
+                portEXIT_CRITICAL(&deadTimeMux_);
                 break;
             }
             case ControlCommandType::None:

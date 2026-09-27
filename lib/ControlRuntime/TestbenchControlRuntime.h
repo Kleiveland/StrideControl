@@ -103,7 +103,9 @@ public:
     bool didInclineCommissioningTimeOut() const override { return inclineTracker_.timedOut(); }
     void onSpeedConfigUpdated(const SpeedConfig& config) override {
         speedCalibration_.setConfiguration(config);
+        portENTER_CRITICAL(&speedLearningMux_);
         speedLearningTracker_.setActiveSpeedConfig(config);
+        portEXIT_CRITICAL(&speedLearningMux_);
     }
     void onRampCalibrationConfigUpdated(const RampCalibrationConfig& config) {
         VirtualTreadmillConfig vtCfg = composite_.getVirtualTreadmill().getConfig();
@@ -119,12 +121,35 @@ public:
         return speedCalibration_.calculateCommand(physicalSpeedKmh);
     }
     uint8_t getSpeedAdaptationLog(SpeedAdaptationLogEntry* outEntries, uint8_t maxEntries) const override {
-        return speedLearningTracker_.getAuditLog(outEntries, maxEntries);
+        portENTER_CRITICAL(&speedLearningMux_);
+        const uint8_t count = speedLearningTracker_.getAuditLog(outEntries, maxEntries);
+        portEXIT_CRITICAL(&speedLearningMux_);
+        return count;
     }
-    DeadTimePhase getDeadTimeTrackerPhase() const override { return deadTimeTracker_.phase(); }
-    uint32_t getMeasuredDeadTimeMs() const override { return deadTimeTracker_.measuredDeadTimeMs(); }
-    uint32_t getDeadTimeCountdownDurationMs() const override { return deadTimeTracker_.countdownDurationMs(); }
-    uint32_t getDeadTimeMotorLagMs() const override { return deadTimeTracker_.motorDeadTimeMs(); }
+    DeadTimePhase getDeadTimeTrackerPhase() const override {
+        portENTER_CRITICAL(&deadTimeMux_);
+        const DeadTimePhase p = deadTimeTracker_.phase();
+        portEXIT_CRITICAL(&deadTimeMux_);
+        return p;
+    }
+    uint32_t getMeasuredDeadTimeMs() const override {
+        portENTER_CRITICAL(&deadTimeMux_);
+        const uint32_t v = deadTimeTracker_.measuredDeadTimeMs();
+        portEXIT_CRITICAL(&deadTimeMux_);
+        return v;
+    }
+    uint32_t getDeadTimeCountdownDurationMs() const override {
+        portENTER_CRITICAL(&deadTimeMux_);
+        const uint32_t v = deadTimeTracker_.countdownDurationMs();
+        portEXIT_CRITICAL(&deadTimeMux_);
+        return v;
+    }
+    uint32_t getDeadTimeMotorLagMs() const override {
+        portENTER_CRITICAL(&deadTimeMux_);
+        const uint32_t v = deadTimeTracker_.motorDeadTimeMs();
+        portEXIT_CRITICAL(&deadTimeMux_);
+        return v;
+    }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
     bool isEmergencyStopActive() const { return console_.isEmergencyStopActive(); }
@@ -214,6 +239,9 @@ private:
     mutable portMUX_TYPE commandExecutionStatusMux_ = portMUX_INITIALIZER_UNLOCKED;
     CommandExecutionStatus publishedCommandExecutionStatus_{};
     uint32_t lastReportedAbortedRequestId_ = 0;
+
+    mutable portMUX_TYPE speedLearningMux_ = portMUX_INITIALIZER_UNLOCKED;
+    mutable portMUX_TYPE deadTimeMux_ = portMUX_INITIALIZER_UNLOCKED;
 
     // Production Sensor & Domain Drivers (SoftwareObservation Mode)
     SpeedSensor speedSensor_;
