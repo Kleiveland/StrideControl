@@ -933,32 +933,90 @@ Observed incline telemetry may retain decimals derived from physical tracking an
 ## 9. Hardware Interface Choices
 
 ### 9.1 MCU
-
 ESP32-S3 N16R8, dual-core.
 
-### 9.2 Level Translation
+### 9.2 Console MitM Architecture & Level Shifting (2× TXS0108E, 2× CD4066B)
+The console Man-in-the-Middle (MitM) interface provides fail-passive pass-through and active O2 injection across the 5V treadmill panel and 3.3V ESP32 domains.
 
-Two TXS0108E devices are used in the prototype. OE starts LOW and is enabled only after safe GPIO configuration.
+- **Latch-up & Boot Protection (R1 & OE):**
+  - Two TXS0108E level shifters (IC1 for O1 scanning + MUTE, IC2 for O2 injection).
+  - ESP32 GPIO 2 drives both `OE` pins.
+  - A 10 kΩ pull-down resistor (**R1**) to GND holds `OE` LOW while the ESP32 is unpowered or booting, keeping all level-shifter lines in high-impedance (High-Z) mode to prevent silicon latch-up when the 5V console rail energizes first.
+- **Fail-Safe MUTE Gate (R2 & 2× CD4066B):**
+  - Two quad bilateral analog switches: **IC3** (O2 bits 0–3) and **IC4** (O2 bits 4–7).
+  - ESP32 GPIO 21 drives MUTE via IC1 channel A8 $\rightarrow$ B8.
+  - A 10 kΩ pull-up resistor (**R2**) to 5V holds the MUTE control line HIGH during unpowered or boot states, forcing all 8 analog switches CLOSED. The original console retains 100% normal, uninterrupted operation.
+  - Driving GPIO 21 LOW actively isolates the console panel, enabling atomic O2 injection downstream from IC2 towards the motor controller.
 
-### 9.3 MUTE Gate
+### 9.3 Speed Adjustment Relays (Speed+ & Speed−)
+Fractional speed trimming uses independent active-low switching outputs, physically isolated from the numeric O2 bus:
+- **Speed+ Output:** Driven via **GPIO 39** (active low, 80 ms hold / 80 ms pause).
+- **Speed− Output:** Driven via **GPIO 38** (active low, 80 ms hold / 80 ms pause).
+- Relays actuate only after numeric O2 macro confirmation and a 150 ms bus-settling period.
 
-SN74HC4066N switches, shared active-low MUTE, 10 kOhm pull-up, fail-passive behavior, emergency stop excluded.
+### 9.4 Sensor & Buzzer Isolation (3× PC817)
+- **U1 (Speed Sensor):** Treadmill cable pin 7 (11.4 V idle) through $R_1 = 10\text{ k}\Omega$ into U1 pin 1 (Anode). Pins 2 (Cathode) and 3 (Emitter) bridged directly to System 0V. Pin 4 (Collector) pulled up via $R_5 = 10\text{ k}\Omega$ to +3.3V $\rightarrow$ **GPIO 3** (active-low pulse train).
+- **U2 (Incline Sensor):** Treadmill cable pin 11 (4.68 V pulse) through $R_2 = 1\text{ k}\Omega$ into U2 pin 1 (Anode). Pins 2 and 3 bridged to System 0V. Pin 4 (Collector) pulled up via $R_6 = 10\text{ k}\Omega$ to +3.3V $\rightarrow$ **GPIO 14** (active-low pulse train).
+- **U3 (Buzzer Detection):** Treadmill buzzer (+) through $R_3 + R_4 = 440\text{ }\Omega$ ($2 \times 220\text{ }\Omega$) into U3 pin 1 (Anode). Treadmill buzzer (−) return connects directly to U3 pin 2 (Cathode) and is kept fully floating from System 0V to accommodate low-side switching. Pin 3 (Emitter) tied to System 0V. Pin 4 (Collector) pulled up via $R_7 = 10\text{ k}\Omega$ to +3.3V $\rightarrow$ **GPIO 16** (active-low ACK capture).
 
-### 9.4 Power
+### 9.5 CSAFE RS232 Subsystem (SP3232)
+- Transceiver: 5V SP3232 module providing galvanic isolation at 9600 baud, 8-N-1.
+- **TX Path:** ESP32 GPIO 17 $\rightarrow$ **X2:12** $\rightarrow$ SP3232 TTL RXD $\rightarrow$ SP3232 TXD pad $\rightarrow$ **X1:3** $\rightarrow$ Treadmill CSAFE RX.
+- **RX Path:** Treadmill CSAFE TX $\rightarrow$ **X1:4** $\rightarrow$ SP3232 RXD pad $\rightarrow$ SP3232 TTL TXD (5V). Scaled to 3.3V via voltage divider $R_8 = 1\text{ k}\Omega$ and $R_9 = 2\text{ k}\Omega$ to GND $\rightarrow$ **X2:11** $\rightarrow$ ESP32 GPIO 40.
+- **Galvanic Grounding:** RS232 signal ground on **X1:2** is strictly isolated from System 0V. The Cat6 cable shield terminates at **X1:2** on the interface PCB and **must be cut and insulated at the treadmill RJ45 connector** to prevent ground loops.
 
-HLK-PM01 with mains fusing and isolation. Target continuous use below 70 to 80% rating. Verify sustained load, radio-induced rail sag, and thermal stability.
+### 9.6 I²C Bus & IMU Accelerator (LTC4311)
+- LTC4311 active terminator breakout connects in parallel across the I²C bus to compensate for cable capacitance over the Cat6 run to the deck-mounted LSM6DSOX IMU.
+- `VIN` and `EN` pins bridged directly together and tied to +3.3V (**X2:7**) for continuous operation.
+- **SDA Line:** **X1:11** $\leftrightarrow$ LTC4311 SDA $\leftrightarrow$ **X2:2** (GPIO 47).
+- **SCL Line:** **X1:10** $\leftrightarrow$ LTC4311 SCL $\leftrightarrow$ **X2:3** (GPIO 48).
+- Unused Cat6 conductor pairs are grouped and tied to System 0V (**X2:8**) as a reference shield.
 
-### 9.5 CSAFE
+### 9.7 Power Distribution & Ground Domains
+- **+5V Rail:** External USB 5V (Red) enters **X1:12**, decoupled by $C_1 = 100\ \mu\text{F}$ electrolytic capacitor, powers SP3232 (5V0), IC1/IC2 (VCCB), IC3/IC4 (VDD), and routes via **X2:9** to ESP32 `5V/VIN`.
+- **+3.3V Rail:** ESP32 internal LDO supplies **X2:7**, powering pull-ups $R_5$–$R_7$, LTC4311 (`VIN` + `EN`), IC1/IC2 (VCCA), and remote IMU via **X1:8**.
+- **System 0V (Brown):** Unified ground on **X2:8** tying ESP32 GND, USB 0V (**X1:9**), $C_1(-)$, treadmill sensor GND pin 2 (**X1:6**), U1/U2/U3 emitter returns, and LTC4311 GND.
+- **Isolated RS232 GND (Brown-White):** Dedicated exclusively to **X1:2** and SP3232 RS232 ground.
 
-RJ45 to MAX3232 at 9600 8-N-1 on GPIO 17 (TX) and GPIO 40 (RX).
+### 9.8 Interface Board Terminal Pinout (X1 & X2 Headers)
 
-### 9.6 Future Improvements
+#### X1 Header (Inputs / Treadmill / External Interfaces)
+| Pin | Function | Level | Connection |
+|:---:|:---|:---|:---|
+| **X1:1** | Buzzer (+) | Pulsed DC | Treadmill buzzer (+) via $R_3/R_4$ to U3:1 |
+| **X1:2** | RS232 GND | Isolated | CSAFE isolated ground & Cat6 shield |
+| **X1:3** | RS232 TXD | $\pm$5V–$\pm$12V | SP3232 TXD to treadmill CSAFE RX |
+| **X1:4** | RS232 RXD | $\pm$5V–$\pm$12V | Treadmill CSAFE TX to SP3232 RXD |
+| **X1:5** | Speed In | 11.4 V idle | Treadmill pin 7 via $R_1$ to U1:1 |
+| **X1:6** | Sensor GND | 0V | Treadmill pin 2 to System 0V |
+| **X1:7** | Incline In | 4.68 V pulse | Treadmill pin 11 via $R_2$ to U2:1 |
+| **X1:8** | +3.3V Out | +3.3V DC | IMU power feed via Cat6 |
+| **X1:9** | USB 0V In | 0V | External USB Black wire to $C_1(-)$ & System 0V |
+| **X1:10** | I²C SCL | 3.3V logic | Cat6 Green wire to LTC4311 SCL |
+| **X1:11** | I²C SDA | 3.3V logic | Cat6 Orange wire to LTC4311 SDA |
+| **X1:12** | +5V In | +5.0V DC | External USB Red wire to $C_1(+)$ & SP3232 5V0 |
 
-- Replace Speed+/- relays with a deterministic solution such as PhotoMOS, isolated transistor, or appropriate open-drain interface after electrical measurement.
-- A future board may add independent protected fail-inactive Incline+/- outputs.
-- Evaluate explicit-direction translators, unidirectional stages, bus switches, Schmitt-trigger receivers, or dedicated drivers instead of TXS0108E.
-- Use shorter bus paths, continuous ground, controlled connectors, local decoupling, test points, and optional damping footprints.
+#### X2 Header (ESP32 Microcontroller & Power Routing)
+| Pin | Function | Level | Connection |
+|:---:|:---|:---|:---|
+| **X2:1** | Buzzer (−) | Floating | Treadmill buzzer (−) directly to U3:2 (*isolated from 0V*) |
+| **X2:2** | I²C SDA | 3.3V CMOS | **GPIO 47** |
+| **X2:3** | I²C SCL | 3.3V CMOS | **GPIO 48** |
+| **X2:4** | Buzzer Out | 3.3V active-low | **GPIO 16** (from U3:4 / $R_7$) |
+| **X2:5** | Incline Out | 3.3V active-low | **GPIO 14** (from U2:4 / $R_6$) |
+| **X2:6** | Speed Out | 3.3V active-low | **GPIO 3** (from U1:4 / $R_5$) |
+| **X2:7** | +3.3V In | +3.3V DC | From ESP32 3V3 pin |
+| **X2:8** | 0V / GND | 0V | From ESP32 GND pin (System 0V anchor) |
+| **X2:9** | +5V Out | +5.0V DC | To ESP32 5V/VIN pin (from $C_1+$) |
+| **X2:10** | SP3232 GND | 0V | Bridged internally to X2:8 |
+| **X2:11** | CSAFE RXD | 3.3V UART | **GPIO 40** (from $R_8/R_9$ divider) |
+| **X2:12** | CSAFE TXD | 3.3V UART | **GPIO 17** (to SP3232 TTL RXD) |
 
+### 9.9 Future Improvements
+- Replace Speed+/− relays with a deterministic solid-state solution (e.g., PhotoMOS or opto-isolated open-drain FETs).
+- Evaluate future active Incline+/− outputs with hardware interlocks.
+- Evaluate replacing bidirectional level shifters (TXS0108E) with unidirectional buffers/Schmitt triggers for increased noise immunity.
+- Consolidate all subsystems onto a single integrated production PCB with continuous ground plane and optimized routing.
 ---
 
 ## 10. Software Architecture Rules
