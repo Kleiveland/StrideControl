@@ -1,106 +1,129 @@
 # StrideControl PCB Architecture & Hardware Fail-Safe Design
 
-This document details the core hardware architecture for the StrideControl Man-in-the-Middle (MitM) interface board. The design is strictly built around robust hardware fail-safes, ensuring that the treadmill remains 100% operational even if the ESP32 loses power, crashes, or is in the middle of a boot sequence.
+This document details the core hardware architecture for the StrideControl interface board for the Sportsmaster T610 treadmill. The design utilizes galvanic isolation, opto-isolated sensor interfaces (PC817), an isolated RS232-to-TTL bridge for CSAFE (SP3232), and an active I²C bus accelerator (LTC4311) to interface safely with an ESP32-S3 microcontroller.
 
 ## Table of Contents
 1. [Bill of Materials (BOM)](#bill-of-materials-bom)
-2. [Power Distribution & Latch-up Protection](#1-power-distribution--latch-up-protection-r1)
-3. [MUTE Circuit & Hardware Fail-Safe](#2-mute-circuit--hardware-fail-safe-r2)
-4. [O1 Bus (Sniffing / Scanning)](#3-o1-bus-sniffing--scanning-via-ic1)
-5. [O2 Bus (Injection)](#4-o2-bus-injection-via-ic3--ic4)
+2. [Power Distribution & Grounding Architecture](#1-power-distribution--grounding-architecture)
+3. [Terminal Header Pinout (X1 & X2)](#2-terminal-header-pinout-x1--x2)
+4. [Optocoupler Input & Output Interfaces (U1–U3)](#3-optocoupler-input--output-interfaces-u1u3)
+5. [CSAFE Isolated RS232 Subsystem (SP3232)](#4-csafe-isolated-rs232-subsystem-sp3232)
+6. [I²C Bus Accelerator & IMU Interface (LTC4311)](#5-ic-bus-accelerator--imu-interface-ltc4311)
 
 ---
 
 ## Bill of Materials (BOM)
 
-* **MCU:** ESP32-S3 (e.g., WROOM-1 module)
-* **IC1 (TXS0108E):** 8-channel Bi-directional Level Shifter (O1 Bus Sniffing + MUTE Control)
-* **IC2 (TXS0108E):** 8-channel Bi-directional Level Shifter (O2 Bus Injection, all 8 channels)
-* **IC3 (CD4066B):** Quad Bilateral Analog Switch (Handles O2 Bits 0–3)
-* **IC4 (CD4066B):** Quad Bilateral Analog Switch (Handles O2 Bits 4–7)
-* **R1 (10 kΩ):** Pull-down resistor to GND (TXS Output Enable / Latch-up protection)
-* **R2 (10 kΩ):** Pull-up resistor to 5V (MUTE Fail-Safe protection)
+* **MCU:** ESP32-S3 (WROOM-1 / DevKit)
+* **U1 (PC817):** Optocoupler DIP-4 (Speed pulse input)
+* **U2 (PC817):** Optocoupler DIP-4 (Incline pulse input)
+* **U3 (PC817):** Optocoupler DIP-4 (Buzzer detection)
+* **U4 (SP3232 Module):** Isolated 5V RS232-to-TTL transceiver module (CSAFE protocol)
+* **U5 (LTC4311):** I²C bus active terminator / rise time accelerator breakout
+* **C1:** 100 µF / 16V electrolytic capacitor (bulk decoupling on 5V rail)
+* **Resistors:**
+  * **R1 (10 kΩ, 0.25W):** Current-limiting resistor for U1 (sized for 11.4V resting voltage)
+  * **R2 (1 kΩ, 0.25W):** Current-limiting resistor for U2 (sized for 4.68V pulse signal)
+  * **R3 (220 Ω, 0.25W):** Series resistor for U3 input (part 1)
+  * **R4 (220 Ω, 0.25W):** Series resistor for U3 input (part 2 – total 440 Ω in series)
+  * **R5 (10 kΩ, 0.25W):** Pull-up resistor to +3.3V for U1 collector
+  * **R6 (10 kΩ, 0.25W):** Pull-up resistor to +3.3V for U2 collector
+  * **R7 (10 kΩ, 0.25W):** Pull-up resistor to +3.3V for U3 collector
+  * **R8 (1 kΩ, 0.25W):** Voltage divider upper leg (5V TTL to 3.3V) for CSAFE RXD
+  * **R9 (2 kΩ, 0.25W):** Voltage divider lower leg to GND (2 × 1 kΩ in series)
+* **Connectors:** 2 × 12-pin screw terminal headers (X1 for external/treadmill, X2 for MCU/power)
 
 ---
 
-## 1. Power Distribution & Latch-up Protection (R1)
+## 1. Power Distribution & Grounding Architecture
 
-This section ensures the level shifters (IC1 and IC2) remain in a high-impedance (High-Z) state until the ESP32 has fully booted and stabilized its 3.3V logic rail.
+The board operates across strictly separated power and ground domains:
 
-### Power Routing
-* **Touch Console Pin 1 (5V)** -> PCB 5V Rail -> **Motor Controller Pin 1 (5V)**
-  * *Internal 5V distribution:* Feeds `IC1 (VCCB)`, `IC2 (VCCB)`, `IC3 (VDD)`, and `IC4 (VDD)`.
-* **Touch Console Pin 2 (GND)** -> PCB GND Plane -> **Motor Controller Pin 2 (GND)**
-  * *Internal GND distribution:* Feeds all ICs and the ESP32.
-* **Internal Power:** 5V Rail feeds `ESP32-S3 (VIN)`. The ESP32's internal LDO generates 3.3V.
-* **ESP32-S3 (3.3V Out)** -> PCB 3.3V Rail -> `IC1 (VCCA)` & `IC2 (VCCA)`.
+### Power Rails
+* **+5V Rail (Red wire):** Supplied externally via USB to **X1:12**. Filtered across bulk capacitor **C1**, feeds the SP3232 module VCC (5V0), and routes through **X2:9** to power the ESP32 via its `5V/VIN` pin.
+* **+3.3V Rail (Blue wire):** Regulated by the ESP32 internal LDO, entering the board at **X2:7**. Supplies pull-up resistors **R5**, **R6**, **R7**, the LTC4311 module (`VIN` and `EN`), and provides remote IMU power via **X1:8**.
 
-### Safe Boot via R1 (Latch-up Protection)
-* **ESP32-S3 (GPIO 2)** -> `IC1 (OE)` & `IC2 (OE)`
-* **IC1/IC2 (OE)** -> **R1 (10 kΩ)** -> GND
-* **Hardware Logic:** While the ESP32 is unpowered or booting, R1 actively pulls the Output Enable (OE) pins to 0V. Both TXS chips are forced into a High-Z state, physically isolating the 3.3V and 5V domains and preventing silicon latch-up if the 5V rail energizes first.
+### Ground Domains
+* **Common System 0V / GND (Brown wire):** Anchored at **X2:8** (ESP32 GND). Unifies external USB 0V (**X1:9**), capacitor **C1 (−)**, treadmill sensor ground pin 2 (**X1:6**), optocoupler emitters/cathodes (**U1** and **U2** pins 2 & 3 bridge, **U3** pin 3), and SP3232 TTL GND (**X2:10**).
+* **Isolated RS232 GND (Brown-White wire):** Dedicated exclusively to **X1:2** and the SP3232 module's RS232-side ground. It maintains complete galvanic isolation from System 0V. The Cat6 cable shield terminates at **X1:2** on the PCB side, but **must remain cut and insulated at the treadmill end** to prevent ground loops.
 
 ---
 
-## 2. MUTE Circuit & Hardware Fail-Safe (R2)
+## 2. Terminal Header Pinout (X1 & X2)
 
-The CD4066 bilateral switches require 5V on their control pins to remain CLOSED (allowing normal console operation). If the ESP32 is off, IC1 is disabled by R1, leaving the control pins floating. R2 solves this by anchoring them to 5V.
+### X1 Header (Inputs / Treadmill / External Interfaces)
 
-### MUTE Signal Level Shifting
-* **ESP32-S3 (GPIO 21)** -> `IC1 (Channel A8, 3.3V)`
-* **IC1 (Channel B8, 5V)** -> PCB MUTE Trace -> Control Pins on `IC3 (Pins 5, 6, 12, 13)` & `IC4 (Pins 5, 6, 12, 13)`
+| Pin | Function | Direction | Signal Level | Wiring / Description |
+| :---: | :--- | :---: | :---: | :--- |
+| **X1:1** | **Buzzer (+)** | Input | Pulsed DC | Treadmill buzzer (+) wire $\rightarrow$ R3/R4 $\rightarrow$ U3 pin 1 (Anode) |
+| **X1:2** | **RS232 GND** | Reference | Isolated GND | CSAFE isolated ground + Cat6 cable shield |
+| **X1:3** | **RS232 TXD** | Output | $\pm$5V to $\pm$12V | SP3232 TXD pad $\rightarrow$ Treadmill RXD line |
+| **X1:4** | **RS232 RXD** | Input | $\pm$5V to $\pm$12V | Treadmill TXD line $\rightarrow$ SP3232 RXD pad |
+| **X1:5** | **Speed In** | Input | 11.4V Idle | Treadmill sensor cable pin 7 $\rightarrow$ R1 (10 kΩ) $\rightarrow$ U1 pin 1 |
+| **X1:6** | **Sensor GND** | Reference | 0V | Treadmill sensor cable pin 2 $\rightarrow$ System 0V |
+| **X1:7** | **Incline In** | Input | 4.68V Logic | Treadmill sensor cable pin 11 $\rightarrow$ R2 (1 kΩ) $\rightarrow$ U2 pin 1 |
+| **X1:8** | **+3.3V Out** | Output | +3.3V DC | Power feed to remote IMU over Cat6 cable |
+| **X1:9** | **USB 0V In** | Reference | 0V | External USB cable Black wire $\rightarrow$ C1(−) and System 0V |
+| **X1:10** | **I²C SCL** | Bidirectional | 3.3V Logic | IMU Cat6 Green wire $\rightarrow$ LTC4311 SCL |
+| **X1:11** | **I²C SDA** | Bidirectional | 3.3V Logic | IMU Cat6 Orange wire $\rightarrow$ LTC4311 SDA |
+| **X1:12** | **+5V In** | Input | +5.0V DC | External USB cable Red wire $\rightarrow$ C1(+) and SP3232 5V0 |
 
-### Hardware Fail-Safe via R2
-* **PCB MUTE Trace** -> **R2 (10 kΩ)** -> PCB 5V Rail
-* **Hardware Logic:** When the ESP32 is unpowered or booting, IC1 is disabled (High-Z). R2 pulls the MUTE trace up to 5V, forcing all CD4066 switches CLOSED. The treadmill operates 100% normally.
-* **Software Logic (Active-Low):** To mute the console and inject a frame, the ESP32 must actively drive `GPIO 21 LOW`. This overcomes R2, pulling the CD4066 control pins to 0V and opening the switches, temporarily isolating the console.
+### X2 Header (ESP32 Microcontroller & Power Routing)
+
+| Pin | Function | Direction | Logic Level | ESP32 Pin / Description |
+| :---: | :--- | :---: | :---: | :--- |
+| **X2:1** | **Buzzer (−)** | Input | Floating | Treadmill buzzer (−) wire $\rightarrow$ U3 pin 2 (Cathode). *Not connected to ESP32 or 0V* |
+| **X2:2** | **I²C SDA** | Bidirectional | 3.3V CMOS | **GPIO 47** $\leftrightarrow$ LTC4311 SDA |
+| **X2:3** | **I²C SCL** | Bidirectional | 3.3V CMOS | **GPIO 48** $\leftrightarrow$ LTC4311 SCL |
+| **X2:4** | **Buzzer Signal** | Output | 3.3V Active-Low | **GPIO 16** $\leftarrow$ U3 Collector / R7 pull-up |
+| **X2:5** | **Incline Pulse**| Output | 3.3V Active-Low | **GPIO 14** $\leftarrow$ U2 Collector / R6 pull-up |
+| **X2:6** | **Speed Pulse** | Output | 3.3V Active-Low | **GPIO 3** $\leftarrow$ U1 Collector / R5 pull-up |
+| **X2:7** | **+3.3V In** | Input | +3.3V DC | From ESP32 3V3 pin (supplies R5–R7, LTC4311, and IMU) |
+| **X2:8** | **0V / GND** | Reference | 0V | From ESP32 GND pin (main anchor for System 0V) |
+| **X2:9** | **+5V Out** | Output | +5.0V DC | To ESP32 5V/VIN pin (powered from C1+) |
+| **X2:10** | **SP3232 GND** | Reference | 0V | Bridged internally to X2:8 (TTL ground reference) |
+| **X2:11** | **CSAFE RXD** | Output | 3.3V UART TTL | **GPIO 40** $\leftarrow$ Voltage divider mid-point (R8/R9) |
+| **X2:12** | **CSAFE TXD** | Input | 3.3V UART TTL | **GPIO 17** $\rightarrow$ SP3232 TTL RXD pad |
 
 ---
 
-## 3. O1 Bus (Sniffing / Scanning via IC1)
+## 3. Optocoupler Input & Output Interfaces (U1–U3)
 
-The O1 scanner signals pass straight through the PCB uninterrupted. They are passively "tapped" via IC1 and shifted down to 3.3V for the ESP32 to monitor. IC1 also handles the MUTE signal mapping.
+### Speed Pulse (U1 - PC817)
+* **Input Circuit:** Treadmill pin 7 (11.4V idle) $\rightarrow$ **X1:5** $\rightarrow$ **R1 (10 kΩ)** $\rightarrow$ **U1 Pin 1 (Anode)**.
+* **Ground Bridge:** U1 Pin 2 (Cathode) and Pin 3 (Emitter) bridged via bare wire across the 7.62 mm DIP gap $\rightarrow$ routed to System 0V (**X2:8**).
+* **Output Circuit:** Pin 4 (Collector) tied to pull-up **R5 (10 kΩ)** to +3.3V (**X2:7**). The junction routes to **X2:6**, read by **GPIO 3** as an active-low pulse stream.
 
-* **Pin 3 (ROW_A):** Console -> Pass-through -> Motor Controller
-  * *Tapped:* `B1 -> A1 -> GPIO 4`
-* **Pin 4 (Common):** Console -> Pass-through -> Motor Controller 
-  * *(Not tapped, blind to ESP32)*
-* **Pin 5 (ROW_B):** Console -> Pass-through -> Motor Controller
-  * *Tapped:* `B2 -> A2 -> GPIO 5`
-* **Pin 6 (ROW_C):** Console -> Pass-through -> Motor Controller
-  * *Tapped:* `B3 -> A3 -> GPIO 6`
-* **Pin 7 (ROW_D):** Console -> Pass-through -> Motor Controller
-  * *Tapped:* `B4 -> A4 -> GPIO 7`
-* **Pin 8 (ROW_E):** Console -> Pass-through -> Motor Controller
-  * *Tapped:* `B5 -> A5 -> GPIO 15`
-* **MUTE (Channel 8):** `ESP32 GPIO 21 -> IC1 A8 -> IC1 B8 -> MUTE trace -> IC3/IC4 control pins`
+### Incline Pulse (U2 - PC817)
+* **Input Circuit:** Treadmill pin 11 (4.68V pulsed) $\rightarrow$ **X1:7** $\rightarrow$ **R2 (1 kΩ)** $\rightarrow$ **U2 Pin 1 (Anode)**.
+* **Ground Bridge:** U2 Pin 2 (Cathode) and Pin 3 (Emitter) bridged via bare wire $\rightarrow$ routed to System 0V (**X2:8**).
+* **Output Circuit:** Pin 4 (Collector) tied to pull-up **R6 (10 kΩ)** to +3.3V (**X2:7**). The junction routes to **X2:5**, read by **GPIO 14** as an active-low pulse stream.
 
-> **Design Rules for IC1 (TXS0108E):**
-> 1. **Software PinMode:** GPIOs 4, 5, 6, 7, and 15 must be explicitly configured as `INPUT` in the ESP32 firmware to prevent bus contention on the bi-directional level shifter.
-> 2. **Unused Channels:** Channels 6 and 7 on IC1 are unused. Leave both the A and B sides floating. The TXS0108E features internal 40kΩ pull-up resistors, so unused pins will safely default to HIGH without requiring external pull-downs.
+### Buzzer Detection (U3 - PC817)
+* **Input Circuit (High-Side):** Treadmill buzzer (+) wire $\rightarrow$ **X1:1** $\rightarrow$ **R3 (220 Ω)** in series with **R4 (220 Ω)** ($R_{\text{total}} = 440\text{ }\Omega$) $\rightarrow$ **U3 Pin 1 (Anode)**.
+* **Floating Return (Low-Side):** Treadmill buzzer (−) wire $\rightarrow$ **X2:1** $\rightarrow$ **U3 Pin 2 (Cathode)**. Maintained fully floating (isolated from System 0V) to prevent bypassing low-side switching drivers.
+* **Output Circuit:** Pin 3 (Emitter) tied to System 0V (**X2:8**). Pin 4 (Collector) tied to pull-up **R7 (10 kΩ)** to +3.3V (**X2:7**). The junction routes to **X2:4**, read by **GPIO 16** as active-low.
 
 ---
 
-## 4. O2 Bus (Injection via IC3 & IC4)
+## 4. CSAFE Isolated RS232 Subsystem (SP3232)
 
-The O2 data bus is routed *through* the CD4066 switches. The ESP32 injects its level-shifted 5V signals on the downstream side (towards the motor controller) when the switches are opened (MUTE active).
+* **Module:** SP3232 RS232-to-TTL transceiver powered by 5V from the USB rail.
+* **RS232 Bus Interface (Treadmill side):**
+  * Module TXD pad $\rightarrow$ **X1:3** $\rightarrow$ Treadmill CSAFE RX.
+  * Module RXD pad $\leftarrow$ **X1:4** $\leftarrow$ Treadmill CSAFE TX.
+  * Isolated GND pad $\rightarrow$ **X1:2** (terminates Cat6 shield; shield cut/isolated at treadmill RJ45 end).
+* **TTL Microcontroller Interface (ESP32 side):**
+  * **Transmit:** **GPIO 17** $\rightarrow$ **X2:12** $\rightarrow$ SP3232 TTL RXD pad.
+  * **Receive & Level Shifting:** SP3232 TTL TXD pad (5V output) routes to voltage divider **R8 (1 kΩ)** and **R9 (2 kΩ)** to GND. The scaled 3.3V midpoint routes via **X2:11** into **GPIO 40**.
 
-### IC3 (Handles Bits 0–3)
-* **Pin 9 (Bit 0):** Console -> `IC3 (Switch 1)` -> Motor Controller
-  * *ESP Injection:* `GPIO 41 -> IC2 A1/B1 -> Downstream trace`
-* **Pin 10 (Bit 1):** Console -> `IC3 (Switch 2)` -> Motor Controller
-  * *ESP Injection:* `GPIO 42 -> IC2 A2/B2 -> Downstream trace`
-* **Pin 11 (Bit 2):** Console -> `IC3 (Switch 3)` -> Motor Controller
-  * *ESP Injection:* `GPIO 8 -> IC2 A3/B3 -> Downstream trace`
-* **Pin 12 (Bit 3):** Console -> `IC3 (Switch 4)` -> Motor Controller
-  * *ESP Injection:* `GPIO 9 -> IC2 A4/B4 -> Downstream trace`
+---
 
-### IC4 (Handles Bits 4–7)
-* **Pin 13 (Bit 4):** Console -> `IC4 (Switch 1)` -> Motor Controller
-  * *ESP Injection:* `GPIO 10 -> IC2 A5/B5 -> Downstream trace`
-* **Pin 14 (Bit 5):** Console -> `IC4 (Switch 2)` -> Motor Controller
-  * *ESP Injection:* `GPIO 11 -> IC2 A6/B6 -> Downstream trace`
-* **Pin 15 (Bit 6):** Console -> `IC4 (Switch 3)` -> Motor Controller
-  * *ESP Injection:* `GPIO 12 -> IC2 A7/B7 -> Downstream trace`
-* **Pin 16 (Bit 7):** Console -> `IC4 (Switch 4)` -> Motor Controller
-  * *ESP Injection:* `GPIO 13 -> IC2 A8/B8 -> Downstream trace`
+## 5. I²C Bus Accelerator & IMU Interface (LTC4311)
+
+* **Accelerator Integration:** The LTC4311 breakout board connects in parallel across the I²C bus lines to handle line capacitance over the extended Cat6 cable run to the IMU.
+* **Enable Configuration:** `VIN` and `EN` pins on the LTC4311 board are bridged directly together and tied to +3.3V (**X2:7**), ensuring the slew-rate accelerators remain permanently enabled during operation.
+* **Bus Routing:**
+  * **SDA:** Bridges IMU SDA (**X1:11**), LTC4311 SDA, and ESP32 **GPIO 47** (**X2:2**).
+  * **SCL:** Bridges IMU SCL (**X1:10**), LTC4311 SCL, and ESP32 **GPIO 48** (**X2:3**).
+* **Cable Shielding:** Unused conductor pairs in the Cat6 IMU cable are grouped together and tied to System 0V (**X2:8**) to provide a reference ground plane.
