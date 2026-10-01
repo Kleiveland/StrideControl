@@ -575,12 +575,12 @@ void ControlRuntime::runTaskLoop() {
             const bool estopActive = console_.isEmergencyStopActive();
             portENTER_CRITICAL(&requestedTargetMux_);
             if (requestedSpeedActive_ &&
-                (fabsf(requestedSpeedKmh_ - snap.speed.speedKmh) <= kRequestedReachedTolerance ||
+                (fabsf(requestedSpeedKmh_ - snap.speed.speedKmh) < kRequestedReachedTolerance ||
                  !beltActive || estopActive || (nowMs - requestedSpeedSinceMs_) > kRequestedMaxAgeMs)) {
                 requestedSpeedActive_ = false;
             }
             if (requestedInclineActive_ &&
-                (fabsf(requestedInclinePct_ - snap.incline.estimatedInclinePct) <= kRequestedReachedTolerance ||
+                (fabsf(requestedInclinePct_ - snap.incline.estimatedInclinePct) < kRequestedReachedTolerance ||
                  !beltActive || estopActive || (nowMs - requestedInclineSinceMs_) > kRequestedMaxAgeMs)) {
                 requestedInclineActive_ = false;
             }
