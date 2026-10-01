@@ -181,6 +181,7 @@ SpeedConfig SettingsService::getSpeedConfig() {
             cfg.maxAchievableSpeedVerified = prefs.getBool("spd_max_v", false);
             cfg.commandMapValid = prefs.getBool("spd_map_v", false);
             cfg.sensorCalibrationFactor = prefs.getFloat("spd_cal_f", 1.0f);
+            cfg.kmhPerHz = prefs.getFloat("spd_khz", 1.1148f);
             cfg.pointCount = prefs.getUChar("spd_pts", 0);
             if (cfg.pointCount > kMaxSpeedCalibrationPoints) {
                 cfg.pointCount = kMaxSpeedCalibrationPoints;
@@ -244,6 +245,7 @@ bool SettingsService::saveSpeedConfig(const SpeedConfig& config) {
             prefs.putBool("spd_max_v", config.maxAchievableSpeedVerified);
             prefs.putBool("spd_map_v", config.commandMapValid);
             prefs.putFloat("spd_cal_f", config.sensorCalibrationFactor);
+            prefs.putFloat("spd_khz", config.kmhPerHz);
             prefs.putUChar("spd_pts", config.pointCount);
             if (config.pointCount > 0) {
                 prefs.putBytes("spd_data", config.points.data(), config.pointCount * sizeof(SpeedCalibrationPoint));
@@ -262,6 +264,23 @@ bool SettingsService::saveSpeedSensorCalibrationFactor(float factor) {
         Preferences prefs;
         if (prefs.begin(kNvsNamespace, false)) {
             prefs.putFloat("spd_cal_f", factor);
+            prefs.end();
+            ok = true;
+        }
+        xSemaphoreGive(mutex_);
+    }
+    return ok;
+}
+
+bool SettingsService::saveSpeedSensorKmhPerHz(float value) {
+    if (!std::isfinite(value) || value < 0.1f || value > 10.0f) {
+        return false;
+    }
+    bool ok = false;
+    if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        Preferences prefs;
+        if (prefs.begin(kNvsNamespace, false)) {
+            prefs.putFloat("spd_khz", value);
             prefs.end();
             ok = true;
         }

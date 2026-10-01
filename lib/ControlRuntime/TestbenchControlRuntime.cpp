@@ -371,13 +371,17 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
 
     // 1. Initialize sensor drivers in SoftwareObservation mode
     const SpeedConfig spdCfg = SettingsService::instance().getSpeedConfig();
-    speedSensor_.begin(SpeedSensorConfig{}, SpeedObservationMode::SoftwareObservation);
-    speedSensor_.setCalibrationFactor(spdCfg.sensorCalibrationFactor);
+    SpeedSensorConfig speedSensorCfg{};
+    speedSensorCfg.kmhPerHz = spdCfg.kmhPerHz;
+    speedSensorCfg.calibrationFactor = spdCfg.sensorCalibrationFactor;
+    speedSensor_.begin(speedSensorCfg, SpeedObservationMode::SoftwareObservation);
     speedCalibration_.setConfiguration(spdCfg);
     inclineSensor_.begin(InclineSensorConfig{}, InclineCalibration{}, InclineObservationMode::SoftwareObservation);
     console_.begin(ConsoleExecutionMode::SoftwareSink);
     imu_.begin(ImuObservationMode::SoftwareObservation);
-    runnerDynamics_.begin();
+    RunnerDynamicsConfig runnerCfg{};
+    runnerCfg.speedSensorKmhPerHz = spdCfg.kmhPerHz;
+    runnerDynamics_.begin(runnerCfg);
     inclineVerifier_.begin();
 
     const RampCalibrationConfig rampCfg = SettingsService::instance().getRampCalibrationConfig();

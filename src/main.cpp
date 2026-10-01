@@ -352,6 +352,7 @@ void setup() {
     stridecontrol::SpeedSensorConfig speedConfig;
     speedConfig.inputPin = GPIO_NUM_3;
     speedConfig.useInternalPullup = true;
+    speedConfig.kmhPerHz = spdCfg.kmhPerHz;
     speedConfig.calibrationFactor = spdCfg.sensorCalibrationFactor;
     const bool speedOk = s_speedSensor.begin(speedConfig);
 
@@ -362,12 +363,16 @@ void setup() {
     inclineConfig.useInternalPullup = true;
     const bool inclineOk = s_inclineSensor.begin(inclineConfig, stridecontrol::InclineCalibration{});
 
-    Serial.printf("[Sensors] SpeedSensor begin: %s (Pin %d, Pullup)\n", speedOk ? "SUCCESS" : "FAILED", speedConfig.inputPin);
+    Serial.printf("[Sensors] SpeedSensor begin: %s (Pin %d, Pullup, %.4f kmh/Hz, factor %.5f)\n",
+                  speedOk ? "SUCCESS" : "FAILED", speedConfig.inputPin, speedConfig.kmhPerHz, speedConfig.calibrationFactor);
     Serial.printf("[Sensors] InclineSensor begin: %s (Pin %d, Pullup)\n", inclineOk ? "SUCCESS" : "FAILED", inclineConfig.inputPin);
 
     const bool imuOk = s_imuInterface.begin();
     const bool csafeOk = s_csafeInterface.begin();
-    const bool runnerDynamicsOk = s_runnerDynamics.begin();
+
+    stridecontrol::RunnerDynamicsConfig runnerConfig;
+    runnerConfig.speedSensorKmhPerHz = spdCfg.kmhPerHz;
+    const bool runnerDynamicsOk = s_runnerDynamics.begin(runnerConfig);
     const bool inclineVerifierOk = s_inclineVerifier.begin();
     s_maintenanceService.begin(&stridecontrol::SettingsService::instance());
 

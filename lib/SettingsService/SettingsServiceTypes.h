@@ -32,6 +32,7 @@ struct SpeedConfig {
     float maxAchievableSpeedKmh = 25.0f;
     bool maxAchievableSpeedVerified = false;
     float sensorCalibrationFactor = 1.0f;
+    float kmhPerHz = 1.1148f;
 };
 
 /**

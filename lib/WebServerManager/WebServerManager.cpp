@@ -1318,6 +1318,7 @@ void WebServerManager::registerRoutes() {
         }
         JsonDocument doc;
         doc["sensorCalibrationFactor"] = sensorFactor;
+        doc["kmhPerHz"] = cfg.kmhPerHz;
         doc["maxAchievableSpeedKmh"] = cfg.maxAchievableSpeedKmh;
         doc["maxAchievableSpeedVerified"] = cfg.maxAchievableSpeedVerified;
         doc["commandMapValid"] = cfg.commandMapValid;
@@ -2418,6 +2419,7 @@ void WebServerManager::registerRoutes() {
         SpeedConfig spd = SettingsService::instance().getSpeedConfig();
         JsonObject spdObj = doc["speed"].to<JsonObject>();
         spdObj["sensorCalibrationFactor"] = spd.sensorCalibrationFactor;
+        spdObj["kmhPerHz"] = spd.kmhPerHz;
         spdObj["maxAchievableSpeedKmh"] = spd.maxAchievableSpeedKmh;
         spdObj["maxAchievableSpeedVerified"] = spd.maxAchievableSpeedVerified;
         spdObj["commandMapValid"] = spd.commandMapValid;
@@ -2594,6 +2596,9 @@ void WebServerManager::registerRoutes() {
             JsonObjectConst sObj = doc["speed"].as<JsonObjectConst>();
             if (sObj["sensorCalibrationFactor"].is<float>()) {
                 candSpeed.sensorCalibrationFactor = sObj["sensorCalibrationFactor"].as<float>();
+            }
+            if (sObj["kmhPerHz"].is<float>()) {
+                candSpeed.kmhPerHz = sObj["kmhPerHz"].as<float>();
             }
             if (sObj["maxAchievableSpeedKmh"].is<float>()) {
                 candSpeed.maxAchievableSpeedKmh = sObj["maxAchievableSpeedKmh"].as<float>();

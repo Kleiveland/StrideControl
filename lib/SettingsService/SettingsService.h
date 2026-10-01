@@ -44,6 +44,7 @@ public:
     bool saveInclineConfig(const InclineConfig& config);
     bool saveSpeedConfig(const SpeedConfig& config);
     bool saveSpeedSensorCalibrationFactor(float factor);
+    bool saveSpeedSensorKmhPerHz(float value);
     bool saveMaintenanceConfig(const MaintenanceConfig& config);
     bool saveRampCalibrationConfig(const RampCalibrationConfig& config);
     bool getBleStackEnabled();
