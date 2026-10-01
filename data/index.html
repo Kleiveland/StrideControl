@@ -4176,9 +4176,10 @@
             const manSpdVal = document.getElementById('man-spd-val');
             const manSpdLbl = document.getElementById('man-spd-lbl');
             const manSpdSub = document.getElementById('man-spd-sub');
+            const isRunning = (telem.session?.state === 'Running' ||
+                               telem.csafe?.machineState === 'IN_USE' || telem.csafe?.machineState === 'STARTING');
             if (manSpdVal && manSpdLbl) {
                 manSpdVal.innerText = spdStr;
-                const isRunning = telem.session?.state === 'Running';
                 if (isRunning && telem.session?.hasSpeedTarget === true && typeof telem.targetSpeedKmh === 'number' && typeof spd === 'number' &&
                     Math.abs(telem.targetSpeedKmh - spd) > 0.2) {
                     manSpdLbl.classList.add('active-spd');
@@ -4201,7 +4202,6 @@
             const klatret = document.getElementById('col-klatret');
             if (manIncVal && manIncLbl) {
                 manIncVal.innerText = incStr;
-                const isRunning = telem.session?.state === 'Running';
                 if (isRunning && telem.session?.hasInclineTarget === true && typeof telem.targetInclinePct === 'number' && typeof inc === 'number' &&
                     Math.abs(telem.targetInclinePct - inc) > 0.2) {
                     manIncLbl.classList.add('active-inc');
@@ -4356,7 +4356,8 @@
                 const val = col.querySelector('.tele-val');
                 if (!lbl || !val) return;
                 const txt = lbl.innerText.trim().toUpperCase();
-                const isRunning = telem.session?.state === 'Running';
+                const isRunning = (telem.session?.state === 'Running' ||
+                                   telem.csafe?.machineState === 'IN_USE' || telem.csafe?.machineState === 'STARTING');
                 if (txt === 'FART') {
                     val.innerText = spdStr;
                     const sub = col.querySelector('.ramp-adjust-sub');

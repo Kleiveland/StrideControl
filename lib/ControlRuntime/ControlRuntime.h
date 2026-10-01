@@ -79,6 +79,12 @@ public:
     WorkoutSessionSnapshot getSessionSnapshot() const;
     TreadmillControllerSnapshot getControllerSnapshot() const;
     StagedTargets getStagedTargets() const;
+    void getRequestedTargets(float& spd, bool& spdActive, float& inc, bool& incActive) const {
+        portENTER_CRITICAL(&requestedTargetMux_);
+        spd = requestedSpeedKmh_;   spdActive = requestedSpeedActive_;
+        inc = requestedInclinePct_; incActive = requestedInclineActive_;
+        portEXIT_CRITICAL(&requestedTargetMux_);
+    }
     bool isSessionActive() const;
     bool isSessionSuspended() const;
     bool isControllerReady() const;
@@ -182,6 +188,16 @@ private:
 
     mutable portMUX_TYPE speedLearningMux_ = portMUX_INITIALIZER_UNLOCKED;
     mutable portMUX_TYPE deadTimeMux_ = portMUX_INITIALIZER_UNLOCKED;
+
+    mutable portMUX_TYPE requestedTargetMux_ = portMUX_INITIALIZER_UNLOCKED;
+    bool     requestedSpeedActive_    = false;
+    float    requestedSpeedKmh_       = 0.0f;
+    uint32_t requestedSpeedSinceMs_   = 0;
+    bool     requestedInclineActive_  = false;
+    float    requestedInclinePct_     = 0.0f;
+    uint32_t requestedInclineSinceMs_ = 0;
+    static constexpr float    kRequestedReachedTolerance = 0.2f;
+    static constexpr uint32_t kRequestedMaxAgeMs         = 120000;
 
     QueueHandle_t commandQueue_ = nullptr;
 

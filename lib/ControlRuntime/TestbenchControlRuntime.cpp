@@ -764,6 +764,25 @@ void TestbenchControlRuntime::runTaskLoop() {
         // 3. Obtain authoritative ApplicationSnapshot representing resulting state
         ApplicationSnapshot snapshot = orchestrator_.getSnapshot();
 
+        // Latch release: check if requested targets have been reached
+        {
+            const bool beltActive = (snapshot.csafe.qualifiedState == CsafeMachineState::InUse ||
+                                     snapshot.csafe.qualifiedState == CsafeMachineState::Starting);
+            const bool estopActive = console_.isEmergencyStopActive();
+            portENTER_CRITICAL(&requestedTargetMux_);
+            if (requestedSpeedActive_ &&
+                (fabsf(requestedSpeedKmh_ - snapshot.speed.speedKmh) <= kRequestedReachedTolerance ||
+                 !beltActive || estopActive || (nowMs - requestedSpeedSinceMs_) > kRequestedMaxAgeMs)) {
+                requestedSpeedActive_ = false;
+            }
+            if (requestedInclineActive_ &&
+                (fabsf(requestedInclinePct_ - snapshot.incline.estimatedInclinePct) <= kRequestedReachedTolerance ||
+                 !beltActive || estopActive || (nowMs - requestedInclineSinceMs_) > kRequestedMaxAgeMs)) {
+                requestedInclineActive_ = false;
+            }
+            portEXIT_CRITICAL(&requestedTargetMux_);
+        }
+
         rampTestTracker_.update(
             snapshot.speed.speedKmh,
             snapshot.speed.measurementValid,
@@ -1096,6 +1115,9 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 ctx.timestampMs = cmdNowMs;
                 dispatcher_.stageSpeedTarget(cmd.data.target.speedKmh, ctx);
                 session_.reportWorkSpeedAdjustment(cmd.data.target.speedKmh);
+                portENTER_CRITICAL(&requestedTargetMux_);
+                requestedSpeedKmh_ = cmd.data.target.speedKmh; requestedSpeedActive_ = true; requestedSpeedSinceMs_ = cmdNowMs;
+                portEXIT_CRITICAL(&requestedTargetMux_);
                 break;
             }
             case ControlCommandType::SetIncline: {
@@ -1109,6 +1131,9 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 }
                 ctx.timestampMs = cmdNowMs;
                 dispatcher_.stageInclineTarget(cmd.data.target.inclinePct, ctx);
+                portENTER_CRITICAL(&requestedTargetMux_);
+                requestedInclinePct_ = cmd.data.target.inclinePct; requestedInclineActive_ = true; requestedInclineSinceMs_ = cmdNowMs;
+                portEXIT_CRITICAL(&requestedTargetMux_);
                 break;
             }
             case ControlCommandType::StepSpeed: {
@@ -1143,6 +1168,9 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 ctx.timestampMs = cmdNowMs;
                 dispatcher_.stepSpeedTarget(cmd.data.stepSpeed.deltaSpeedKmh, currentSpd, ctx);
                 session_.reportWorkSpeedAdjustment(currentSpd + cmd.data.stepSpeed.deltaSpeedKmh);
+                portENTER_CRITICAL(&requestedTargetMux_);
+                requestedSpeedKmh_ = currentSpd + cmd.data.stepSpeed.deltaSpeedKmh; requestedSpeedActive_ = true; requestedSpeedSinceMs_ = cmdNowMs;
+                portEXIT_CRITICAL(&requestedTargetMux_);
                 break;
             }
             case ControlCommandType::StepIncline: {
@@ -1157,6 +1185,9 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
                 }
                 ctx.timestampMs = cmdNowMs;
                 dispatcher_.stepInclineTarget(cmd.data.stepIncline.deltaInclinePct, currentSimInc, ctx);
+                portENTER_CRITICAL(&requestedTargetMux_);
+                requestedInclinePct_ = currentSimInc + cmd.data.stepIncline.deltaInclinePct; requestedInclineActive_ = true; requestedInclineSinceMs_ = cmdNowMs;
+                portEXIT_CRITICAL(&requestedTargetMux_);
                 break;
             }
             case ControlCommandType::ArmWorkout: {

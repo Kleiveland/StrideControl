@@ -62,6 +62,18 @@ public:
         report.targetInclinePct = telem.sessionSnapshot.hasInclineTarget ? static_cast<float>(telem.sessionSnapshot.targetInclinePct) : staged.inclinePct;
         report.hasSpeedTarget = telem.sessionSnapshot.hasSpeedTarget;
         report.hasInclineTarget = telem.sessionSnapshot.hasInclineTarget;
+        {
+            float reqSpd = 0.0f, reqInc = 0.0f; bool reqSpdActive = false, reqIncActive = false;
+            runtime_.getRequestedTargets(reqSpd, reqSpdActive, reqInc, reqIncActive);
+            if (!report.hasSpeedTarget) {
+                if (staged.pendingSpeed)  { report.targetSpeedKmh = staged.speedKmh; report.hasSpeedTarget = true; }
+                else if (reqSpdActive)    { report.targetSpeedKmh = reqSpd;          report.hasSpeedTarget = true; }
+            }
+            if (!report.hasInclineTarget) {
+                if (staged.pendingIncline) { report.targetInclinePct = staged.inclinePct; report.hasInclineTarget = true; }
+                else if (reqIncActive)     { report.targetInclinePct = reqInc;            report.hasInclineTarget = true; }
+            }
+        }
         report.runnerSpeedKmh = telem.snapshot.runner.runnerSpeedKmh;
         report.beltDistanceKm = runtime_.getComposite().getVirtualTreadmill().getOdometerKm();
         const auto runnerLoc = runtime_.getComposite().getVirtualTreadmill().getRunnerLocation();
@@ -208,6 +220,18 @@ public:
         report.targetInclinePct = sessSnap.hasInclineTarget ? static_cast<float>(sessSnap.targetInclinePct) : staged.inclinePct;
         report.hasSpeedTarget = sessSnap.hasSpeedTarget;
         report.hasInclineTarget = sessSnap.hasInclineTarget;
+        {
+            float reqSpd = 0.0f, reqInc = 0.0f; bool reqSpdActive = false, reqIncActive = false;
+            systemManager_.getControlRuntime().getRequestedTargets(reqSpd, reqSpdActive, reqInc, reqIncActive);
+            if (!report.hasSpeedTarget) {
+                if (staged.pendingSpeed)  { report.targetSpeedKmh = staged.speedKmh; report.hasSpeedTarget = true; }
+                else if (reqSpdActive)    { report.targetSpeedKmh = reqSpd;          report.hasSpeedTarget = true; }
+            }
+            if (!report.hasInclineTarget) {
+                if (staged.pendingIncline) { report.targetInclinePct = staged.inclinePct; report.hasInclineTarget = true; }
+                else if (reqIncActive)     { report.targetInclinePct = reqInc;            report.hasInclineTarget = true; }
+            }
+        }
         report.runnerSpeedKmh = snap.runner.runnerSpeedKmh;
         report.beltDistanceKm = snap.runner.validatedDistanceKm;
         report.runnerPresence = stridecontrol::runnerPresenceName(snap.runner.presence);
