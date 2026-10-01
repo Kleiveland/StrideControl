@@ -868,6 +868,79 @@ void test_commissioning_target_invalidated_when_session_active() {
     TEST_ASSERT_EQUAL_UINT32(0, mock.speedSubmitCount);
 }
 
+void test_clear_incline_target_resets_all_eight_fields() {
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    TargetContext ctx;
+    ctx.origin = TargetOrigin::SessionManualAdjustment;
+    ctx.sessionGeneration = 42;
+    ctx.stepIndex = 3;
+    ctx.timestampMs = 5000;
+
+    dispatcher.stageInclineTarget(6.5f, ctx);
+
+    // Verify all 8 incline fields are asserted
+    StagedTargets staged = dispatcher.getStagedTargets();
+    TEST_ASSERT_TRUE(staged.pendingIncline);
+    TEST_ASSERT_EQUAL_FLOAT(6.5f, staged.inclinePct);
+    TEST_ASSERT_EQUAL(TargetOrigin::SessionManualAdjustment, staged.inclineOrigin);
+    TEST_ASSERT_EQUAL_UINT32(42, staged.inclineSessionGeneration);
+    TEST_ASSERT_EQUAL_UINT32(0, staged.inclineIntentSequence);
+    TEST_ASSERT_EQUAL_UINT8(3, staged.inclineStepIndex);
+    TEST_ASSERT_FALSE(staged.inclineIsPreFire);
+    TEST_ASSERT_EQUAL_UINT32(5000, staged.inclineStagedTimestampMs);
+
+    // Clear incline target explicitly
+    dispatcher.clearInclineTarget();
+
+    // Verify all 8 fields are reset to clean zero/default state
+    staged = dispatcher.getStagedTargets();
+    TEST_ASSERT_FALSE(staged.pendingIncline);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, staged.inclinePct);
+    TEST_ASSERT_EQUAL(TargetOrigin::None, staged.inclineOrigin);
+    TEST_ASSERT_EQUAL_UINT32(0, staged.inclineSessionGeneration);
+    TEST_ASSERT_EQUAL_UINT32(0, staged.inclineIntentSequence);
+    TEST_ASSERT_EQUAL_UINT8(0, staged.inclineStepIndex);
+    TEST_ASSERT_FALSE(staged.inclineIsPreFire);
+    TEST_ASSERT_EQUAL_UINT32(0, staged.inclineStagedTimestampMs);
+}
+
+void test_retained_incline_target_invalidated_on_step_mismatch() {
+    WorkoutSession session;
+    session.begin();
+
+    ExpandedWorkout ew = createTestWorkout();
+    session.armWorkout(&ew, 1000);
+    session.update(makeAppSnapshot(1.0f, 0.0), 1000); // Running in Step 0
+    TEST_ASSERT_TRUE(session.isActive());
+    TEST_ASSERT_EQUAL_UINT8(0, session.getCurrentStepIndex());
+
+    MockTargetSink mock;
+    mock.busy = true;
+
+    WorkoutDispatcher dispatcher;
+    dispatcher.begin();
+
+    TargetContext ctx;
+    ctx.origin = TargetOrigin::WorkoutGenerated;
+    ctx.sessionGeneration = session.getSessionGeneration();
+    ctx.stepIndex = 1; // Staged for Step 1, while session is currently in Step 0
+    ctx.timestampMs = 1000;
+    dispatcher.stageInclineTarget(5.0f, ctx);
+
+    // validateRetainedTargets should invalidate and clear incline target because step index mismatches
+    dispatcher.update(session, mock, 1020);
+    TEST_ASSERT_FALSE(dispatcher.hasPendingTargets());
+    TEST_ASSERT_EQUAL_UINT32(0, mock.inclineSubmitCount);
+
+    StagedTargets staged = dispatcher.getStagedTargets();
+    TEST_ASSERT_FALSE(staged.pendingIncline);
+    TEST_ASSERT_EQUAL(TargetOrigin::None, staged.inclineOrigin);
+    TEST_ASSERT_EQUAL_UINT32(0, staged.inclineSessionGeneration);
+    TEST_ASSERT_EQUAL_UINT8(0, staged.inclineStepIndex);
+}
+
 void run_all_workout_dispatcher_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_dispatcher_combined_incline_and_speed);
@@ -893,6 +966,8 @@ void run_all_workout_dispatcher_tests() {
     RUN_TEST(test_csafe_virtual_treadmill_lifecycle_and_raw_bytes);
     RUN_TEST(test_commissioning_target_cleared_on_new_workout_arm);
     RUN_TEST(test_commissioning_target_invalidated_when_session_active);
+    RUN_TEST(test_clear_incline_target_resets_all_eight_fields);
+    RUN_TEST(test_retained_incline_target_invalidated_on_step_mismatch);
     UNITY_END();
 }
 
