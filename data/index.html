@@ -99,12 +99,8 @@
             background: #080808;
             color: var(--text);
             font-family: 'Barlow Condensed', -apple-system, BlinkMacSystemFont, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
             overflow: hidden;
+            margin: 0;
         }
 
         .tablet-screen {
@@ -113,15 +109,14 @@
             background: var(--bg);
             border: 2px solid #333;
             border-radius: 28px;
-            position: relative;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform-origin: center center;
+            transform: translate(-50%, -50%) scale(var(--fit, 1)) translateZ(0);
             overflow: hidden;
             box-shadow: 0 20px 60px rgba(0,0,0,0.95);
-            transform-origin: top center;
-            transform: translateZ(0);
         }
-        
-        @media (max-width: 1950px) { .tablet-screen { transform: scale(0.7) translateZ(0); } }
-        @media (max-width: 1400px) { .tablet-screen { transform: scale(0.5) translateZ(0); } }
 
         .clickable { cursor: pointer; }
         .clickable:active { filter: brightness(1.25); }
@@ -1421,6 +1416,14 @@
     </div>
 
     <script>
+        function fitScreen() {
+            var s = Math.min(window.innerWidth / 1920, window.innerHeight / 1200);
+            document.documentElement.style.setProperty('--fit', s);
+        }
+        fitScreen();
+        window.addEventListener('resize', fitScreen);
+        window.addEventListener('orientationchange', fitScreen);
+
         // GUI-004: Live Clock (Client local time, HH:MM 24-hr format)
         function updateLiveClock() {
             const now = new Date();
