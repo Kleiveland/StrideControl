@@ -132,10 +132,27 @@ void SettingsService::begin() {
         return;
     }
 
-    Serial.println("[SettingsService] Initializing settings subsystem...");
+    uint32_t initialRev = esp_random();
+    if (initialRev == 0) {
+        initialRev = 1;
+    }
+    settingsRevision_.store(initialRev, std::memory_order_relaxed);
+    Serial.printf("[SettingsService] Initializing settings subsystem (revision: %u)...\n", initialRev);
     recoverAndLoadSettings();
     initialized_ = true;
     Serial.println("[SettingsService] Settings subsystem initialized.");
+}
+
+uint32_t SettingsService::getSettingsRevision() const {
+    return settingsRevision_.load(std::memory_order_relaxed);
+}
+
+void SettingsService::bumpSettingsRevision() {
+    uint32_t newRev = settingsRevision_.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (newRev == 0) {
+        newRev = settingsRevision_.fetch_add(1, std::memory_order_relaxed) + 1;
+    }
+    Serial.printf("[SettingsService] Settings revision updated: %u\n", newRev);
 }
 
 // ===========================================================================
@@ -855,7 +872,8 @@ bool SettingsService::validateBleConfig(const BleConfig& c, char* errBuf, size_t
 // JSON SERIALIZATION & DESERIALIZATION
 // ===========================================================================
 
-void SettingsService::serializeSettingsJson(const SystemSettings& s, Print& output) {
+template <typename TDestination>
+static void serializeSettingsJsonInternal(const SystemSettings& s, TDestination& output) {
     JsonDocument doc;
     doc["schemaVersion"] = s.schemaVersion;
 
@@ -916,6 +934,14 @@ void SettingsService::serializeSettingsJson(const SystemSettings& s, Print& outp
     }
 
     serializeJson(doc, output);
+}
+
+void SettingsService::serializeSettingsJson(const SystemSettings& s, Print& output) {
+    serializeSettingsJsonInternal(s, output);
+}
+
+void SettingsService::serializeSettingsJson(const SystemSettings& s, String& output) {
+    serializeSettingsJsonInternal(s, output);
 }
 
 bool SettingsService::deserializeSettingsJson(const uint8_t* jsonBytes, size_t length, SystemSettings& outCandidate, char* errBuf, size_t errBufLen) {
@@ -1107,6 +1133,7 @@ bool SettingsService::saveSystemSettingsAtomic(const SystemSettings& settings) {
     if (activeSettings_) {
         *activeSettings_ = settings;
     }
+    bumpSettingsRevision();
     Serial.println("[SettingsService] Settings saved atomically and verified.");
     return true;
 }

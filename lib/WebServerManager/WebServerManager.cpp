@@ -217,6 +217,7 @@ void WebServerManager::registerRoutes() {
         doc["authority"] = report.authority;
         doc["connectionWarningActive"] = report.connectionWarningActive;
         doc["estopActive"] = report.estopActive;
+        doc["settingsRevision"] = SettingsService::instance().getSettingsRevision();
 
         JsonObject speed = doc["speed"].to<JsonObject>();
         speed["kmh"] = report.actualSpeedKmh;
@@ -409,18 +410,20 @@ void WebServerManager::registerRoutes() {
         request->send(200, "text/plain", "Microsoft NCSI");
     });
 
-    // GET /api/settings: Stream current system settings JSON
+    // GET /api/settings: Buffer and stream current system settings JSON
     server_.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest* request) {
-        AsyncResponseStream* stream = request->beginResponseStream("application/json");
-        stream->addHeader("Access-Control-Allow-Origin", "*");
-        stream->addHeader("Cache-Control", "no-cache");
         const SystemSettings* settings = SettingsService::instance().getActiveSettings();
+        String output;
+        output.reserve(16384);
         if (settings) {
-            SettingsService::serializeSettingsJson(*settings, *stream);
+            SettingsService::serializeSettingsJson(*settings, output);
         } else {
-            stream->print("{}");
+            output = "{}";
         }
-        request->send(stream);
+        AsyncWebServerResponse* response = request->beginResponse(200, "application/json", output);
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        response->addHeader("Cache-Control", "no-cache");
+        request->send(response);
     });
 
     // POST /api/settings: Atomic validation and persistence

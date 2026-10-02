@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <atomic>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include "SettingsServiceTypes.h"
@@ -51,6 +52,9 @@ public:
     bool saveBleStackEnabled(bool enabled);
     void factoryReset();
 
+    uint32_t getSettingsRevision() const;
+    void bumpSettingsRevision();
+
     // =======================================================================
     // POWER-FAIL-SAFE ATOMIC USER & WORKOUT SETTINGS (Phase D API)
     // =======================================================================
@@ -68,6 +72,7 @@ public:
     static void populateFactoryDefaults(SystemSettings& target);
 
     static void serializeSettingsJson(const SystemSettings& settings, Print& output);
+    static void serializeSettingsJson(const SystemSettings& settings, String& output);
     static bool deserializeSettingsJson(const uint8_t* jsonBytes, size_t length, SystemSettings& outCandidate, char* errBuf = nullptr, size_t errBufLen = 0);
 
     static const char* version();
@@ -79,6 +84,7 @@ private:
 
     SemaphoreHandle_t mutex_ = nullptr;
     bool initialized_ = false;
+    std::atomic<uint32_t> settingsRevision_{0};
     SystemSettingsPtr activeSettings_;
     SystemSettingsPtr candidateSettings_;
 
