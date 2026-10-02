@@ -169,7 +169,7 @@ void WorkoutDispatcher::validateRetainedTargets(const WorkoutSession& session, u
                 valid = false;
             }
         } else if (staged_.speedOrigin == TargetOrigin::StandaloneManual) {
-            if (sessionActive) {
+            if (sessionActive && session.getSnapshot().workoutId != WorkoutSession::kFreeRunWorkoutId) {
                 valid = false;
             }
         }
@@ -203,7 +203,7 @@ void WorkoutDispatcher::validateRetainedTargets(const WorkoutSession& session, u
                 valid = false;
             }
         } else if (staged_.inclineOrigin == TargetOrigin::StandaloneManual) {
-            if (sessionActive) {
+            if (sessionActive && session.getSnapshot().workoutId != WorkoutSession::kFreeRunWorkoutId) {
                 valid = false;
             }
         }

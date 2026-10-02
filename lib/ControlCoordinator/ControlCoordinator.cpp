@@ -23,11 +23,18 @@ void ControlCoordinator::tick(
         ctx.timestampMs = nowMs;
 
         if (sessionSnap.workoutId == WorkoutSession::kFreeRunWorkoutId) {
-            // Manual mode, fresh start only: send speed=1.0 AND incline=0.0 unconditionally
-            dispatcher.stageInclineTarget(0.0f, ctx);
-            dispatcher.stageSpeedTarget(1.0f, ctx);
-            DiagnosticsLog::instance().addEntryf(
-                "[FreshStart] Manual mode: staged safe defaults speed=1.0 km/h, incline=0.0%%");
+            // Manual mode, fresh start only: send safe defaults speed=1.0 AND incline=0.0 ONLY when unset
+            const StagedTargets staged = dispatcher.getStagedTargets();
+            if (!staged.pendingIncline) {
+                dispatcher.stageInclineTarget(0.0f, ctx);
+                DiagnosticsLog::instance().addEntryf(
+                    "[FreshStart] Manual mode: incline unset -> staged default incline=0.0%%");
+            }
+            if (!staged.pendingSpeed) {
+                dispatcher.stageSpeedTarget(1.0f, ctx);
+                DiagnosticsLog::instance().addEntryf(
+                    "[FreshStart] Manual mode: speed unset -> staged default speed=1.0 km/h");
+            }
         } else {
             // Interval mode, fresh start only, Warmup step specifically:
             // If the Warmup step's own configured target speed is 0/unset (SpeedMode::FREE): send speed=1.0

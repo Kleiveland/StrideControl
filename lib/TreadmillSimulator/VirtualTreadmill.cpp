@@ -493,9 +493,13 @@ void VirtualTreadmill::setTargetSpeedKmh(float speedKmh) {
         }
     }
 
-    targetSpeedKmh_ = newTarget;
+    if (csafeState_.qualifiedState == CsafeMachineState::Starting) {
+        pendingStartSpeedKmh_ = newTarget;
+    } else {
+        targetSpeedKmh_ = newTarget;
+    }
 
-    if (targetSpeedKmh_ > 0.0f) {
+    if (newTarget > 0.0f) {
         if (csafeState_.qualifiedState == CsafeMachineState::Ready ||
             csafeState_.qualifiedState == CsafeMachineState::Unknown) {
             csafeState_.qualifiedState = CsafeMachineState::InUse;
@@ -519,6 +523,10 @@ void VirtualTreadmill::setTargetInclinePct(float inclinePct) {
         targetInclinePct_ = config_.inclineMaxPct;
     } else {
         targetInclinePct_ = inclinePct;
+    }
+
+    if (csafeState_.qualifiedState == CsafeMachineState::Starting) {
+        pendingStartInclinePct_ = targetInclinePct_;
     }
 }
 

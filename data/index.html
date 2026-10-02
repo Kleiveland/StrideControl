@@ -4463,7 +4463,7 @@
 
             // GUI-006: Hotkey dimming based on belt running state
             const isBeltRunning = isTelemetryLive &&
-                telem.csafe?.machineState === 'IN_USE' &&
+                (telem.csafe?.machineState === 'IN_USE' || telem.csafe?.machineState === 'STARTING') &&
                 telem.session?.state !== 'Stopped' &&
                 telem.session?.state !== 'Completed' &&
                 telem.session?.state !== 'Aborted';
@@ -4656,6 +4656,17 @@
                     applyUserProfile(restoredUser);
                 }
             }
+
+            if (typeof data.settingsRevision === 'number') {
+                if (cachedSettingsRev === null || cachedSettingsRev !== data.settingsRevision) {
+                    const now = Date.now();
+                    if (data.settingsRevision !== lastSettingsFetchErrorRev || (now - lastSettingsFetchErrorTime) >= 5000) {
+                        fetchSystemSettings(data.settingsRevision);
+                    }
+                }
+            } else if (!systemSettings) {
+                fetchSystemSettings();
+            }
         }
 
         let telemetryPollInFlight = false;
@@ -4689,7 +4700,89 @@
             }
         }
 
-        async function fetchSystemSettings() {
+        let cachedSettingsRev = null;
+        let settingsFetchInFlight = false;
+        let lastSettingsFetchErrorTime = 0;
+        let lastSettingsFetchErrorRev = null;
+
+        function applySettingsData(data, isInitialBoot = false) {
+            if (!data || !Array.isArray(data.users) || data.users.length === 0) return;
+            systemSettings = data;
+
+            // Update boot user buttons
+            const userBtns = document.querySelectorAll('.user-btn');
+            data.users.forEach((u, i) => {
+                if (userBtns[i]) {
+                    if (isValidUserName(u.name)) {
+                        userBtns[i].innerText = u.name;
+                        userBtns[i].setAttribute('data-user', u.name);
+                    } else {
+                        userBtns[i].innerHTML = '&nbsp;';
+                        userBtns[i].removeAttribute('data-user');
+                    }
+                    if (u.id !== undefined && u.id !== null) {
+                        userBtns[i].setAttribute('data-user-id', u.id);
+                    }
+                }
+            });
+
+            // Respect manual user choice: If the user has already tapped/selected a profile before settings resolves, do not overwrite the active selection
+            const alreadySelected = document.querySelector('.user-btn.selected') !== null || activeUserProfile !== null;
+            if (!alreadySelected) {
+                const firstValid = data.users.find(u => isValidUserName(u.name));
+                if (firstValid) {
+                    applyUserProfile(firstValid);
+                }
+            } else if (activeUserProfile) {
+                const selectedBtn = document.querySelector('.user-btn.selected');
+                if (selectedBtn) {
+                    const selectedIdx = Array.from(userBtns).indexOf(selectedBtn);
+                    if (selectedIdx >= 0 && data.users[selectedIdx]) {
+                        const newUser = data.users[selectedIdx];
+                        if (isInitialBoot) {
+                            applyUserProfile(newUser);
+                        } else {
+                            const sessState = lastAuthoritativeTelemetry?.session?.state;
+                            const sessionActive = sessState && !['Idle', 'Completed', 'Aborted'].includes(sessState);
+                            if (!sessionActive && JSON.stringify(activeUserProfile) !== JSON.stringify(newUser)) {
+                                applyUserProfile(newUser);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function loadSettingsFromCache() {
+            try {
+                const raw = localStorage.getItem('sc_settings_v1');
+                if (!raw) return false;
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object' && typeof parsed.rev === 'number' && parsed.data && Array.isArray(parsed.data.users) && parsed.data.users.length > 0) {
+                    cachedSettingsRev = parsed.rev;
+                    applySettingsData(parsed.data, true);
+                    return true;
+                }
+            } catch (err) {
+                console.warn('[StrideControl] Corrupt localStorage cache ignored:', err);
+            }
+            return false;
+        }
+
+        function saveSettingsToCache(rev, data) {
+            try {
+                if (typeof rev === 'number' && data && Array.isArray(data.users)) {
+                    cachedSettingsRev = rev;
+                    localStorage.setItem('sc_settings_v1', JSON.stringify({ rev: rev, data: data }));
+                }
+            } catch (err) {
+                console.warn('[StrideControl] Failed to write localStorage cache:', err);
+            }
+        }
+
+        async function fetchSystemSettings(targetRev) {
+            if (settingsFetchInFlight) return;
+            settingsFetchInFlight = true;
             try {
                 const res = await fetch('/api/settings', { cache: 'no-cache' });
                 if (!res.ok) {
@@ -4697,44 +4790,19 @@
                 }
                 const data = await res.json();
                 if (data && Array.isArray(data.users) && data.users.length > 0) {
-                    systemSettings = data;
-
-                    // Update boot user buttons
-                    const userBtns = document.querySelectorAll('.user-btn');
-                    data.users.forEach((u, i) => {
-                        if (userBtns[i]) {
-                            if (isValidUserName(u.name)) {
-                                userBtns[i].innerText = u.name;
-                                userBtns[i].setAttribute('data-user', u.name);
-                            } else {
-                                userBtns[i].innerHTML = '&nbsp;';
-                                userBtns[i].removeAttribute('data-user');
-                            }
-                            if (u.id !== undefined && u.id !== null) {
-                                userBtns[i].setAttribute('data-user-id', u.id);
-                            }
-                        }
-                    });
-
-                    // Respect manual user choice: If the user has already tapped/selected a profile before fetchSystemSettings() resolves, do not overwrite the active selection
-                    const alreadySelected = document.querySelector('.user-btn.selected') !== null || activeUserProfile !== null;
-                    if (!alreadySelected) {
-                        const firstValid = data.users.find(u => isValidUserName(u.name));
-                        if (firstValid) {
-                            applyUserProfile(firstValid);
-                        }
-                    } else if (activeUserProfile) {
-                        const selectedBtn = document.querySelector('.user-btn.selected');
-                        if (selectedBtn) {
-                            const selectedIdx = Array.from(userBtns).indexOf(selectedBtn);
-                            if (selectedIdx >= 0 && data.users[selectedIdx]) {
-                                applyUserProfile(data.users[selectedIdx]);
-                            }
-                        }
+                    applySettingsData(data, false);
+                    if (typeof targetRev === 'number') {
+                        saveSettingsToCache(targetRev, data);
                     }
+                    lastSettingsFetchErrorRev = null;
+                    lastSettingsFetchErrorTime = 0;
                 }
             } catch (err) {
                 console.error('[StrideControl] Failed to fetch /api/settings:', err);
+                lastSettingsFetchErrorTime = Date.now();
+                lastSettingsFetchErrorRev = (typeof targetRev === 'number') ? targetRev : null;
+            } finally {
+                settingsFetchInFlight = false;
             }
         }
 
@@ -4742,7 +4810,9 @@
             setDashboardHotkeysEnabled(false);
             initSettingsAndHotkeysUI();
             fetchSpeedAndRampCapabilities();
-            fetchSystemSettings();
+
+            loadSettingsFromCache();
+
             pollTelemetry();
             setInterval(pollTelemetry, TELEMETRY_POLL_INTERVAL_MS);
         }
