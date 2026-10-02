@@ -301,10 +301,43 @@ void WebServerManager::registerRoutes() {
         csafe["linkStatus"] = csafeLinkStatusName(report.csafe.linkStatus);
         csafe["fresh"] = report.csafe.machineStateFresh;
 
+        MaintenanceConfig m = SettingsService::instance().getMaintenanceConfig();
         JsonObject maintenance = doc["maintenance"].to<JsonObject>();
         maintenance["distanceMeters"] = report.maintenanceDistanceMeters;
         maintenance["timeSeconds"] = report.maintenanceTimeSeconds;
         maintenance["savePending"] = report.maintenanceSavePending;
+        maintenance["lastLubricationDate"] = m.lastLubricationDate;
+        maintenance["lastLubricationTimeSeconds"] = m.lastLubricationTimeSeconds;
+        maintenance["lubricationIntervalHours"] = m.lubricationIntervalHours;
+        maintenance["lubricationIntervalDays"] = m.lubricationIntervalDays;
+
+        bool due = false;
+        if (m.lastLubricationDate[0] != '\0') {
+            const uint64_t curTimeSec = std::max(report.maintenanceTimeSeconds, m.totalTimeSeconds);
+            const uint64_t lastTimeSec = m.lastLubricationTimeSeconds;
+            const uint32_t hoursSince = (curTimeSec >= lastTimeSec) ? static_cast<uint32_t>((curTimeSec - lastTimeSec) / 3600) : 0;
+            if (m.lubricationIntervalHours > 0 && hoursSince >= m.lubricationIntervalHours) {
+                due = true;
+            }
+            time_t now = time(nullptr);
+            if (!due && now > 1700000000 && m.lubricationIntervalDays > 0) {
+                int y = 0, mon = 0, d = 0;
+                if (sscanf(m.lastLubricationDate, "%d-%d-%d", &y, &mon, &d) == 3) {
+                    struct tm tmService {};
+                    tmService.tm_year = y - 1900;
+                    tmService.tm_mon = mon - 1;
+                    tmService.tm_mday = d;
+                    time_t serviceTime = mktime(&tmService);
+                    if (serviceTime != static_cast<time_t>(-1) && now >= serviceTime) {
+                        uint32_t elapsedDays = static_cast<uint32_t>((now - serviceTime) / 86400);
+                        if (elapsedDays >= m.lubricationIntervalDays) {
+                            due = true;
+                        }
+                    }
+                }
+            }
+        }
+        maintenance["lubricationDue"] = due;
 
         doc["elapsedTimeMs"] = report.totalElapsedTimeMs;
         doc["targetSpeedKmh"] = report.targetSpeedKmh;

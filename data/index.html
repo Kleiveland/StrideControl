@@ -4103,18 +4103,20 @@
         function isLubricationDue(maint) {
             if (!maint || typeof maint !== 'object') return false;
             if (maint.lubricationDue === true) return true;
-            if (maint.lastLubricationDate && typeof maint.lastLubricationTimeSeconds === 'number' && maint.lastLubricationTimeSeconds > 0) {
-                const intervalH = maint.lubricationIntervalHours || 50;
-                const intervalDays = maint.lubricationIntervalDays || 60;
+            if (maint.lastLubricationDate && typeof maint.lastLubricationTimeSeconds === 'number' && maint.lastLubricationTimeSeconds >= 0) {
+                const intervalH = (typeof maint.lubricationIntervalHours === 'number' && maint.lubricationIntervalHours > 0) ? maint.lubricationIntervalHours : 50;
+                const intervalDays = (typeof maint.lubricationIntervalDays === 'number' && maint.lubricationIntervalDays > 0) ? maint.lubricationIntervalDays : 60;
                 const totalSec = maint.timeSeconds || 0;
                 const hoursSince = Math.max(0, (totalSec - maint.lastLubricationTimeSeconds) / 3600);
                 const lastDate = new Date(maint.lastLubricationDate + 'T00:00:00');
-                const elapsedDays = Math.max(0, Math.floor((Date.now() - lastDate.getTime()) / 86400000));
-                if (hoursSince >= intervalH || elapsedDays >= intervalDays) {
+                if (!isNaN(lastDate.getTime())) {
+                    const elapsedDays = Math.max(0, Math.floor((Date.now() - lastDate.getTime()) / 86400000));
+                    if (hoursSince >= intervalH || elapsedDays >= intervalDays) {
+                        return true;
+                    }
+                } else if (hoursSince >= intervalH) {
                     return true;
                 }
-            } else {
-                return true;
             }
             return false;
         }
