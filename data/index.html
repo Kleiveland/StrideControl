@@ -2442,8 +2442,40 @@
             return pts.join(' ');
         }
 
+        let tlSignature = '';
+        let tlBlocksByTrack = [];
+
+
+        function timelineSignature(wk, isFreeRun, durationsMs, live, sess) {
+            if (isFreeRun) {
+                const prof = sess?.activeStepProfile;
+                const profKey = Array.isArray(prof) ? prof.join(',') : '';
+                return 'free:' + profKey;
+            }
+            const manual = Math.round((sess?.manualSegment?.durationMs || 0) / 1000);
+            const manProf = Array.isArray(sess?.manualSegment?.profile) ? sess.manualSegment.profile.join(',') : '';
+            const liveKey = live ? (live.index + ':' + Math.round(live.durationMs / 1000)) : '-';
+            const done = Array.isArray(sess?.completedStepProfiles) ? sess.completedStepProfiles.length : 0;
+            const activeProf = Array.isArray(sess?.activeStepProfile) ? sess.activeStepProfile.join(',') : '';
+            return [
+                wk?.numericId ?? wk?.id ?? '',
+                manual,
+                manProf,
+                liveKey,
+                (durationsMs || []).map(d => Math.round(d / 1000)).join(','),
+                done,
+                activeProf
+            ].join('|');
+        }
+
         function renderTimelines(wkModel = model, isFreeRun = false, actualDurationsMs = [], liveCurrentStep = null, sessionData = null) {
             const sess = sessionData || (typeof lastAuthoritativeTelemetry !== 'undefined' ? lastAuthoritativeTelemetry?.session : null);
+            const currentSig = timelineSignature(wkModel, isFreeRun, actualDurationsMs, liveCurrentStep, sess);
+
+            if (currentSig && currentSig === tlSignature) {
+                return;
+            }
+            tlSignature = currentSig;
 
             if (isFreeRun) {
                 const freeRunProfile = sess?.activeStepProfile;
@@ -2454,6 +2486,8 @@
                 if (dom.p2Track) dom.p2Track.innerHTML = freeRunHTML;
                 if (dom.stopTrack) dom.stopTrack.innerHTML = freeRunHTML;
                 if (dom.summaryTrack) dom.summaryTrack.innerHTML = freeRunHTML;
+                const trackEls = [dom.runTrack, dom.p1Track, dom.p2Track, dom.stopTrack, dom.summaryTrack].filter(Boolean);
+                tlBlocksByTrack = trackEls.map(t => Array.from(t.querySelectorAll('.t-block-mass')));
                 return;
             }
 
@@ -2525,21 +2559,40 @@
             if (dom.p2Track) dom.p2Track.innerHTML = blocksHTML;
             if (dom.stopTrack) dom.stopTrack.innerHTML = blocksHTML;
             if (dom.summaryTrack) dom.summaryTrack.innerHTML = blocksHTML;
+
+            const trackEls = [dom.preTrack, dom.runTrack, dom.p1Track, dom.p2Track, dom.stopTrack, dom.summaryTrack].filter(Boolean);
+            tlBlocksByTrack = trackEls.map(t => Array.from(t.querySelectorAll('.t-block-mass')));
         }
 
         function applyLiveTimelineProgress(currentStepIdx) {
-            document.querySelectorAll('.t-block-mass').forEach(block => {
-                const idx = parseInt(block.getAttribute('data-step-idx'), 10);
-                block.classList.remove('t-block-completed', 't-block-active');
-                if (idx < currentStepIdx) {
-                    block.classList.add('t-block-completed');
-                    block.style.setProperty('--progress', '100%');
-                } else if (idx === currentStepIdx) {
-                    block.classList.add('t-block-active');
-                } else {
-                    block.style.setProperty('--progress', '0%');
+            if (!tlBlocksByTrack || !tlBlocksByTrack.length) {
+                const trackEls = [dom.preTrack, dom.runTrack, dom.p1Track, dom.p2Track, dom.stopTrack, dom.summaryTrack].filter(Boolean);
+                tlBlocksByTrack = trackEls.map(t => Array.from(t.querySelectorAll('.t-block-mass')));
+            }
+            for (let t = 0; t < tlBlocksByTrack.length; t++) {
+                const blocks = tlBlocksByTrack[t];
+                for (let b = 0; b < blocks.length; b++) {
+                    const block = blocks[b];
+                    const idx = parseInt(block.getAttribute('data-step-idx'), 10);
+                    if (idx < currentStepIdx) {
+                        if (!block.classList.contains('t-block-completed')) {
+                            block.classList.remove('t-block-active');
+                            block.classList.add('t-block-completed');
+                            block.style.setProperty('--progress', '100%');
+                        }
+                    } else if (idx === currentStepIdx) {
+                        if (!block.classList.contains('t-block-active')) {
+                            block.classList.remove('t-block-completed');
+                            block.classList.add('t-block-active');
+                        }
+                    } else {
+                        if (block.classList.contains('t-block-completed') || block.classList.contains('t-block-active') || block.style.getPropertyValue('--progress') !== '0%') {
+                            block.classList.remove('t-block-completed', 't-block-active');
+                            block.style.setProperty('--progress', '0%');
+                        }
+                    }
                 }
-            });
+            }
         }
 
         // ===================================================================
@@ -2823,6 +2876,7 @@
                 
                 renderList();
                 if (dom.totalTime) dom.totalTime.textContent = formatTotalWorkoutDuration(calculateTotalSeconds());
+                tlSignature = '';
                 renderTimelines();
                 return;
             }
@@ -2848,6 +2902,7 @@
                 patchActiveField(field, displayVal);
                 renderList();
                 if (dom.totalTime) dom.totalTime.textContent = formatTotalWorkoutDuration(calculateTotalSeconds());
+                tlSignature = '';
                 renderTimelines();
             }
         });
@@ -3056,6 +3111,7 @@
             renderList();
             renderEditor();
             renderEditorDropdown();
+            tlSignature = '';
             renderTimelines();
         }
 
@@ -3953,10 +4009,12 @@
 
             const isFreeRunSummary = data?.session?.workoutId === 65535;
             if (isFreeRunSummary) {
+                tlSignature = '';
                 renderTimelines(model, true);
             } else if (typeof data?.session?.workoutId === 'number') {
                 const summaryWorkout = workoutLibrary.find(w => w.numericId === data.session.workoutId);
                 if (summaryWorkout) {
+                    tlSignature = '';
                     renderTimelines(summaryWorkout, false, data?.session?.actualStepDurationsMs ?? []);
                 }
             }
