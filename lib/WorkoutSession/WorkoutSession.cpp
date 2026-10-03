@@ -130,8 +130,14 @@ bool WorkoutSession::armWorkout(const ExpandedWorkout* workout, uint32_t nowMs, 
                                           snapshot_.state == WorkoutSessionState::Suspended) &&
                                          (snapshot_.workoutId == kFreeRunWorkoutId);
 
+    const bool rearmingKeepingManual =
+        (snapshot_.state == WorkoutSessionState::Armed) && hasManualPrefix_ &&
+        (userId == 0 || snapshot_.armedUserId == 0 || snapshot_.armedUserId == userId);
+
     if (transitioningFromManual) {
         finalizeManualProfile();
+    } else if (rearmingKeepingManual) {
+        // Keep the frozen manual prefix
     } else {
         hasManualPrefix_ = false;
         manualDurationMs_ = 0;
