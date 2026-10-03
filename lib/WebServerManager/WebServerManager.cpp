@@ -19,7 +19,88 @@
 #include "SimulatorHtml.h"
 #endif
 
+#include <rom/rtc.h>
+
 namespace stridecontrol {
+
+static esp_reset_reason_t s_bootResetReason = ESP_RST_UNKNOWN;
+static int s_bootResetCode = 0;
+static const char* s_bootResetReasonName = "UNKNOWN";
+static bool s_bootResetReasonCaptured = false;
+
+static void captureBootResetReason() {
+    if (s_bootResetReasonCaptured) return;
+    s_bootResetReasonCaptured = true;
+
+    s_bootResetReason = esp_reset_reason();
+    s_bootResetCode = static_cast<int>(s_bootResetReason);
+
+    switch (s_bootResetReason) {
+        case ESP_RST_POWERON:    s_bootResetReasonName = "POWERON"; break;
+        case ESP_RST_EXT:        s_bootResetReasonName = "EXT_PIN"; break;
+        case ESP_RST_SW:         s_bootResetReasonName = "SW"; break;
+        case ESP_RST_PANIC:      s_bootResetReasonName = "PANIC"; break;
+        case ESP_RST_INT_WDT:    s_bootResetReasonName = "INT_WDT"; break;
+        case ESP_RST_TASK_WDT:   s_bootResetReasonName = "TASK_WDT"; break;
+        case ESP_RST_WDT:        s_bootResetReasonName = "OTHER_WDT"; break;
+        case ESP_RST_DEEPSLEEP:  s_bootResetReasonName = "DEEPSLEEP"; break;
+        case ESP_RST_BROWNOUT:   s_bootResetReasonName = "BROWNOUT"; break;
+        case ESP_RST_SDIO:       s_bootResetReasonName = "SDIO"; break;
+        case ESP_RST_UNKNOWN:
+        default: {
+            RESET_REASON rtcReason = rtc_get_reset_reason(0);
+            s_bootResetCode = static_cast<int>(rtcReason);
+            if (rtcReason == POWERON_RESET) {
+                s_bootResetReasonName = "POWERON";
+            } else if (rtcReason == RTC_SW_SYS_RESET || rtcReason == RTC_SW_CPU_RESET) {
+                s_bootResetReasonName = "SW";
+            } else if (rtcReason == RTCWDT_BROWN_OUT_RESET) {
+                s_bootResetReasonName = "BROWNOUT";
+            } else if (rtcReason == TG0WDT_SYS_RESET || rtcReason == RTCWDT_SYS_RESET || rtcReason == TG0WDT_CPU_RESET || rtcReason == RTCWDT_CPU_RESET || rtcReason == RTCWDT_RTC_RESET || rtcReason == SUPER_WDT_RESET) {
+                s_bootResetReasonName = "INT_WDT";
+            } else if (rtcReason == TG1WDT_SYS_RESET || rtcReason == TG1WDT_CPU_RESET) {
+                s_bootResetReasonName = "TASK_WDT";
+            } else if (rtcReason == USB_UART_CHIP_RESET || rtcReason == USB_JTAG_CHIP_RESET) {
+                s_bootResetReasonName = "USB";
+            } else {
+                s_bootResetReasonName = "UNKNOWN";
+            }
+            break;
+        }
+    }
+}
+
+const char* resetReasonToString(esp_reset_reason_t reason) {
+    switch (reason) {
+        case ESP_RST_POWERON:    return "POWERON";
+        case ESP_RST_EXT:        return "EXT_PIN";
+        case ESP_RST_SW:         return "SW";
+        case ESP_RST_PANIC:      return "PANIC";
+        case ESP_RST_INT_WDT:    return "INT_WDT";
+        case ESP_RST_TASK_WDT:   return "TASK_WDT";
+        case ESP_RST_WDT:        return "OTHER_WDT";
+        case ESP_RST_DEEPSLEEP:  return "DEEPSLEEP";
+        case ESP_RST_BROWNOUT:   return "BROWNOUT";
+        case ESP_RST_SDIO:       return "SDIO";
+        case ESP_RST_UNKNOWN:
+        default:                 return "UNKNOWN";
+    }
+}
+
+esp_reset_reason_t getBootResetReason() {
+    captureBootResetReason();
+    return s_bootResetReason;
+}
+
+int getBootResetCode() {
+    captureBootResetReason();
+    return s_bootResetCode;
+}
+
+const char* getBootResetReasonName() {
+    captureBootResetReason();
+    return s_bootResetReasonName;
+}
 
 namespace {
 
@@ -383,6 +464,8 @@ void WebServerManager::registerRoutes() {
         doc["min_free_heap"] = ESP.getMinFreeHeap();
         doc["free_psram"] = ESP.getFreePsram();
         doc["wifi_rssi"] = WiFi.RSSI();
+        doc["reset_reason"] = getBootResetReasonName();
+        doc["reset_code"] = getBootResetCode();
 
         AsyncResponseStream* stream = request->beginResponseStream("application/json");
         stream->addHeader("Access-Control-Allow-Origin", "*");

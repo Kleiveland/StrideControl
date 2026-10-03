@@ -297,6 +297,7 @@ void setup() {
 #else
     Serial.println("   Profile: ESP32-S3-DEVKITC-1-N16R8 (Production) ");
 #endif
+    Serial.printf("   Reset reason: %s (%d)\n", stridecontrol::getBootResetReasonName(), stridecontrol::getBootResetCode());
     Serial.println("==================================================");
 
     // 1. Mount LittleFS Filesystem for UI Hosting & Configuration

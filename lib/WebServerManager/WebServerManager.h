@@ -3,12 +3,18 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#include <esp_system.h>
 #include "NetworkManager.h"
 #include "ITelemetryProvider.h"
 #include "ControlCommand.h"
 #include "SettingsService.h"
 
 namespace stridecontrol {
+
+const char* resetReasonToString(esp_reset_reason_t reason);
+esp_reset_reason_t getBootResetReason();
+int getBootResetCode();
+const char* getBootResetReasonName();
 
 #if defined(STRIDECONTROL_TESTBENCH)
 class TestbenchControlRuntime;
