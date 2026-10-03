@@ -3,6 +3,41 @@
 
 namespace stridecontrol {
 
+static const char* getMdnsHostname() {
+    static char s_hostname[64]{};
+    static bool s_initialized = false;
+    if (!s_initialized) {
+        const char* base = Secrets::MDNS_HOSTNAME;
+#if defined(STRIDECONTROL_TESTBENCH)
+        snprintf(s_hostname, sizeof(s_hostname), "%s-sim", base);
+#else
+        snprintf(s_hostname, sizeof(s_hostname), "%s", base);
+#endif
+        size_t len = strlen(s_hostname);
+        if (len > 63) len = 63;
+        size_t outIdx = 0;
+        for (size_t i = 0; i < len; ++i) {
+            char c = s_hostname[i];
+            if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+                s_hostname[outIdx++] = c;
+            } else if (c >= 'A' && c <= 'Z') {
+                s_hostname[outIdx++] = static_cast<char>(c + ('a' - 'A'));
+            }
+        }
+        s_hostname[outIdx] = '\0';
+        if (outIdx == 0) {
+#if defined(STRIDECONTROL_TESTBENCH)
+            strncpy(s_hostname, "stridecontrol-sim", sizeof(s_hostname) - 1);
+#else
+            strncpy(s_hostname, "stridecontrol", sizeof(s_hostname) - 1);
+#endif
+            s_hostname[sizeof(s_hostname) - 1] = '\0';
+        }
+        s_initialized = true;
+    }
+    return s_hostname;
+}
+
 NetworkManager::NetworkManager() = default;
 
 bool NetworkManager::begin() {
@@ -30,7 +65,7 @@ void NetworkManager::startSTA() {
     delay(100);
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(WIFI_PS_MIN_MODEM);
-    WiFi.setHostname(Secrets::MDNS_HOSTNAME);
+    WiFi.setHostname(getMdnsHostname());
     WiFi.begin(Secrets::WIFI_SSID, Secrets::WIFI_PASS);
 }
 
@@ -57,10 +92,11 @@ void NetworkManager::startAP() {
 
 void NetworkManager::initMDNS() {
     if (!mdnsStarted_) {
-        if (MDNS.begin(Secrets::MDNS_HOSTNAME)) {
+        const char* hostname = getMdnsHostname();
+        if (MDNS.begin(hostname)) {
             mdnsStarted_ = true;
             MDNS.addService("http", "tcp", 80);
-            Serial.printf("[NetworkManager] mDNS responder started: http://%s.local\n", Secrets::MDNS_HOSTNAME);
+            Serial.printf("[NetworkManager] mDNS responder started: http://%s.local\n", hostname);
         } else {
             Serial.println("[NetworkManager] Failed to start mDNS responder.");
         }
