@@ -353,7 +353,7 @@ private:
     uint32_t physicalButtonCount_ = 0;
 
     static constexpr uint32_t kPeriodMs = 20; // 50 Hz
-    static constexpr uint32_t kTaskStackSize = 8192;
+    static constexpr uint32_t kTaskStackSize = 16384;
     static constexpr UBaseType_t kTaskPriority = 5;
     static constexpr BaseType_t kTaskCore = 1; // Moved off Core 0 to reduce WiFi/BT radio task contention
 

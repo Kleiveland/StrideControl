@@ -171,7 +171,7 @@ public:
     // Timing and task constants
     static constexpr uint32_t kPeriodMs = 20;            // 50 Hz control cadence
     static constexpr uint32_t kMaxSnapshotAgeMs = 200;   // 10 frames @ 50 Hz
-    static constexpr uint32_t kTaskStackSize = 4096;
+    static constexpr uint32_t kTaskStackSize = 16384;
     static constexpr UBaseType_t kTaskPriority = 4;      // Above background BLE (3)
     static constexpr BaseType_t kTaskCore = 0;           // Dedicated Core 0 (PRO_CPU)
 

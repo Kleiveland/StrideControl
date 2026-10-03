@@ -467,6 +467,29 @@ void WebServerManager::registerRoutes() {
         doc["reset_reason"] = getBootResetReasonName();
         doc["reset_code"] = getBootResetCode();
 
+        TaskHandle_t ctrlTask = xTaskGetHandle("TbControlTask");
+        if (!ctrlTask) {
+            ctrlTask = xTaskGetHandle("ControlRuntime");
+        }
+        if (ctrlTask) {
+            doc["control_task_stack_hwm"] = static_cast<uint32_t>(uxTaskGetStackHighWaterMark(ctrlTask));
+        } else {
+            doc["control_task_stack_hwm"] = 0;
+        }
+
+        JsonObject tasksHwm = doc["tasks_stack_hwm"].to<JsonObject>();
+        const char* taskNames[] = {
+            "TbControlTask", "ControlRuntime", "TbBleTask", "BleLifecycle",
+            "AppOrchestrator", "ConsoleBuzzer", "ConsolePanel", "ConsoleCommand",
+            "async_tcp", "loopTask"
+        };
+        for (const char* name : taskNames) {
+            TaskHandle_t th = xTaskGetHandle(name);
+            if (th) {
+                tasksHwm[name] = static_cast<uint32_t>(uxTaskGetStackHighWaterMark(th));
+            }
+        }
+
         AsyncResponseStream* stream = request->beginResponseStream("application/json");
         stream->addHeader("Access-Control-Allow-Origin", "*");
         serializeJson(doc, *stream);
