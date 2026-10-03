@@ -95,6 +95,7 @@ public:
     virtual uint8_t getInclineCommissioningPointCount() const { return 0; }
     virtual bool didInclineCommissioningTimeOut() const { return false; }
     virtual void onSpeedConfigUpdated(const SpeedConfig& config) {}
+    virtual void onMaintenanceConfigUpdated(const MaintenanceConfig& config) {}
     virtual SpeedCalibrationResult calculateSpeedCommand(float physicalSpeedKmh) const {
         return SpeedCalibrationResult(physicalSpeedKmh, physicalSpeedKmh, SpeedCalibrationResultStatus::IdentityFallback);
     }

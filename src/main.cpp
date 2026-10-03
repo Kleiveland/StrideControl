@@ -402,6 +402,7 @@ void setup() {
     s_orchestrator.begin(orchestratorDeps);
 
     // 5. Initialize System Manager and Start Dedicated Core 0 Control Task
+    s_systemManager.getControlRuntime().setMaintenanceService(&s_maintenanceService);
     s_systemManager.begin(millis());
     s_systemManager.startControlTask(&s_orchestrator);
     s_webServerManager.attachCommandStager(&s_systemManager.getControlRuntime());
@@ -417,6 +418,8 @@ void loop() {
     s_networkManager.update();
 
 #if defined(STRIDECONTROL_TESTBENCH)
+    s_testbenchRuntime.getMaintenanceService().processSave();
+
     const uint32_t nowMs = millis();
 
     while (Serial.available() > 0) {
@@ -469,6 +472,7 @@ void loop() {
         );
     }
 #else
+    s_maintenanceService.processSave();
     s_systemManager.update();
 
     static uint32_t s_lastDiagMs = 0;

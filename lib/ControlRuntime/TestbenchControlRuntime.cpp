@@ -427,6 +427,8 @@ bool TestbenchControlRuntime::begin(const WorkoutSessionConfig& sessionConfig, c
     deps.runnerDynamics = &runnerDynamics_;
     deps.inclineVerifier = &inclineVerifier_;
     deps.diagnosticsService = &diagService_;
+    maintenanceService_.begin(&SettingsService::instance());
+    deps.maintenanceService = &maintenanceService_;
     deps.bleManager = &bleManager_;
     deps.hrClient = &heartRateClient_;
     orchestrator_.begin(deps, OrchestratorExecutionMode::ExternalStep);

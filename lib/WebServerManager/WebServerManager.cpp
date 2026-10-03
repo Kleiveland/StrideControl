@@ -2340,7 +2340,7 @@ void WebServerManager::registerRoutes() {
     });
 
     // POST /api/v1/maintenance
-    auto maintenancePostHandler = [](AsyncWebServerRequest* request) {
+    auto maintenancePostHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {
             if (request->_tempObject) {
                 free(request->_tempObject);
@@ -2373,11 +2373,14 @@ void WebServerManager::registerRoutes() {
         }
 
         MaintenanceConfig candidate = SettingsService::instance().getMaintenanceConfig();
+        bool hasTotals = false;
         if (doc["totalDistanceMeters"].is<uint64_t>()) {
             candidate.totalDistanceMeters = doc["totalDistanceMeters"].as<uint64_t>();
+            hasTotals = true;
         }
         if (doc["totalTimeSeconds"].is<uint64_t>()) {
             candidate.totalTimeSeconds = doc["totalTimeSeconds"].as<uint64_t>();
+            hasTotals = true;
         }
         if (doc["lastLubricationDate"].is<const char*>()) {
             const char* dStr = doc["lastLubricationDate"].as<const char*>();
@@ -2409,6 +2412,15 @@ void WebServerManager::registerRoutes() {
         if (!ok) {
             request->send(500, "application/json", "{\"error\":\"Failed to save maintenance config\"}");
             return;
+        }
+
+        if (hasTotals) {
+            if (commandStager_ != nullptr) {
+                commandStager_->onMaintenanceConfigUpdated(candidate);
+            }
+            if (systemManager_ != nullptr) {
+                systemManager_->onMaintenanceConfigUpdated(candidate);
+            }
         }
 
         request->send(200, "application/json", "{\"status\":\"saved\"}");
@@ -2878,6 +2890,14 @@ void WebServerManager::registerRoutes() {
                 systemManager_->onSpeedConfigUpdated(candSpeed);
             }
         }
+        if (hasMaint) {
+            if (commandStager_ != nullptr) {
+                commandStager_->onMaintenanceConfigUpdated(candMaint);
+            }
+            if (systemManager_ != nullptr) {
+                systemManager_->onMaintenanceConfigUpdated(candMaint);
+            }
+        }
 
         request->send(200, "application/json", "{\"status\":\"restored\"}");
     };
@@ -3239,9 +3259,11 @@ bool WebServerManager::rollbackToLastKnownGood(char* errBuf, size_t errBufLen) {
 
     if (commandStager_ != nullptr) {
         commandStager_->onSpeedConfigUpdated(lastKnownGoodSnapshot_.speed);
+        commandStager_->onMaintenanceConfigUpdated(lastKnownGoodSnapshot_.maintenance);
     }
     if (systemManager_ != nullptr) {
         systemManager_->onSpeedConfigUpdated(lastKnownGoodSnapshot_.speed);
+        systemManager_->onMaintenanceConfigUpdated(lastKnownGoodSnapshot_.maintenance);
     }
 
     return allOk;

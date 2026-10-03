@@ -17,6 +17,7 @@
 #include "ImuInterface.h"
 #include "RunnerDynamics.h"
 #include "DiagnosticsService.h"
+#include "MaintenanceService.h"
 #include "ApplicationOrchestrator.h"
 #include "WorkoutSession.h"
 #include "WorkoutSessionTypes.h"
@@ -131,6 +132,9 @@ public:
         speedLearningTracker_.setActiveSpeedConfig(config);
         portEXIT_CRITICAL(&speedLearningMux_);
     }
+    void onMaintenanceConfigUpdated(const MaintenanceConfig& config) override {
+        maintenanceService_.setTotals(config.totalDistanceMeters, config.totalTimeSeconds);
+    }
     void onRampCalibrationConfigUpdated(const RampCalibrationConfig& config) {
         VirtualTreadmillConfig vtCfg = composite_.getVirtualTreadmill().getConfig();
         vtCfg.deadTimeMs = config.deadTimeMs;
@@ -188,6 +192,8 @@ public:
     HeartRateClient& getHeartRateClient() { return heartRateClient_; }
     const HeartRateClient& getHeartRateClient() const { return heartRateClient_; }
     const BleConfig& getBleConfig() const { return bleConfig_; }
+    MaintenanceService& getMaintenanceService() { return maintenanceService_; }
+    const MaintenanceService& getMaintenanceService() const { return maintenanceService_; }
 
     static const char* version();
 
@@ -285,6 +291,7 @@ private:
     RunnerDynamics runnerDynamics_;
     InclineVerifier inclineVerifier_;
     DiagnosticsService diagService_;
+    MaintenanceService maintenanceService_;
     ApplicationOrchestrator orchestrator_;
     BleManager bleManager_;
     BleConfig bleConfig_{};

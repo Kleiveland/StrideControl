@@ -24,6 +24,7 @@ void MaintenanceService::begin(SettingsService* settingsService) {
     lastSavedTimeSeconds_ = initialTime;
     fractionalMetersAccumulator_ = 0.0f;
     fractionalTimeMsAccumulator_ = 0;
+    stoppedDurationMs_ = 0;
     initialized_ = (settingsService_ != nullptr);
     portEXIT_CRITICAL(&lock_);
 
@@ -42,6 +43,8 @@ void MaintenanceService::update(float currentSpeedKmh, uint32_t deltaMs) {
     }
 
     if (currentSpeedKmh >= kMinMovingSpeedKmh) {
+        stoppedDurationMs_ = 0;
+
         // Delta distance in meters = (km/h / 3.6) * (deltaMs / 1000) = (speed * deltaMs) / 3600
         const float deltaMeters = (currentSpeedKmh * static_cast<float>(deltaMs)) / 3600.0f;
         fractionalMetersAccumulator_ += deltaMeters;
@@ -64,6 +67,15 @@ void MaintenanceService::update(float currentSpeedKmh, uint32_t deltaMs) {
             (totalTimeSeconds_ - lastSavedTimeSeconds_ >= kSaveTimeIntervalSeconds)) {
             pendingSave_.store(true);
         }
+    } else {
+        // Flag save only after speed has been below 0.1 km/h continuously for 3 s
+        stoppedDurationMs_ += deltaMs;
+        if (stoppedDurationMs_ >= kStopSaveDebounceMs) {
+            if (totalDistanceMeters_ != lastSavedDistanceMeters_ ||
+                totalTimeSeconds_ != lastSavedTimeSeconds_) {
+                pendingSave_.store(true);
+            }
+        }
     }
     portEXIT_CRITICAL(&lock_);
 }
@@ -84,13 +96,14 @@ void MaintenanceService::forceSave() {
 }
 
 void MaintenanceService::flushToStorage() {
-    MaintenanceConfig cfg{};
+    uint64_t dist = 0;
+    uint64_t timeSec = 0;
     bool readyToSave = false;
 
     portENTER_CRITICAL(&lock_);
     if (initialized_ && settingsService_ != nullptr) {
-        cfg.totalDistanceMeters = totalDistanceMeters_;
-        cfg.totalTimeSeconds = totalTimeSeconds_;
+        dist = totalDistanceMeters_;
+        timeSec = totalTimeSeconds_;
         lastSavedDistanceMeters_ = totalDistanceMeters_;
         lastSavedTimeSeconds_ = totalTimeSeconds_;
         readyToSave = true;
@@ -98,8 +111,21 @@ void MaintenanceService::flushToStorage() {
     portEXIT_CRITICAL(&lock_);
 
     if (readyToSave && settingsService_ != nullptr) {
-        settingsService_->saveMaintenanceConfig(cfg);
+        settingsService_->saveMaintenanceTotals(dist, timeSec);
     }
+}
+
+void MaintenanceService::setTotals(uint64_t distanceMeters, uint64_t timeSeconds) {
+    portENTER_CRITICAL(&lock_);
+    totalDistanceMeters_ = distanceMeters;
+    totalTimeSeconds_ = timeSeconds;
+    lastSavedDistanceMeters_ = distanceMeters;
+    lastSavedTimeSeconds_ = timeSeconds;
+    fractionalMetersAccumulator_ = 0.0f;
+    fractionalTimeMsAccumulator_ = 0;
+    stoppedDurationMs_ = 0;
+    portEXIT_CRITICAL(&lock_);
+    pendingSave_.store(false);
 }
 
 uint64_t MaintenanceService::getTotalDistanceMeters() const {

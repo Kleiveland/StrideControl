@@ -325,6 +325,21 @@ bool SettingsService::saveMaintenanceConfig(const MaintenanceConfig& config) {
     return ok;
 }
 
+bool SettingsService::saveMaintenanceTotals(uint64_t totalDistanceMeters, uint64_t totalTimeSeconds) {
+    bool ok = false;
+    if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        Preferences prefs;
+        if (prefs.begin(kNvsNamespace, false)) {
+            prefs.putULong64("maint_dist", totalDistanceMeters);
+            prefs.putULong64("maint_time", totalTimeSeconds);
+            prefs.end();
+            ok = true;
+        }
+        xSemaphoreGive(mutex_);
+    }
+    return ok;
+}
+
 RampCalibrationConfig SettingsService::getRampCalibrationConfig() {
     RampCalibrationConfig cfg{};
     if (xSemaphoreTake(mutex_, pdMS_TO_TICKS(1000)) == pdTRUE) {

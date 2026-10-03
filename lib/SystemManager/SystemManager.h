@@ -51,6 +51,9 @@ public:
         calibration_.setConfiguration(config);
         controlRuntime_.onSpeedConfigUpdated(config);
     }
+    void onMaintenanceConfigUpdated(const MaintenanceConfig& config) {
+        controlRuntime_.onMaintenanceConfigUpdated(config);
+    }
 
     static const char* version();
 

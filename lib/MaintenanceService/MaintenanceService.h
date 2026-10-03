@@ -28,6 +28,7 @@ public:
 
     bool isSavePending() const;
     void processSave();
+    void setTotals(uint64_t distanceMeters, uint64_t timeSeconds);
 
     uint64_t getTotalDistanceMeters() const;
     uint64_t getTotalTimeSeconds() const;
@@ -53,9 +54,11 @@ private:
     // Wear-leveling thresholds tracking
     uint64_t lastSavedDistanceMeters_ = 0;
     uint64_t lastSavedTimeSeconds_ = 0;
+    uint32_t stoppedDurationMs_ = 0;
 
     static constexpr uint64_t kSaveDistanceIntervalMeters = 500; // 500 meters
     static constexpr uint64_t kSaveTimeIntervalSeconds = 300;     // 5 minutes
+    static constexpr uint32_t kStopSaveDebounceMs = 3000;        // 3 seconds
     static constexpr float kMinMovingSpeedKmh = 0.1f;
 };
 

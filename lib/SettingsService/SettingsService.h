@@ -47,6 +47,7 @@ public:
     bool saveSpeedSensorCalibrationFactor(float factor);
     bool saveSpeedSensorKmhPerHz(float value);
     bool saveMaintenanceConfig(const MaintenanceConfig& config);
+    bool saveMaintenanceTotals(uint64_t totalDistanceMeters, uint64_t totalTimeSeconds);
     bool saveRampCalibrationConfig(const RampCalibrationConfig& config);
     bool getBleStackEnabled();
     bool saveBleStackEnabled(bool enabled);

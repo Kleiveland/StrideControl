@@ -21,6 +21,7 @@
 #include "../ApplicationOrchestrator/ApplicationOrchestrator.h"
 #include "../InclineVerifier/InclineVerifierTypes.h"
 #include "../RampTestTracker/RampTestTracker.h"
+#include "../MaintenanceService/MaintenanceService.h"
 
 namespace stridecontrol {
 
@@ -109,11 +110,17 @@ public:
     InclineCommissioningPhase getInclineCommissioningPhase() const override { return inclineTracker_.phase(); }
     uint8_t getInclineCommissioningPointCount() const override { return inclineTracker_.pointCount(); }
     bool didInclineCommissioningTimeOut() const override { return inclineTracker_.timedOut(); }
+    void setMaintenanceService(MaintenanceService* maint) { maintenanceService_ = maint; }
     void onSpeedConfigUpdated(const SpeedConfig& config) override {
         calibration_.setConfiguration(config);
         portENTER_CRITICAL(&speedLearningMux_);
         speedLearningTracker_.setActiveSpeedConfig(config);
         portEXIT_CRITICAL(&speedLearningMux_);
+    }
+    void onMaintenanceConfigUpdated(const MaintenanceConfig& config) override {
+        if (maintenanceService_ != nullptr) {
+            maintenanceService_->setTotals(config.totalDistanceMeters, config.totalTimeSeconds);
+        }
     }
     SpeedCalibrationResult calculateSpeedCommand(float physicalSpeedKmh) const override {
         return calibration_.calculateCommand(physicalSpeedKmh);
@@ -202,6 +209,7 @@ private:
     QueueHandle_t commandQueue_ = nullptr;
 
     DiagnosticsService* diagnostics_ = nullptr;
+    MaintenanceService* maintenanceService_ = nullptr;
     ConsoleInterface& console_;
     SpeedCalibration& calibration_;
 
