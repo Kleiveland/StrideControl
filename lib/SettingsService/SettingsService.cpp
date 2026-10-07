@@ -709,6 +709,25 @@ bool SettingsService::validateSystemSettings(const SystemSettings& s, char* errB
                         setErr("Step incline target out of range (0-15%)");
                         return false;
                     }
+                    if (step.hasSpeedProgression) {
+                        if (step.role != StepRole::WORK) {
+                            setErr("Step speed progression only allowed for WORK steps");
+                            return false;
+                        }
+                        if (step.speedProgressionPerRepKmh < -2.0f || step.speedProgressionPerRepKmh > 2.0f) {
+                            setErr("Step speed progression out of range (-2.0 to +2.0 km/h)");
+                            return false;
+                        }
+                        if (step.speedMode == SpeedMode::FIXED) {
+                            for (uint16_t r = 0; r < seg.repetitions; ++r) {
+                                float projected = step.targetSpeedKmh + (static_cast<float>(r) * step.speedProgressionPerRepKmh);
+                                if (projected < 0.5f || projected > 25.0f) {
+                                    setErr("Projected step speed out of range (0.5 to 25.0 km/h)");
+                                    return false;
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -941,6 +960,9 @@ static void serializeSettingsJsonInternal(const SystemSettings& s, TDestination&
                     stObj["durationValue"] = st.durationValue;
                     stObj["speedMode"] = speedModeName(st.speedMode);
                     stObj["targetSpeedKmh"] = st.targetSpeedKmh;
+                    if (st.hasSpeedProgression && st.role == StepRole::WORK) {
+                        stObj["speedProgressionPerRepKmh"] = st.speedProgressionPerRepKmh;
+                    }
                     stObj["targetInclinePct"] = st.targetInclinePct;
                     stObj["setIncline"] = st.setIncline;
                 }
@@ -1052,6 +1074,13 @@ bool SettingsService::deserializeSettingsJson(const uint8_t* jsonBytes, size_t l
                     st.durationValue = stObj["durationValue"] | 0;
                     st.speedMode = parseSpeedMode(stObj["speedMode"] | "FIXED");
                     st.targetSpeedKmh = stObj["targetSpeedKmh"] | 0.0f;
+                    if (stObj["speedProgressionPerRepKmh"].is<float>() && st.role == StepRole::WORK) {
+                        st.speedProgressionPerRepKmh = stObj["speedProgressionPerRepKmh"].as<float>();
+                        st.hasSpeedProgression = true;
+                    } else {
+                        st.speedProgressionPerRepKmh = 0.0f;
+                        st.hasSpeedProgression = false;
+                    }
                     st.targetInclinePct = stObj["targetInclinePct"] | 0;
                     st.setIncline = stObj["setIncline"] | false;
                 }

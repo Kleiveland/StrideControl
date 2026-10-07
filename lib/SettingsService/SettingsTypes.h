@@ -42,14 +42,18 @@ struct WorkoutStep {
     uint32_t durationValue = 0; // seconds or meters
     SpeedMode speedMode = SpeedMode::FIXED;
     float targetSpeedKmh = 0.0f;
+    float speedProgressionPerRepKmh = 0.0f;
     uint8_t targetInclinePct = 0;
     bool setIncline = false;
+    bool hasSpeedProgression = false;
 
     WorkoutStep() = default;
     WorkoutStep(uint16_t id_, StepRole role_, DurationType durType_, uint32_t durVal_,
-                SpeedMode spdMode_, float spdKmh_, uint8_t incPct_ = 0, bool setInc_ = false)
+                SpeedMode spdMode_, float spdKmh_, uint8_t incPct_ = 0, bool setInc_ = false,
+                float spdProg_ = 0.0f, bool hasSpdProg_ = false)
         : id(id_), role(role_), durationType(durType_), durationValue(durVal_),
-          speedMode(spdMode_), targetSpeedKmh(spdKmh_), targetInclinePct(incPct_), setIncline(setInc_) {}
+          speedMode(spdMode_), targetSpeedKmh(spdKmh_), speedProgressionPerRepKmh(spdProg_),
+          targetInclinePct(incPct_), setIncline(setInc_), hasSpeedProgression(hasSpdProg_) {}
 };
 
 struct WorkoutSegment {

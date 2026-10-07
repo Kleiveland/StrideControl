@@ -502,6 +502,111 @@ void test_expansion_repeating_group_zero_duration_cooldown_final_rest_stripping(
     }
 }
 
+void test_expansion_321_per_step_progression() {
+    WorkoutDefinition w{};
+    w.id = 105;
+    strncpy(w.name, "3-2-1 PER-STEP", sizeof(w.name) - 1);
+    w.segmentCount = 3;
+
+    // Segment 0: Warmup
+    w.segments[0].id = 1;
+    w.segments[0].type = SegmentType::SINGLE_STEP;
+    w.segments[0].repetitions = 1;
+    w.segments[0].stepCount = 1;
+    w.segments[0].steps[0] = {10, StepRole::WARMUP, DurationType::TIME_SECONDS, 60, SpeedMode::FIXED, 6.0f, 0, false};
+
+    // Segment 1: REPEATING_GROUP x 2 with per-step WORK speeds 15/14/13 and progressions 0.2/0.3/0.5
+    w.segments[1].id = 2;
+    w.segments[1].type = SegmentType::REPEATING_GROUP;
+    w.segments[1].repetitions = 2;
+    w.segments[1].startSpeedKmh = 10.0f; // Ignored when steps have explicit targetSpeedKmh >= 0.5
+    w.segments[1].speedProgressionPerRepKmh = 0.0f;
+    w.segments[1].stepCount = 5;
+
+    // Rep 0 WORK steps: 15.0, 14.0, 13.0
+    // Rep 1 WORK steps: 15.2, 14.3, 13.5
+    w.segments[1].steps[0] = {20, StepRole::WORK, DurationType::TIME_SECONDS, 180, SpeedMode::FIXED, 15.0f, 0, false, 0.2f, true};
+    w.segments[1].steps[1] = {21, StepRole::REST, DurationType::TIME_SECONDS, 90,  SpeedMode::FIXED, 6.0f,  0, false};
+    w.segments[1].steps[2] = {22, StepRole::WORK, DurationType::TIME_SECONDS, 120, SpeedMode::FIXED, 14.0f, 0, false, 0.3f, true};
+    w.segments[1].steps[3] = {23, StepRole::REST, DurationType::TIME_SECONDS, 90,  SpeedMode::FIXED, 6.0f,  0, false};
+    w.segments[1].steps[4] = {24, StepRole::WORK, DurationType::TIME_SECONDS, 60,  SpeedMode::FIXED, 13.0f, 0, false, 0.5f, true};
+
+    // Segment 2: Cooldown
+    w.segments[2].id = 3;
+    w.segments[2].type = SegmentType::SINGLE_STEP;
+    w.segments[2].repetitions = 1;
+    w.segments[2].stepCount = 1;
+    w.segments[2].steps[0] = {30, StepRole::COOLDOWN, DurationType::TIME_SECONDS, 60, SpeedMode::FIXED, 6.0f, 0, false};
+
+    ExpandedWorkout& output = WorkoutEngine::instance().getExpandedWorkout();
+    char err[64] = {};
+    bool ok = WorkoutExpander::expand(w, output, err, sizeof(err));
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_STRING("", err);
+
+    // 1 warmup + (5 steps * 2 reps) + 1 cooldown = 12 steps
+    TEST_ASSERT_EQUAL_UINT8(12, output.totalSteps);
+
+    // Rep 0 (repNumber == 1):
+    // Step 1 (WORK 1): 15.0 km/h
+    TEST_ASSERT_EQUAL(StepRole::WORK, output.steps[1].role);
+    TEST_ASSERT_EQUAL_UINT16(1, output.steps[1].repNumber);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 15.0f, output.steps[1].targetSpeedKmh);
+
+    // Step 3 (WORK 2): 14.0 km/h
+    TEST_ASSERT_EQUAL(StepRole::WORK, output.steps[3].role);
+    TEST_ASSERT_EQUAL_UINT16(1, output.steps[3].repNumber);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 14.0f, output.steps[3].targetSpeedKmh);
+
+    // Step 5 (WORK 3): 13.0 km/h
+    TEST_ASSERT_EQUAL(StepRole::WORK, output.steps[5].role);
+    TEST_ASSERT_EQUAL_UINT16(1, output.steps[5].repNumber);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 13.0f, output.steps[5].targetSpeedKmh);
+
+    // Rep 1 (repNumber == 2):
+    // Step 6 (WORK 1): 15.0 + 1 * 0.2 = 15.2 km/h
+    TEST_ASSERT_EQUAL(StepRole::WORK, output.steps[6].role);
+    TEST_ASSERT_EQUAL_UINT16(2, output.steps[6].repNumber);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 15.2f, output.steps[6].targetSpeedKmh);
+
+    // Step 8 (WORK 2): 14.0 + 1 * 0.3 = 14.3 km/h
+    TEST_ASSERT_EQUAL(StepRole::WORK, output.steps[8].role);
+    TEST_ASSERT_EQUAL_UINT16(2, output.steps[8].repNumber);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 14.3f, output.steps[8].targetSpeedKmh);
+
+    // Step 10 (WORK 3): 13.0 + 1 * 0.5 = 13.5 km/h
+    TEST_ASSERT_EQUAL(StepRole::WORK, output.steps[10].role);
+    TEST_ASSERT_EQUAL_UINT16(2, output.steps[10].repNumber);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 13.5f, output.steps[10].targetSpeedKmh);
+}
+
+void test_expansion_legacy_workout_without_step_fields() {
+    WorkoutDefinition w = createWorkout45_15();
+    // Verify that legacy workout structure (hasSpeedProgression=false on steps,
+    // segment startSpeedKmh=14.0, segment speedProgressionPerRepKmh=0.2) expands identically to before
+    ExpandedWorkout& output = WorkoutEngine::instance().getExpandedWorkout();
+    char err[64] = {};
+    bool ok = WorkoutExpander::expand(w, output, err, sizeof(err));
+    TEST_ASSERT_TRUE(ok);
+    TEST_ASSERT_EQUAL_STRING("", err);
+
+    // Rep 0 (repNumber == 1): WORK @ 14.0
+    TEST_ASSERT_EQUAL(StepRole::WORK, output.steps[1].role);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 14.0f, output.steps[1].targetSpeedKmh);
+
+    // Rep 1 (repNumber == 2): WORK @ 14.2
+    TEST_ASSERT_EQUAL(StepRole::WORK, output.steps[3].role);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 14.2f, output.steps[3].targetSpeedKmh);
+
+    // Rep 2 (repNumber == 3): WORK @ 14.4
+    TEST_ASSERT_EQUAL(StepRole::WORK, output.steps[5].role);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 14.4f, output.steps[5].targetSpeedKmh);
+
+    // Rep 3 (repNumber == 4): WORK @ 14.6
+    TEST_ASSERT_EQUAL(StepRole::WORK, output.steps[7].role);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 14.6f, output.steps[7].targetSpeedKmh);
+}
+
 void run_all_workout_expander_tests() {
     UNITY_BEGIN();
     RUN_TEST(test_expansion_321_workout);
@@ -514,6 +619,8 @@ void run_all_workout_expander_tests() {
     RUN_TEST(test_expansion_exact_capacity);
     RUN_TEST(test_expansion_meter_duration);
     RUN_TEST(test_expansion_invalid_input);
+    RUN_TEST(test_expansion_321_per_step_progression);
+    RUN_TEST(test_expansion_legacy_workout_without_step_fields);
     UNITY_END();
 }
 

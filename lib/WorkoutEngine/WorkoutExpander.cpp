@@ -214,16 +214,33 @@ bool WorkoutExpander::expand(
 
                     // Speed calculation & validation
                     if (srcStep.role == StepRole::WORK) {
-                        float calcSpeed = seg.startSpeedKmh + (static_cast<float>(rep) * seg.speedProgressionPerRepKmh);
-                        if (calcSpeed > maxAchievableSpeedKmh) {
-                            return setError("Target speed exceeds maximum achievable speed");
+                        if (srcStep.speedMode == SpeedMode::FREE) {
+                            if (srcStep.targetSpeedKmh >= 0.5f) {
+                                if (srcStep.targetSpeedKmh > maxAchievableSpeedKmh) {
+                                    return setError("Target speed exceeds maximum achievable speed");
+                                }
+                                outStep.targetSpeedKmh = srcStep.targetSpeedKmh;
+                                lastExplicitSpeedKmh = srcStep.targetSpeedKmh;
+                                hasPriorExplicitSpeed = true;
+                            } else {
+                                outStep.targetSpeedKmh = 0.0f;
+                            }
+                        } else {
+                            float base = (srcStep.speedMode == SpeedMode::FIXED && srcStep.targetSpeedKmh >= 0.5f)
+                                             ? srcStep.targetSpeedKmh
+                                             : seg.startSpeedKmh;
+                            float prog = srcStep.hasSpeedProgression ? srcStep.speedProgressionPerRepKmh : seg.speedProgressionPerRepKmh;
+                            float calcSpeed = base + (static_cast<float>(rep) * prog);
+                            if (calcSpeed > maxAchievableSpeedKmh) {
+                                return setError("Target speed exceeds maximum achievable speed");
+                            }
+                            if (calcSpeed < 0.5f) {
+                                return setError("Target speed below minimum speed");
+                            }
+                            outStep.targetSpeedKmh = calcSpeed;
+                            lastExplicitSpeedKmh = calcSpeed;
+                            hasPriorExplicitSpeed = true;
                         }
-                        if (calcSpeed < 0.5f) {
-                            return setError("Target speed below minimum speed");
-                        }
-                        outStep.targetSpeedKmh = calcSpeed;
-                        lastExplicitSpeedKmh = calcSpeed;
-                        hasPriorExplicitSpeed = true;
                     } else if (srcStep.role == StepRole::REST) {
                         if (srcStep.speedMode == SpeedMode::FIXED && srcStep.targetSpeedKmh >= 0.5f) {
                             if (srcStep.targetSpeedKmh > maxAchievableSpeedKmh) {

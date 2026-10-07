@@ -1143,6 +1143,13 @@ void WebServerManager::registerRoutes() {
                     st.durationValue = stObj["durationValue"] | 0;
                     st.speedMode = parseSpeedMode(stObj["speedMode"] | "FIXED");
                     st.targetSpeedKmh = stObj["targetSpeedKmh"] | 0.0f;
+                    if (stObj["speedProgressionPerRepKmh"].is<float>() && st.role == StepRole::WORK) {
+                        st.speedProgressionPerRepKmh = stObj["speedProgressionPerRepKmh"].as<float>();
+                        st.hasSpeedProgression = true;
+                    } else {
+                        st.speedProgressionPerRepKmh = 0.0f;
+                        st.hasSpeedProgression = false;
+                    }
                     st.targetInclinePct = stObj["targetInclinePct"] | 0;
                     st.setIncline = stObj["setIncline"] | false;
                 }
@@ -2683,6 +2690,9 @@ void WebServerManager::registerRoutes() {
                                 stObj["durationValue"] = st.durationValue;
                                 stObj["speedMode"] = speedModeName(st.speedMode);
                                 stObj["targetSpeedKmh"] = st.targetSpeedKmh;
+                                if (st.hasSpeedProgression && st.role == StepRole::WORK) {
+                                    stObj["speedProgressionPerRepKmh"] = st.speedProgressionPerRepKmh;
+                                }
                                 stObj["targetInclinePct"] = st.targetInclinePct;
                                 stObj["setIncline"] = st.setIncline;
                             }
