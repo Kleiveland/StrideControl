@@ -1321,6 +1321,86 @@ void test_belt_movement_without_csafe_inuse_prevents_start() {
     TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, session.getSnapshot().state);
 }
 
+void test_manual_history_survives_interval_rearm_and_negative_cases() {
+    WorkoutSession session;
+    session.begin();
+
+    // 1. Negative case: arm from Idle -> no prefix
+    ExpandedWorkout ewA = createTestExpandedWorkout();
+    ewA.workoutId = 1;
+    ExpandedWorkout ewB = createTestExpandedWorkout();
+    ewB.workoutId = 2;
+
+    session.armWorkout(&ewA, 1000, 4);
+    TEST_ASSERT_FALSE(session.getSnapshot().hasManualPrefix);
+    TEST_ASSERT_EQUAL_UINT32(0, session.getSnapshot().manualDurationMs);
+
+    // 2. Start FreeRun, run with non-flat speed for 40 seconds
+    session.startFreeRun(2000, 4);
+    ApplicationSnapshot snap8 = makeAppSnapshot(8.0f, 0.0, true, CsafeMachineState::InUse);
+    for (uint32_t t = 2000; t <= 12000; t += 1000) {
+        session.update(snap8, t);
+    }
+    ApplicationSnapshot snap12 = makeAppSnapshot(12.0f, 0.05, true, CsafeMachineState::InUse);
+    for (uint32_t t = 13000; t <= 27000; t += 1000) {
+        session.update(snap12, t);
+    }
+    ApplicationSnapshot snap10 = makeAppSnapshot(10.0f, 0.10, true, CsafeMachineState::InUse);
+    for (uint32_t t = 28000; t <= 42000; t += 1000) {
+        session.update(snap10, t);
+    }
+
+    // 3. Arm Workout A: FreeRun -> Armed (transitioningFromManual)
+    TEST_ASSERT_TRUE(session.armWorkout(&ewA, 42000, 4));
+    WorkoutSessionSnapshot snapA1 = session.getSnapshot();
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, snapA1.state);
+    TEST_ASSERT_TRUE(snapA1.hasManualPrefix);
+    TEST_ASSERT_GREATER_THAN_UINT32(0, snapA1.manualDurationMs);
+
+    const uint32_t savedManualDurationMs = snapA1.manualDurationMs;
+    uint8_t savedProfile[SPEED_PROFILE_SAMPLES_PER_STEP];
+    memcpy(savedProfile, snapA1.manualSpeedProfile, sizeof(savedProfile));
+
+    // 4. Re-arm Workout B: Armed -> Armed (rearmingKeepingManual)
+    TEST_ASSERT_TRUE(session.armWorkout(&ewB, 45000, 4));
+    WorkoutSessionSnapshot snapB = session.getSnapshot();
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, snapB.state);
+    TEST_ASSERT_TRUE(snapB.hasManualPrefix);
+    TEST_ASSERT_EQUAL_UINT32(savedManualDurationMs, snapB.manualDurationMs);
+    TEST_ASSERT_EQUAL_MEMORY(savedProfile, snapB.manualSpeedProfile, sizeof(savedProfile));
+
+    // 5. Re-arm Workout A again: Armed -> Armed
+    TEST_ASSERT_TRUE(session.armWorkout(&ewA, 50000, 4));
+    WorkoutSessionSnapshot snapA2 = session.getSnapshot();
+    TEST_ASSERT_EQUAL(WorkoutSessionState::Armed, snapA2.state);
+    TEST_ASSERT_TRUE(snapA2.hasManualPrefix);
+    TEST_ASSERT_EQUAL_UINT32(savedManualDurationMs, snapA2.manualDurationMs);
+    TEST_ASSERT_EQUAL_MEMORY(savedProfile, snapA2.manualSpeedProfile, sizeof(savedProfile));
+
+    // 6. Negative case: Different user arms -> prefix cleared
+    TEST_ASSERT_TRUE(session.armWorkout(&ewA, 55000, 5));
+    TEST_ASSERT_FALSE(session.getSnapshot().hasManualPrefix);
+    TEST_ASSERT_EQUAL_UINT32(0, session.getSnapshot().manualDurationMs);
+
+    // 7. Negative case: abortSession -> arm -> prefix cleared
+    session.startFreeRun(60000, 4);
+    session.update(snap8, 65000);
+    session.armWorkout(&ewA, 65000, 4);
+    TEST_ASSERT_TRUE(session.getSnapshot().hasManualPrefix);
+    session.abortSession(66000);
+    session.armWorkout(&ewB, 67000, 4);
+    TEST_ASSERT_FALSE(session.getSnapshot().hasManualPrefix);
+
+    // 8. Negative case: finalizeSession -> arm -> prefix cleared
+    session.startFreeRun(70000, 4);
+    session.update(snap8, 75000);
+    session.armWorkout(&ewA, 75000, 4);
+    TEST_ASSERT_TRUE(session.getSnapshot().hasManualPrefix);
+    session.finalizeSession(76000);
+    session.armWorkout(&ewB, 77000, 4);
+    TEST_ASSERT_FALSE(session.getSnapshot().hasManualPrefix);
+}
+
 void test_repeated_inuse_snapshots_no_repeated_transition() {
     WorkoutSession session;
     session.begin();
@@ -1386,6 +1466,7 @@ void run_all_workout_session_tests() {
     RUN_TEST(test_csafe_timedout_prevents_start_and_resume);
     RUN_TEST(test_belt_movement_without_csafe_inuse_prevents_start);
     RUN_TEST(test_repeated_inuse_snapshots_no_repeated_transition);
+    RUN_TEST(test_manual_history_survives_interval_rearm_and_negative_cases);
     UNITY_END();
 }
 

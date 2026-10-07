@@ -145,7 +145,8 @@ private:
     uint32_t preFireLeadMs_ = 0; // Calculated per-transition, not fixed
     static constexpr float kArrivalSpeedToleranceKmh = 0.5f;
     static constexpr float kArrivalInclineTolerancePct = 0.5f;
-    static constexpr uint32_t kArrivalTimeoutMs = 10000; // Max wait past nominal step end before proceeding anyway
+    static constexpr uint32_t kArrivalTimeoutMs = 45000; // Safety net only (covers full 6->16 ramp + margin); runner can press stop
+    static constexpr bool kArrivalGateEnabled = true;
     static constexpr float kInclineMsPerPct = 3233.0f; // (49000+48000)/2/15, from DESIGN_GUIDE.md's measured full-range incline travel
 
     uint32_t estimateSpeedRampMs(float fromKmh, float toKmh) const;

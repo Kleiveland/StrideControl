@@ -438,18 +438,10 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
         workout_->steps[stepIndex + 1].role == StepRole::WORK) {
         preFireTargetStepIndex_ = stepIndex + 1;
         const ExpandedStep& nextStep = workout_->steps[stepIndex + 1];
-        uint32_t speedRampMs = 0;
-        if (nextStep.speedMode == SpeedMode::FIXED) {
-            speedRampMs = estimateSpeedRampMs(workout_->steps[stepIndex].targetSpeedKmh, nextStep.targetSpeedKmh);
-        }
-        uint32_t inclineRampMs = 0;
-        if (nextStep.setIncline) {
-            const float inclineDelta = std::abs(static_cast<float>(nextStep.targetInclinePct) - static_cast<float>(workout_->steps[stepIndex].targetInclinePct));
-            inclineRampMs = static_cast<uint32_t>(inclineDelta * kInclineMsPerPct);
-        }
-        preFireLeadMs_ = std::max(speedRampMs, inclineRampMs);
-        snapshot_.rampPreFireSpeedChanging = (speedRampMs > 0);
-        snapshot_.rampPreFireInclineChanging = (inclineRampMs > 0);
+        snapshot_.rampPreFireSpeedChanging = (nextStep.speedMode == SpeedMode::FIXED &&
+            std::abs(nextStep.targetSpeedKmh - workout_->steps[stepIndex].targetSpeedKmh) > 0.05f);
+        snapshot_.rampPreFireInclineChanging = (nextStep.setIncline &&
+            nextStep.targetInclinePct != workout_->steps[stepIndex].targetInclinePct);
     } else {
         preFireTargetStepIndex_ = UINT8_MAX;
         snapshot_.rampPreFireSpeedChanging = false;
@@ -883,17 +875,35 @@ void WorkoutSession::update(
                 if (snapshot_.stepProgressFraction > 1.0f) snapshot_.stepProgressFraction = 1.0f;
                 snapshot_.stepRemainingFraction = 1.0f - snapshot_.stepProgressFraction;
 
-                if (preFireTargetStepIndex_ != UINT8_MAX && !preFireSent_ &&
-                    snapshot_.stepRemainingMs <= preFireLeadMs_) {
-                    emitStepCommandIntent(workout_->steps[preFireTargetStepIndex_], true);
-                    snapshot_.rampPreFireActive = true;
-                    snapshot_.rampPreFireTargetStepIndex = preFireTargetStepIndex_;
-                    preFireSent_ = true;
+                if (preFireTargetStepIndex_ != UINT8_MAX && !preFireSent_) {
+                    const ExpandedStep& nextStep = workout_->steps[preFireTargetStepIndex_];
+                    uint32_t speedRampMs = 0;
+                    if (nextStep.speedMode == SpeedMode::FIXED) {
+                        float targetSpd = nextStep.targetSpeedKmh;
+                        if (nextStep.role == StepRole::WORK) {
+                            targetSpd += speedAdjustmentShiftAppliedKmh_;
+                            if (targetSpd < 0.5f) targetSpd = 0.5f;
+                            if (targetSpd > 25.0f) targetSpd = 25.0f;
+                        }
+                        speedRampMs = estimateSpeedRampMs(applicationSnapshot.speed.speedKmh, targetSpd);
+                    }
+                    uint32_t inclineRampMs = 0;
+                    if (nextStep.setIncline) {
+                        const float inclineDelta = std::abs(static_cast<float>(nextStep.targetInclinePct) - applicationSnapshot.incline.estimatedInclinePct);
+                        inclineRampMs = static_cast<uint32_t>(inclineDelta * kInclineMsPerPct);
+                    }
+                    preFireLeadMs_ = std::max(speedRampMs, inclineRampMs);
+                    if (snapshot_.stepRemainingMs <= preFireLeadMs_) {
+                        emitStepCommandIntent(nextStep, true);
+                        snapshot_.rampPreFireActive = true;
+                        snapshot_.rampPreFireTargetStepIndex = preFireTargetStepIndex_;
+                        preFireSent_ = true;
+                    }
                 }
 
                 if (stepElapsedMs_ >= targetMs) {
                     bool canAdvance = true;
-                    if (preFireTargetStepIndex_ != UINT8_MAX && preFireTargetStepIndex_ < workout_->totalSteps) {
+                    if (kArrivalGateEnabled && preFireTargetStepIndex_ != UINT8_MAX && preFireTargetStepIndex_ < workout_->totalSteps) {
                         const ExpandedStep& nextStep = workout_->steps[preFireTargetStepIndex_];
                         if (nextStep.speedMode == SpeedMode::FIXED) {
                             const float speedDelta = std::abs(applicationSnapshot.speed.speedKmh - nextStep.targetSpeedKmh);

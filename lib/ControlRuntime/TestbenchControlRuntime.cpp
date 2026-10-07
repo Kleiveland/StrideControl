@@ -957,6 +957,7 @@ void TestbenchControlRuntime::runTaskLoop() {
                     const float beltMovingThreshold = session_.getConfig().beltMovingThresholdKmh;
                     const float currentSpd = (acceptedTarget > beltMovingThreshold) ? acceptedTarget : snapshot.speed.speedKmh;
                     const float newSpeed = (currentSpd + delta > 0.0f) ? (currentSpd + delta) : 0.0f;
+                    composite_.getVirtualTreadmill().setTargetSpeedKmh(newSpeed);
                     session_.reportWorkSpeedAdjustment(newSpeed);
                 } else if (btnEvent.button == ButtonId::InclinePlus || btnEvent.button == ButtonId::InclineMinus) {
                     // Physical incline adjustment is handled by treadmill hardware independently.

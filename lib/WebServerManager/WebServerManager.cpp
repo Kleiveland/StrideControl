@@ -3130,19 +3130,23 @@ void WebServerManager::registerRoutes() {
 #if defined(STRIDECONTROL_TESTBENCH)
                 if (simRuntime_ != nullptr) {
                     simRuntime_->injectPhysicalButton(ButtonId::SpeedPlus);
+                    request->send(200, "application/json", "{\"status\":\"ok\"}");
+                    return;
                 }
 #endif
                 cmd.type = ControlCommandType::StepSpeed;
-                cmd.data.stepSpeed.deltaSpeedKmh = 0.5f;
+                cmd.data.stepSpeed.deltaSpeedKmh = 0.1f;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "SpeedMinus") == 0) {
 #if defined(STRIDECONTROL_TESTBENCH)
                 if (simRuntime_ != nullptr) {
                     simRuntime_->injectPhysicalButton(ButtonId::SpeedMinus);
+                    request->send(200, "application/json", "{\"status\":\"ok\"}");
+                    return;
                 }
 #endif
                 cmd.type = ControlCommandType::StepSpeed;
-                cmd.data.stepSpeed.deltaSpeedKmh = -0.5f;
+                cmd.data.stepSpeed.deltaSpeedKmh = -0.1f;
                 ok = commandStager_ ? commandStager_->stageCommand(cmd) : false;
             } else if (strcmp(btn, "InclinePlus") == 0) {
 #if defined(STRIDECONTROL_TESTBENCH)
