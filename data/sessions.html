@@ -1539,8 +1539,8 @@
       const a=Ve[s.dataset.act];
       a&&a(s,t);
     }),
-    e("w-user").addEventListener("change",()=>{const t=+e("w-user").value;Ce(()=>{Mt.nav="list",Kt(t)}),e("w-user").value=Mt.uid}),
-    e("m-user-select").addEventListener("change",()=>{const t=+e("m-user-select").value;Ce(()=>{Mt.nav="list",Kt(t)}),e("m-user-select").value=Mt.uid}),
+    e("w-user").addEventListener("change",()=>{const t=+e("w-user").value;Ce(()=>Kt(t)),e("w-user").value=Mt.uid}),
+    e("m-user-select").addEventListener("change",()=>{const t=+e("m-user-select").value;Ce(()=>Kt(t)),e("m-user-select").value=Mt.uid}),
     e("scrim").addEventListener("click",se),
     addEventListener("beforeunload",t=>{Ot()&&(t.preventDefault(),t.returnValue="")});
 
