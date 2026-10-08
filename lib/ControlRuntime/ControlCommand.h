@@ -26,6 +26,7 @@ enum class ControlCommandType : uint8_t {
     FinalizeWorkout,
     CutDrag,
     SkipToNextDrag,
+    CancelRamp,
     ExtendRest,
     AcceptSpeedShift,
     RejectSpeedShift,
@@ -84,6 +85,7 @@ class IControlCommandStager {
 public:
     virtual ~IControlCommandStager() = default;
     virtual bool stageCommand(const ControlCommand& cmd) = 0;
+    virtual bool isRampCancelable() const { return false; }
     virtual bool isRampTestActive() const { return false; }
     virtual bool isRampTestComplete() const { return false; }
     virtual bool didRampTestTimeOut() const { return false; }

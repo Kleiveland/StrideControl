@@ -137,6 +137,7 @@ struct WorkoutSessionSnapshot {
     uint8_t rampPreFireTargetStepIndex = UINT8_MAX;
     bool rampPreFireSpeedChanging = false;
     bool rampPreFireInclineChanging = false;
+    bool rampCancelable = false;
     float suggestedSpeedDeltaKmh = 0.0f;
     float appliedWorkSpeedShiftKmh = 0.0f;
     uint32_t speedAdjustmentPromptExpiresMs = 0;

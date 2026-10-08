@@ -343,6 +343,7 @@ void WebServerManager::registerRoutes() {
         session["rampPreFireActive"] = report.rampPreFireActive;
         session["rampPreFireSpeedChanging"] = report.rampPreFireSpeedChanging;
         session["rampPreFireInclineChanging"] = report.rampPreFireInclineChanging;
+        session["rampCancelable"] = report.rampCancelable;
         session["continuationWindowActive"] = report.continuationWindowActive;
         session["continuationWindowRemainingMs"] = report.continuationWindowRemainingMs;
         JsonArray actualDurations = session["actualStepDurationsMs"].to<JsonArray>();
@@ -781,6 +782,36 @@ void WebServerManager::registerRoutes() {
         }
     );
 
+    auto cancelRampHandler = [this](AsyncWebServerRequest* request) {
+        if (commandStager_ == nullptr) {
+            request->send(503, "application/json", "{\"error\":\"control_runtime_unavailable\"}");
+            return;
+        }
+        bool cancelable = false;
+        if (commandStager_ != nullptr) {
+            cancelable = commandStager_->isRampCancelable();
+        } else if (telemetryProvider_ != nullptr) {
+            TelemetryReport report{};
+            if (telemetryProvider_->getTelemetry(report)) {
+                cancelable = report.rampCancelable;
+            }
+        }
+        if (!cancelable) {
+            request->send(409, "application/json", "{\"error\":\"No cancelable ramp\"}");
+            return;
+        }
+        ControlCommand cmd{};
+        cmd.timestampMs = millis();
+        cmd.type = ControlCommandType::CancelRamp;
+        if (commandStager_->stageCommand(cmd)) {
+            request->send(200, "application/json", "{\"status\":\"queued\"}");
+        } else {
+            request->send(503, "application/json", "{\"error\":\"queue_full\"}");
+        }
+    };
+    server_.on("/api/control/workout/cancelramp", HTTP_POST, cancelRampHandler);
+    server_.on("/api/v1/control/workout/cancelramp", HTTP_POST, cancelRampHandler);
+
     server_.on(
         "/api/v1/control/workout/extendrest",
         HTTP_POST,
@@ -1046,6 +1077,42 @@ void WebServerManager::registerRoutes() {
             return;
         }
 
+        const SystemSettings* current = SettingsService::instance().getActiveSettings();
+        if (current != nullptr) {
+            SystemSettingsPtr candidate = makeSystemSettings();
+            if (candidate) {
+                *candidate = *current;
+                int userIdx = -1;
+                for (size_t i = 0; i < MAX_USERS; ++i) {
+                    if (candidate->users[i].id == userId) {
+                        userIdx = static_cast<int>(i);
+                        break;
+                    }
+                }
+                if (userIdx >= 0) {
+                    UserProfile& user = candidate->users[userIdx];
+                    int targetWorkoutIdx = -1;
+                    uint32_t maxLastUsed = 0;
+                    for (size_t i = 0; i < user.workoutCount; ++i) {
+                        if (user.workouts[i].id == workoutId) {
+                            targetWorkoutIdx = static_cast<int>(i);
+                        }
+                        if (user.workouts[i].lastUsedTimestamp > maxLastUsed) {
+                            maxLastUsed = user.workouts[i].lastUsedTimestamp;
+                        }
+                    }
+                    if (targetWorkoutIdx >= 0) {
+                        user.workouts[targetWorkoutIdx].lastUsedTimestamp = maxLastUsed + 1;
+                        user.selectedWorkoutId = workoutId;
+                        char errBuf[128] = {};
+                        if (SettingsService::instance().updateSystemSettings(*candidate, errBuf, sizeof(errBuf))) {
+                            SettingsService::instance().commitUsersJson();
+                        }
+                    }
+                }
+            }
+        }
+
         ControlCommand cmd{};
         cmd.timestampMs = millis();
         cmd.type = ControlCommandType::ArmWorkout;
@@ -1060,6 +1127,8 @@ void WebServerManager::registerRoutes() {
     };
     server_.on("/api/control/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
     server_.on("/api/v1/control/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
+    server_.on("/api/settings/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
+    server_.on("/api/v1/settings/workout/select", HTTP_POST, workoutSelectHandler, nullptr, commandBodyBuffer);
 
     auto workoutSaveHandler = [this](AsyncWebServerRequest* request) {
             if (request->getResponse() != nullptr) {
@@ -1119,7 +1188,14 @@ void WebServerManager::registerRoutes() {
             const char* wName = wObj["name"] | "";
             strncpy(parsed.name, wName, sizeof(parsed.name) - 1);
             parsed.name[sizeof(parsed.name) - 1] = '\0';
-            parsed.lastUsedTimestamp = millis();
+
+            uint32_t maxLastUsed = 0;
+            for (size_t i = 0; i < user.workoutCount; ++i) {
+                if (user.workouts[i].lastUsedTimestamp > maxLastUsed) {
+                    maxLastUsed = user.workouts[i].lastUsedTimestamp;
+                }
+            }
+            parsed.lastUsedTimestamp = maxLastUsed + 1;
 
             JsonArrayConst segArr = wObj["segments"].as<JsonArrayConst>();
             parsed.segmentCount = std::min(segArr.size(), MAX_SEGMENTS_PER_WORKOUT);
@@ -1199,8 +1275,373 @@ void WebServerManager::registerRoutes() {
     auto workoutBodyBuffer = [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
         handleRequestBodyChunk(request, data, len, index, total, 4096, "{\"error\":\"Payload too large\"}");
     };
+    auto workoutDeleteHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) { free(request->_tempObject); request->_tempObject = nullptr; }
+            return;
+        }
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+            return;
+        }
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received != buffer->capacity) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Incomplete request body\"}");
+            return;
+        }
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+
+        if (err || !doc.containsKey("userId") || !doc.containsKey("workoutId")) {
+            request->send(400, "application/json", "{\"error\":\"Invalid or missing userId/workoutId\"}");
+            return;
+        }
+
+        const uint8_t userId = doc["userId"].as<uint8_t>();
+        const uint16_t workoutId = doc["workoutId"].as<uint16_t>();
+
+        if (telemetryProvider_ != nullptr) {
+            TelemetryReport report{};
+            if (telemetryProvider_->getTelemetry(report)) {
+                if (strcmp(report.sessionState, "Running") == 0) {
+                    request->send(409, "application/json", "{\"error\":\"Session running\"}");
+                    return;
+                }
+            }
+        }
+#if defined(STRIDECONTROL_TESTBENCH)
+        if (simRuntime_ != nullptr && simRuntime_->getTelemetry(millis()).sessionSnapshot.state == WorkoutSessionState::Running) {
+            request->send(409, "application/json", "{\"error\":\"Session running\"}");
+            return;
+        }
+#endif
+
+        const SystemSettings* current = SettingsService::instance().getActiveSettings();
+        if (current == nullptr) {
+            request->send(500, "application/json", "{\"error\":\"Settings unavailable\"}");
+            return;
+        }
+        SystemSettingsPtr candidate = makeSystemSettings();
+        if (!candidate) {
+            request->send(500, "application/json", "{\"error\":\"Memory allocation failed\"}");
+            return;
+        }
+        *candidate = *current;
+
+        int userIdx = -1;
+        for (size_t i = 0; i < MAX_USERS; ++i) {
+            if (candidate->users[i].id == userId) {
+                userIdx = static_cast<int>(i);
+                break;
+            }
+        }
+        if (userIdx < 0) {
+            request->send(404, "application/json", "{\"error\":\"User not found\"}");
+            return;
+        }
+        UserProfile& user = candidate->users[userIdx];
+
+        int workoutIdx = -1;
+        for (size_t i = 0; i < user.workoutCount; ++i) {
+            if (user.workouts[i].id == workoutId) {
+                workoutIdx = static_cast<int>(i);
+                break;
+            }
+        }
+        if (workoutIdx < 0) {
+            request->send(404, "application/json", "{\"error\":\"Workout not found\"}");
+            return;
+        }
+
+        for (size_t i = static_cast<size_t>(workoutIdx); i + 1 < user.workoutCount; ++i) {
+            user.workouts[i] = user.workouts[i + 1];
+        }
+        if (user.workoutCount > 0) {
+            user.workouts[user.workoutCount - 1] = WorkoutDefinition{};
+            user.workoutCount--;
+        }
+
+        const uint16_t fallbackId = (user.workoutCount > 0) ? user.workouts[0].id : 0;
+        if (user.selectedWorkoutId == workoutId) {
+            user.selectedWorkoutId = fallbackId;
+        }
+        for (size_t r = 0; r < user.recentWorkoutIds.size(); ++r) {
+            if (user.recentWorkoutIds[r] == workoutId) {
+                user.recentWorkoutIds[r] = fallbackId;
+            }
+        }
+        if (user.recentWorkoutIds[1] == user.recentWorkoutIds[0]) {
+            user.recentWorkoutIds[1] = 0;
+        }
+
+        char errBuf[128] = {};
+        if (SettingsService::instance().updateSystemSettings(*candidate, errBuf, sizeof(errBuf))) {
+            const bool saved = SettingsService::instance().commitUsersJson();
+            if (saved) {
+                JsonDocument respDoc;
+                respDoc["status"] = "deleted";
+                respDoc["workoutId"] = workoutId;
+                String resp;
+                serializeJson(respDoc, resp);
+                request->send(200, "application/json", resp);
+            } else {
+                request->send(500, "application/json", "{\"error\":\"failed_to_persist_json\"}");
+            }
+        } else {
+            JsonDocument respDoc;
+            respDoc["error"] = errBuf[0] ? errBuf : "Validation or persistence failed";
+            String resp;
+            serializeJson(respDoc, resp);
+            request->send(400, "application/json", resp);
+        }
+    };
+    server_.on("/api/v1/settings/workout/delete", HTTP_POST, workoutDeleteHandler, nullptr, workoutBodyBuffer);
+    server_.on("/api/v1/workouts/delete", HTTP_POST, workoutDeleteHandler, nullptr, workoutBodyBuffer);
+    server_.on("/api/settings/workout/delete", HTTP_POST, workoutDeleteHandler, nullptr, workoutBodyBuffer);
+
     server_.on("/api/v1/settings/workout", HTTP_POST, workoutSaveHandler, nullptr, workoutBodyBuffer);
     server_.on("/api/v1/workouts/save", HTTP_POST, workoutSaveHandler, nullptr, workoutBodyBuffer);
+
+    auto historyBodyBuffer = [](AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
+        if (total > 8192) {
+            if (index == 0) {
+                request->send(400, "application/json", "{\"error\":\"Payload too large (max 8192 bytes)\"}");
+            }
+            return;
+        }
+        handleRequestBodyChunk(request, data, len, index, total, 8192, "{\"error\":\"Payload too large\"}");
+    };
+
+    auto historyPostHandler = [this](AsyncWebServerRequest* request) {
+        if (request->getResponse() != nullptr) {
+            if (request->_tempObject) { free(request->_tempObject); request->_tempObject = nullptr; }
+            return;
+        }
+        if (!request->_tempObject) {
+            request->send(400, "application/json", "{\"error\":\"Missing body\"}");
+            return;
+        }
+        auto* buffer = static_cast<HttpBodyBuffer*>(request->_tempObject);
+        if (buffer->received != buffer->capacity || buffer->received > 8192) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(400, "application/json", "{\"error\":\"Payload too large or incomplete\"}");
+            return;
+        }
+
+        if (telemetryProvider_ != nullptr) {
+            TelemetryReport report{};
+            if (telemetryProvider_->getTelemetry(report)) {
+                if (strcmp(report.sessionState, "Running") == 0) {
+                    free(buffer);
+                    request->_tempObject = nullptr;
+                    request->send(409, "application/json", "{\"error\":\"Session running\"}");
+                    return;
+                }
+            }
+        }
+#if defined(STRIDECONTROL_TESTBENCH)
+        if (simRuntime_ != nullptr && simRuntime_->getTelemetry(millis()).sessionSnapshot.state == WorkoutSessionState::Running) {
+            free(buffer);
+            request->_tempObject = nullptr;
+            request->send(409, "application/json", "{\"error\":\"Session running\"}");
+            return;
+        }
+#endif
+
+        JsonDocument incomingDoc;
+        DeserializationError err = deserializeJson(incomingDoc, buffer->data(), buffer->received);
+        free(buffer);
+        request->_tempObject = nullptr;
+
+        if (err || !incomingDoc["userId"].is<uint8_t>() || !incomingDoc["entry"].is<JsonObject>()) {
+            request->send(400, "application/json", "{\"error\":\"Invalid request body\"}");
+            return;
+        }
+
+        const uint8_t userId = incomingDoc["userId"].as<uint8_t>();
+        JsonObject incomingEntry = incomingDoc["entry"].as<JsonObject>();
+        const char* entryId = incomingEntry["id"] | "";
+        if (strlen(entryId) == 0) {
+            request->send(400, "application/json", "{\"error\":\"Missing entry id\"}");
+            return;
+        }
+
+        char path[32];
+        snprintf(path, sizeof(path), "/hist_%u.json", userId);
+        char tmpPath[32];
+        snprintf(tmpPath, sizeof(tmpPath), "/hist_%u.json.tmp", userId);
+
+        JsonDocument existingDoc;
+        if (LittleFS.exists(path)) {
+            File f = LittleFS.open(path, "r");
+            if (f) {
+                deserializeJson(existingDoc, f);
+                f.close();
+            }
+        }
+
+        struct HistoryEntryRef {
+            double startedAt;
+            bool isIncoming;
+            size_t existingIndex;
+            HistoryEntryRef(double sa, bool inc, size_t idx)
+                : startedAt(sa), isIncoming(inc), existingIndex(idx) {}
+        };
+        std::vector<HistoryEntryRef> entries;
+
+        double incomingStartedAt = incomingEntry["startedAt"] | 0.0;
+        entries.push_back({incomingStartedAt, true, 0});
+
+        if (existingDoc.is<JsonArray>()) {
+            JsonArrayConst arr = existingDoc.as<JsonArrayConst>();
+            for (size_t i = 0; i < arr.size(); ++i) {
+                JsonObjectConst e = arr[i];
+                const char* id = e["id"] | "";
+                if (strcmp(id, entryId) != 0) {
+                    double sa = e["startedAt"] | 0.0;
+                    entries.push_back({sa, false, i});
+                }
+            }
+        }
+
+        std::stable_sort(entries.begin(), entries.end(), [](const HistoryEntryRef& a, const HistoryEntryRef& b) {
+            return a.startedAt > b.startedAt;
+        });
+
+        JsonDocument outDoc;
+        JsonArray outArr = outDoc.to<JsonArray>();
+        JsonArrayConst existingArr = existingDoc.as<JsonArrayConst>();
+
+        for (size_t i = 0; i < entries.size() && i < 5; ++i) {
+            if (entries[i].isIncoming) {
+                outArr.add(incomingEntry);
+            } else {
+                outArr.add(existingArr[entries[i].existingIndex]);
+            }
+        }
+
+        File tmpFile = LittleFS.open(tmpPath, "w");
+        if (!tmpFile) {
+            request->send(500, "application/json", "{\"error\":\"Failed to open tmp file\"}");
+            return;
+        }
+
+        size_t bytesWritten = serializeJson(outDoc, tmpFile);
+        tmpFile.flush();
+        tmpFile.close();
+
+        if (bytesWritten == 0) {
+            LittleFS.remove(tmpPath);
+            request->send(500, "application/json", "{\"error\":\"Failed to write history\"}");
+            return;
+        }
+
+        if (LittleFS.exists(path)) {
+            LittleFS.remove(path);
+        }
+        if (!LittleFS.rename(tmpPath, path)) {
+            LittleFS.remove(tmpPath);
+            request->send(500, "application/json", "{\"error\":\"Atomic rename failed\"}");
+            return;
+        }
+
+        JsonDocument respDoc;
+        respDoc["status"] = "saved";
+        respDoc["count"] = outArr.size();
+        String resp;
+        serializeJson(respDoc, resp);
+        request->send(200, "application/json", resp);
+    };
+
+    auto historyGetHandler = [this](AsyncWebServerRequest* request) {
+        if (!request->hasParam("userId")) {
+            request->send(400, "application/json", "{\"error\":\"Missing userId\"}");
+            return;
+        }
+
+        const uint8_t userId = request->getParam("userId")->value().toInt();
+        char path[32];
+        snprintf(path, sizeof(path), "/hist_%u.json", userId);
+
+        if (!LittleFS.exists(path)) {
+            if (request->hasParam("id")) {
+                request->send(404, "application/json", "{\"error\":\"Entry not found\"}");
+            } else {
+                request->send(200, "application/json", "[]");
+            }
+            return;
+        }
+
+        File f = LittleFS.open(path, "r");
+        if (!f) {
+            if (request->hasParam("id")) {
+                request->send(404, "application/json", "{\"error\":\"Entry not found\"}");
+            } else {
+                request->send(200, "application/json", "[]");
+            }
+            return;
+        }
+
+        JsonDocument doc;
+        DeserializationError err = deserializeJson(doc, f);
+        f.close();
+
+        if (err || !doc.is<JsonArray>()) {
+            if (request->hasParam("id")) {
+                request->send(404, "application/json", "{\"error\":\"Entry not found\"}");
+            } else {
+                request->send(200, "application/json", "[]");
+            }
+            return;
+        }
+
+        JsonArrayConst arr = doc.as<JsonArrayConst>();
+
+        if (request->hasParam("id")) {
+            const String targetId = request->getParam("id")->value();
+            for (JsonObjectConst entry : arr) {
+                if (entry["id"].as<String>() == targetId) {
+                    String out;
+                    serializeJson(entry, out);
+                    AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", out);
+                    resp->addHeader("Access-Control-Allow-Origin", "*");
+                    resp->addHeader("Cache-Control", "no-cache");
+                    request->send(resp);
+                    return;
+                }
+            }
+            request->send(404, "application/json", "{\"error\":\"Entry not found\"}");
+            return;
+        }
+
+        JsonDocument summaryDoc;
+        JsonArray list = summaryDoc.to<JsonArray>();
+        for (JsonObjectConst entry : arr) {
+            JsonObject item = list.add<JsonObject>();
+            for (JsonPairConst kv : entry) {
+                const char* k = kv.key().c_str();
+                if (strcmp(k, "laps") != 0 && strcmp(k, "samples") != 0) {
+                    item[kv.key()] = kv.value();
+                }
+            }
+        }
+        String out;
+        serializeJson(summaryDoc, out);
+        AsyncWebServerResponse* resp = request->beginResponse(200, "application/json", out);
+        resp->addHeader("Access-Control-Allow-Origin", "*");
+        resp->addHeader("Cache-Control", "no-cache");
+        request->send(resp);
+    };
+
+    server_.on("/api/v1/history", HTTP_POST, historyPostHandler, nullptr, historyBodyBuffer);
+    server_.on("/api/v1/history", HTTP_GET, historyGetHandler);
+    server_.on("/api/history", HTTP_POST, historyPostHandler, nullptr, historyBodyBuffer);
+    server_.on("/api/history", HTTP_GET, historyGetHandler);
 
     auto setGuiModeHandler = [this](AsyncWebServerRequest* request) {
         if (request->getResponse() != nullptr) {

@@ -431,6 +431,9 @@ void WorkoutSession::startStep(uint8_t stepIndex, uint32_t nowMs, double current
     snapshot_.rampPreFireTargetStepIndex = UINT8_MAX;
     snapshot_.rampPreFireSpeedChanging = false;
     snapshot_.rampPreFireInclineChanging = false;
+    snapshot_.rampCancelable = false;
+    userSkipActive_ = false;
+    savedTargetDurationMs_ = 0;
     preFireLeadMs_ = 0;
     if ((workout_->steps[stepIndex].role == StepRole::REST ||
          workout_->steps[stepIndex].role == StepRole::WARMUP) &&
@@ -977,6 +980,7 @@ void WorkoutSession::update(
         memcpy(snapshot_.activeStepSpeedProfile, activeStepSpeedProfile_, sizeof(snapshot_.activeStepSpeedProfile));
         snapshot_.completedStepProfilesCount = completedStepProfilesCount_;
         memcpy(snapshot_.completedStepProfiles, completedStepProfiles_, sizeof(snapshot_.completedStepProfiles));
+        snapshot_.rampCancelable = userSkipActive_ && (snapshot_.state == WorkoutSessionState::Running) && (stepElapsedMs_ < savedTargetDurationMs_);
         return;
     }
 }
@@ -987,6 +991,7 @@ bool WorkoutSession::suspend(uint32_t nowMs) {
     }
     snapshot_.state = WorkoutSessionState::Suspended;
     snapshot_.suspended = true;
+    snapshot_.rampCancelable = false;
     beltHasStoppedSinceSuspend_ = false;
     lastUpdateTimestampMs_ = nowMs;
     lowSpeedDebounceActive_ = false;
@@ -1000,6 +1005,7 @@ bool WorkoutSession::resume(uint32_t nowMs) {
     }
     snapshot_.state = WorkoutSessionState::Running;
     snapshot_.suspended = false;
+    snapshot_.rampCancelable = userSkipActive_ && (stepElapsedMs_ < savedTargetDurationMs_);
     lastUpdateTimestampMs_ = nowMs; // Freezes out paused time
     lowSpeedDebounceActive_ = false;
 
@@ -1029,6 +1035,9 @@ bool WorkoutSession::cutDrag(uint32_t nowMs) {
     partialDragCount_++;
     snapshot_.isPartialDrag = true;
     snapshot_.partialDragCount = partialDragCount_;
+    userSkipActive_ = false;
+    savedTargetDurationMs_ = 0;
+    snapshot_.rampCancelable = false;
 
     // Advance to the next REST (Hvile) step, or next valid step if no REST exists
     uint8_t targetStepIndex = snapshot_.currentStepIndex + 1;
@@ -1069,12 +1078,52 @@ bool WorkoutSession::skipToNextDrag(uint32_t nowMs) {
         return false; // No upcoming drag step to skip to
     }
 
+    savedTargetDurationMs_ = runtimeStepTargetDurationMs_;
+    userSkipActive_ = true;
+
     preFireTargetStepIndex_ = targetStepIndex;
     emitStepCommandIntent(workout_->steps[targetStepIndex], true);
     snapshot_.rampPreFireActive = true;
     preFireSent_ = true;
     runtimeStepTargetDurationMs_ = stepElapsedMs_;
     snapshot_.stepRemainingMs = 0;
+    snapshot_.rampCancelable = (stepElapsedMs_ < savedTargetDurationMs_);
+    return true;
+}
+
+bool WorkoutSession::cancelRamp() {
+    if (!initialized_ || !snapshot_.active || !userSkipActive_ ||
+        snapshot_.state != WorkoutSessionState::Running ||
+        stepElapsedMs_ >= savedTargetDurationMs_) {
+        return false;
+    }
+
+    runtimeStepTargetDurationMs_ = savedTargetDurationMs_;
+    snapshot_.stepRemainingMs = (savedTargetDurationMs_ > stepElapsedMs_) ? (savedTargetDurationMs_ - stepElapsedMs_) : 0;
+
+    preFireTargetStepIndex_ = UINT8_MAX;
+    preFireSent_ = false;
+    preFireLeadMs_ = 0;
+    snapshot_.rampPreFireActive = false;
+    snapshot_.rampPreFireTargetStepIndex = UINT8_MAX;
+    snapshot_.rampPreFireSpeedChanging = false;
+    snapshot_.rampPreFireInclineChanging = false;
+    userSkipActive_ = false;
+    savedTargetDurationMs_ = 0;
+    snapshot_.rampCancelable = false;
+
+    clearPendingCommandIntent();
+
+    const ExpandedStep& curStep = snapshot_.currentStep;
+    if (curStep.speedMode != SpeedMode::FREE || curStep.setIncline) {
+        emitStepCommandIntent(curStep, true);
+    } else {
+        snapshot_.hasSpeedTarget = false;
+        snapshot_.targetSpeedKmh = 0.0f;
+        acknowledgedHasSpeed_ = false;
+        acknowledgedSpeedTargetKmh_ = 0.0f;
+    }
+
     return true;
 }
 
@@ -1124,6 +1173,9 @@ bool WorkoutSession::abortSession(uint32_t nowMs) {
     snapshot_.completionPending = false;
     snapshot_.speedAdjustmentPromptActive = false;
     snapshot_.rampPreFireActive = false;
+    snapshot_.rampCancelable = false;
+    userSkipActive_ = false;
+    savedTargetDurationMs_ = 0;
     preFireTargetStepIndex_ = UINT8_MAX;
     preFireSent_ = false;
     pendingShiftPrompt_ = false;
@@ -1151,6 +1203,9 @@ bool WorkoutSession::finalizeSession(uint32_t nowMs) {
     snapshot_.completionPending = false;
     snapshot_.speedAdjustmentPromptActive = false;
     snapshot_.rampPreFireActive = false;
+    snapshot_.rampCancelable = false;
+    userSkipActive_ = false;
+    savedTargetDurationMs_ = 0;
     preFireTargetStepIndex_ = UINT8_MAX;
     preFireSent_ = false;
     pendingShiftPrompt_ = false;

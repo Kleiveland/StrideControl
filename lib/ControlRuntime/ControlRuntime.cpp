@@ -760,6 +760,17 @@ void ControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::SkipToNextDrag:
                 session_.skipToNextDrag(cmdNowMs);
                 break;
+            case ControlCommandType::CancelRamp: {
+                const WorkoutSessionSnapshot beforeSnap = session_.getSnapshot();
+                if (session_.cancelRamp()) {
+                    dispatcher_.clearWorkoutTargets();
+                    if (beforeSnap.currentStep.speedMode == SpeedMode::FREE) {
+                        const float currentSpd = (orchestrator_ != nullptr) ? orchestrator_->getSnapshot().speed.speedKmh : 0.0f;
+                        controller_.submitSpeedTarget(currentSpd, cmdNowMs);
+                    }
+                }
+                break;
+            }
             case ControlCommandType::ExtendRest:
                 session_.extendRest();
                 break;

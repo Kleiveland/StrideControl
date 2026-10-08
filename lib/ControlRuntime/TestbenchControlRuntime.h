@@ -178,6 +178,7 @@ public:
         portEXIT_CRITICAL(&deadTimeMux_);
         return v;
     }
+    bool isRampCancelable() const override { return session_.isRampCancelable(); }
 
     bool isConnectionWarningActive() const { return connectionWarningActive_; }
     bool isEmergencyStopActive() const { return console_.isEmergencyStopActive(); }

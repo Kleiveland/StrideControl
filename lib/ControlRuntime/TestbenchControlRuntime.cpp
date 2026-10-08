@@ -1232,6 +1232,16 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
             case ControlCommandType::SkipToNextDrag:
                 session_.skipToNextDrag(cmdNowMs);
                 break;
+            case ControlCommandType::CancelRamp: {
+                const WorkoutSessionSnapshot beforeSnap = session_.getSnapshot();
+                if (session_.cancelRamp()) {
+                    dispatcher_.clearWorkoutTargets();
+                    if (beforeSnap.currentStep.speedMode == SpeedMode::FREE) {
+                        composite_.submitSpeedTarget(composite_.getVirtualTreadmill().getActualSpeedKmh(), cmdNowMs);
+                    }
+                }
+                break;
+            }
             case ControlCommandType::ExtendRest:
                 session_.extendRest();
                 break;

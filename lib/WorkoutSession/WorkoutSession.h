@@ -60,6 +60,10 @@ public:
     bool cutDrag(uint32_t nowMs);
     bool extendRest(uint32_t extensionSeconds = 30);
     bool skipToNextDrag(uint32_t nowMs);
+    bool cancelRamp();
+    bool isRampCancelable() const {
+        return userSkipActive_ && (snapshot_.state == WorkoutSessionState::Running) && (stepElapsedMs_ < savedTargetDurationMs_);
+    }
     bool hasUpcomingDragStep() const;
     bool advanceToNextStep(uint32_t nowMs);
     bool abortSession(uint32_t nowMs);
@@ -143,6 +147,8 @@ private:
     uint8_t preFireTargetStepIndex_ = UINT8_MAX; // Sentinel: no pre-fire pending
     bool preFireSent_ = false;
     uint32_t preFireLeadMs_ = 0; // Calculated per-transition, not fixed
+    bool userSkipActive_ = false;
+    uint32_t savedTargetDurationMs_ = 0;
     static constexpr float kArrivalSpeedToleranceKmh = 0.5f;
     static constexpr float kArrivalInclineTolerancePct = 0.5f;
     static constexpr uint32_t kArrivalTimeoutMs = 45000; // Safety net only (covers full 6->16 ramp + margin); runner can press stop

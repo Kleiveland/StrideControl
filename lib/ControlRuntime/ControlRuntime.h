@@ -99,6 +99,7 @@ public:
     void publishCommandExecutionStatus();
     void requestInclineCommissioningAction(bool confirmHomed, bool zeroImu);
 
+    bool isRampCancelable() const override { return session_.isRampCancelable(); }
     bool isRampTestActive() const override { return rampTestTracker_.active(); }
     bool isRampTestComplete() const override { return rampTestTracker_.complete(); }
     bool didRampTestTimeOut() const override { return rampTestTracker_.timedOut(); }

@@ -112,6 +112,7 @@ public:
         report.rampPreFireActive = telem.sessionSnapshot.rampPreFireActive;
         report.rampPreFireSpeedChanging = telem.sessionSnapshot.rampPreFireSpeedChanging;
         report.rampPreFireInclineChanging = telem.sessionSnapshot.rampPreFireInclineChanging;
+        report.rampCancelable = telem.sessionSnapshot.rampCancelable;
         report.continuationWindowActive = telem.sessionSnapshot.continuationWindowActive;
         report.continuationWindowRemainingMs = telem.sessionSnapshot.continuationWindowRemainingMs;
         memcpy(report.actualStepDurationsMs, telem.sessionSnapshot.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));
@@ -260,6 +261,7 @@ public:
         report.rampPreFireActive = sessSnap.rampPreFireActive;
         report.rampPreFireSpeedChanging = sessSnap.rampPreFireSpeedChanging;
         report.rampPreFireInclineChanging = sessSnap.rampPreFireInclineChanging;
+        report.rampCancelable = sessSnap.rampCancelable;
         report.continuationWindowActive = sessSnap.continuationWindowActive;
         report.continuationWindowRemainingMs = sessSnap.continuationWindowRemainingMs;
         memcpy(report.actualStepDurationsMs, sessSnap.actualStepDurationsMs, sizeof(report.actualStepDurationsMs));

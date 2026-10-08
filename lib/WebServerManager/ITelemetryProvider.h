@@ -56,6 +56,7 @@ struct TelemetryReport {
     bool rampPreFireActive = false;
     bool rampPreFireSpeedChanging = false;
     bool rampPreFireInclineChanging = false;
+    bool rampCancelable = false;
     bool continuationWindowActive = false;
     uint32_t continuationWindowRemainingMs = 0;
     uint32_t actualStepDurationsMs[MAX_EXPANDED_WORKOUT_STEPS] = {};
