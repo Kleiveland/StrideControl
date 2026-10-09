@@ -549,6 +549,10 @@ void VirtualTreadmill::setEmergencyStop(bool active) {
 }
 
 void VirtualTreadmill::onConsoleQuickStart(float resumeSpeedKmh, float resumeInclinePct) {
+    if (isBeltMoving()) {
+        return; // Physical treadmill console rejects QuickStart until belt has come to a complete stop
+    }
+
     consecutiveStopCount_ = 0;
     eStopActive_ = false;
     csafeState_.online = true;

@@ -430,7 +430,6 @@ void loop() {
         if (c == 'q' || c == 'Q') {
             Serial.println("[SerialCmd] QuickStart triggered");
             s_testbenchRuntime.triggerQuickStart(nowMs);
-            s_testbenchRuntime.setSimRunner(stridecontrol::VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
         } else if (c == 's' || c == 'S') {
             Serial.println("[SerialCmd] Stop triggered");
             s_testbenchRuntime.triggerStop(nowMs);

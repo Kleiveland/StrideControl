@@ -1088,8 +1088,10 @@ void TestbenchControlRuntime::processQueuedCommands(uint32_t nowMs) {
         switch (cmd.type) {
             case ControlCommandType::QuickStart:
                 if (!rampTestTracker_.active()) {
-                    composite_.stageQuickStart(cmdNowMs);
-                    composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
+                    if (!composite_.getVirtualTreadmill().isBeltMoving()) {
+                        composite_.stageQuickStart(cmdNowMs);
+                        composite_.stageRunner(VirtualRunnerMode::RunningOnBelt, 180, 0.35f, true);
+                    }
                 }
                 break;
             case ControlCommandType::Stop:

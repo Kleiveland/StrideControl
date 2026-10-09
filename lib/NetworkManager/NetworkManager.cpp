@@ -7,12 +7,12 @@ static const char* getMdnsHostname() {
     static char s_hostname[64]{};
     static bool s_initialized = false;
     if (!s_initialized) {
-        const char* base = Secrets::MDNS_HOSTNAME;
 #if defined(STRIDECONTROL_TESTBENCH)
-        snprintf(s_hostname, sizeof(s_hostname), "%s-sim", base);
+        const char* base = "stridecontrol";
 #else
-        snprintf(s_hostname, sizeof(s_hostname), "%s", base);
+        const char* base = "sportsmaster";
 #endif
+        snprintf(s_hostname, sizeof(s_hostname), "%s", base);
         size_t len = strlen(s_hostname);
         if (len > 63) len = 63;
         size_t outIdx = 0;
@@ -27,9 +27,9 @@ static const char* getMdnsHostname() {
         s_hostname[outIdx] = '\0';
         if (outIdx == 0) {
 #if defined(STRIDECONTROL_TESTBENCH)
-            strncpy(s_hostname, "stridecontrol-sim", sizeof(s_hostname) - 1);
-#else
             strncpy(s_hostname, "stridecontrol", sizeof(s_hostname) - 1);
+#else
+            strncpy(s_hostname, "sportsmaster", sizeof(s_hostname) - 1);
 #endif
             s_hostname[sizeof(s_hostname) - 1] = '\0';
         }

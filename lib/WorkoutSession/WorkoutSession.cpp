@@ -749,8 +749,10 @@ void WorkoutSession::update(
     }
     lastRunnerDistanceKm_ = currentRunnerDist;
 
-    // 0. Idle state -> Auto-start free run if belt begins moving in manual mode
-    if (snapshot_.state == WorkoutSessionState::Idle) {
+    // 0. Idle / Completed / Aborted state -> Auto-start free run if belt begins moving in manual mode
+    if (snapshot_.state == WorkoutSessionState::Idle ||
+        snapshot_.state == WorkoutSessionState::Completed ||
+        snapshot_.state == WorkoutSessionState::Aborted) {
         if (confirmedRunning && desiredGuiIsManual_) {
             startFreeRun(nowMs, desiredGuiUserId_);
         }

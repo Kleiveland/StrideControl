@@ -1,0 +1,3776 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sportsmaster T610</title>
+<style>
+:root{--ink:#03000B;--mut:#6B6B76;--line:#E3E3E9;--surf:#EFEFF3;--surf2:#F4F4F7;--red:#F8283B;--dst:#D1001F;--fit:1}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#fff}
+body{font:500 22px/1.2 Roboto,system-ui,-apple-system,'Segoe UI',sans-serif;color:var(--ink);font-variant-numeric:tabular-nums;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent;-webkit-text-size-adjust:100%}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer;text-align:inherit}
+input{font:inherit;color:inherit}
+[hidden]{display:none!important}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:800px;margin:-400px 0 0 -640px;transform:scale(var(--fit));overflow:hidden;background:#fff}
+.scr{position:absolute;left:0;top:0;width:1280px;height:800px;padding:28px 48px;display:none;flex-direction:column;gap:24px}
+.scr.on{display:flex}
+#clock{position:absolute;top:18px;left:0;right:0;height:24px;line-height:24px;text-align:center;font-size:22px;letter-spacing:.06em;pointer-events:none;z-index:60}
+#lube{position:absolute;top:16px;left:50%;margin-left:62px;z-index:60;display:flex;align-items:center;gap:8px;font-size:16px;font-weight:700;letter-spacing:.1em;color:var(--dst);text-transform:uppercase}
+#lube i{width:12px;height:12px;background:var(--dst)}
+.btn{display:flex;align-items:center;justify-content:center;background:var(--surf);font-weight:700;letter-spacing:.06em;text-transform:uppercase;transition:transform 70ms ease-out,filter 70ms ease-out}
+.btn span{letter-spacing:normal}
+.btn:active{transform:scale(.97);filter:brightness(.88)}
+.btn.pri{background:var(--ink);color:#fff}
+.btn.go{background:var(--red);color:#fff}
+.btn.on{box-shadow:inset 0 -5px 0 var(--ink),0 5px 0 #fff}
+.btn.dst{color:var(--dst)}
+.btn[disabled],.btn.off{opacity:.4;pointer-events:none}
+.top{position:absolute;top:4px;left:48px;right:48px;display:none;justify-content:space-between;z-index:4;pointer-events:none}
+.top.on{display:flex}
+.top>div{display:flex;gap:12px;pointer-events:auto}
+.tb{height:56px;padding:0 28px;font-size:22px;white-space:nowrap}
+.bar6{width:56px;height:6px;background:var(--red);flex:none}
+.h1{font-size:44px;font-weight:700;letter-spacing:-.01em;line-height:1}
+.lab{font-size:20px;font-weight:700;letter-spacing:.12em;color:var(--mut);text-transform:uppercase}
+.lab16{font-size:16px;font-weight:700;letter-spacing:.12em;color:var(--mut);text-transform:uppercase}
+.mut{color:var(--mut)}
+.sq{width:18px;height:18px;flex:none;background:var(--ink);outline:1px solid #fff}
+.sq.r{background:var(--red)}.sq.g{background:#9A9AA6}
+.guard{position:relative;pointer-events:none}
+.guard>i{position:absolute;top:10px;right:10px;bottom:10px;left:10px;pointer-events:auto}
+.rowk{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--line);min-height:0;flex:1 1 0}
+.rowk .l{display:flex;flex-direction:column;gap:2px}
+.rowk .v{display:flex;align-items:baseline;gap:8px}
+.rowk .n{font-weight:700;letter-spacing:-.01em;line-height:1}
+.rowk .u{font-size:24px;color:var(--mut)}
+.rowk .s{font-size:22px;color:var(--mut)}
+@keyframes blk{0%,49%{color:var(--red)}50%,100%{color:inherit}}
+.ph{stroke:var(--ink)}.bl{fill:var(--ink);stroke:#fff;stroke-width:1}.sl{stroke:var(--ink)}
+.erow .a i{outline:1px solid #fff}
+.stale .rowk .n,.stale .rowk .u,.stale .hero b,.stale .hero i{opacity:.45}
+.toast.warn.calm{background:var(--ink)}
+#net{position:absolute;top:16px;left:48px;z-index:60;display:none;align-items:center;gap:8px;font-size:16px;font-weight:700;letter-spacing:.1em;color:#8A6D00;text-transform:uppercase}
+#net i{width:12px;height:12px;background:#F5B400}
+.erow{touch-action:pan-y}
+#dline{position:absolute;height:4px;background:var(--ink);outline:1px solid #fff;pointer-events:none;z-index:6;transition:transform 90ms}
+.gst{position:absolute;left:0;top:0;z-index:7;pointer-events:none;outline:3px solid var(--ink);background:#fff;opacity:.95}
+.n.chg{animation:blk 1s step-end infinite}
+#err{position:absolute;top:22px;right:20px;width:14px;height:14px;background:var(--dst);z-index:70}
+.hold{position:relative;overflow:hidden;width:100%;height:90px;padding:0 36px;display:flex;align-items:center;justify-content:space-between;font-size:40px;touch-action:none;background:var(--surf);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.hold b{position:absolute;left:0;top:0;bottom:0;width:0;background:#FFD0D5}
+.hold.neu b{background:#D9D9E0}
+.hold .t{position:relative;display:flex;align-items:center;gap:18px}
+.hold .h{position:relative;font-size:24px;color:var(--mut);text-transform:none;letter-spacing:.04em}
+.hold.sm{height:56px;padding:0 20px;font-size:24px}
+.hold.sm .t{gap:14px}.hold.sm .h{font-size:16px}
+.act{height:90px;padding:0 36px;font-size:40px;justify-content:space-between;width:100%}
+.act .t{display:flex;align-items:center;gap:18px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.keys8{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:24px}
+.key{flex-direction:column;gap:8px;padding:0;height:116px}
+.key .a{font-size:42px;font-weight:700;letter-spacing:-.01em;line-height:1}
+.key .b{font-size:17px;font-weight:600;letter-spacing:.06em;line-height:1;color:var(--mut)}
+.key.inc{flex-direction:row;gap:6px}.key.inc .b{font-size:22px}
+.key.dim{opacity:.4;pointer-events:none}
+.band{flex:1;min-height:0;display:flex;align-items:center;justify-content:space-between;background:var(--surf2);padding:0 36px}
+.band .bt{display:flex;align-items:center;gap:22px;font-size:88px;font-weight:700;letter-spacing:.04em;line-height:1}
+.band .bt i{width:35px;height:35px;background:var(--red);flex:none}
+.band .bm{margin-left:48px;font-size:28px;font-weight:600;color:var(--mut);line-height:1;height:28px}
+.band .qs{display:flex;align-items:center;gap:10px;font-size:32px}
+.band .qs b{font-weight:700}
+.nf{display:flex;align-items:center;gap:6px;flex:none}
+.nf .btn{width:52px;height:56px;padding:0;font-size:30px;line-height:1}
+.nf label{display:flex;align-items:center;justify-content:center;gap:6px;width:138px;height:56px;padding:0 10px;border:2px solid var(--line);background:#fff}
+.nf input{width:74px;min-width:0;border:0;outline:none;background:transparent;font-size:30px;font-weight:700;text-align:right;padding:0;-webkit-user-select:text;user-select:text}
+.nf .u{font-size:18px;color:var(--mut);white-space:nowrap}
+.seg{display:flex;gap:8px}
+.seg .btn{height:44px;font-size:18px;padding:0 14px}
+.txt{width:100%;height:56px;padding:0 18px;border:2px solid var(--line);border-radius:0;background:#fff;font-size:24px;font-weight:700;outline:none;-webkit-user-select:text;user-select:text}
+.dd{position:absolute;z-index:8;display:flex;flex-direction:column;gap:8px;padding:8px;background:#fff;border:2px solid var(--ink)}
+.dd .btn{justify-content:space-between;gap:12px;padding:0 20px}
+.toast{position:absolute;left:50%;bottom:132px;transform:translateX(-50%);z-index:80;max-width:1100px;padding:18px 32px;background:var(--ink);color:#fff;font-size:26px;font-weight:700;letter-spacing:.04em;text-align:center}
+.toast.warn{bottom:auto;top:70px;background:var(--dst)}
+#ovCount{position:absolute;inset:0;z-index:90;background:#fff;display:none;align-items:center;justify-content:center;font-size:340px;font-weight:700;letter-spacing:-.03em}
+#ovStop{position:absolute;inset:0;z-index:100;background:var(--dst);color:#fff;display:none;flex-direction:column;align-items:center;justify-content:center;gap:24px;font-size:120px;font-weight:700;letter-spacing:.04em}
+#ovStop span{font-size:34px;letter-spacing:.02em}
+#s-user .ug{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+#s-user .ug .btn{height:150px;font-size:48px;padding:0}
+.mc{height:180px;padding:0 36px;flex-direction:column;justify-content:center;align-items:flex-start;gap:12px;text-align:left}
+.mc b{font-size:56px;letter-spacing:.02em;line-height:1}
+.mc em{font-style:normal;font-size:24px;font-weight:600;color:var(--mut);text-transform:none;letter-spacing:normal}
+.mc.lock{background:var(--surf2);color:#A0A0AB;pointer-events:none}.mc.lock em{color:#A0A0AB}
+.stat{display:flex;flex-direction:column;gap:6px;padding-top:12px;border-top:1px solid var(--line);min-width:150px}
+.stat .a{display:flex;align-items:baseline;gap:8px}.stat .a b{font-size:44px;letter-spacing:-.01em;line-height:1}.stat .a i{font-style:normal;font-size:20px;color:var(--mut)}
+.card{flex:1 0 220px;min-width:0;display:flex;flex-direction:column;justify-content:space-between;padding:12px 18px;background:var(--surf2);white-space:nowrap}
+.card .a{font-size:16px;font-weight:700;letter-spacing:.1em;color:var(--mut)}.card .b{font-size:34px;font-weight:700;letter-spacing:-.01em;line-height:1}.card .c{display:flex;flex-direction:column;gap:2px;font-size:17px;color:var(--mut)}
+.slot{height:90px;padding:0 28px;justify-content:space-between;gap:12px;min-width:0;text-align:left}
+.slot .a{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0}.slot .a b{font-size:30px;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:290px;letter-spacing:normal;text-transform:none}.slot .a i{font-style:normal;font-size:22px;line-height:1;color:var(--mut);letter-spacing:normal;text-transform:none}
+.hero{display:flex;align-items:baseline;gap:14px}
+.hero b{font-weight:700;letter-spacing:-.03em;line-height:.84}
+.hero i{font-style:normal;font-size:56px;color:var(--mut)}
+.next{flex:none;display:flex;align-items:center;justify-content:space-between;gap:24px;background:var(--surf2);padding:0 28px;height:100px}
+.next .a{display:flex;flex-direction:column;gap:8px}.next .a div{display:flex;align-items:center;gap:12px}.next .a i{width:14px;height:14px;background:var(--ink);outline:1px solid #fff;flex:none}.next .a span{font-size:18px;font-weight:700;letter-spacing:.12em;color:var(--mut);text-transform:uppercase}.next .a b{font-size:44px;letter-spacing:-.01em;line-height:1}
+.next .v{display:flex;align-items:baseline;gap:32px}.next .v span{display:flex;align-items:baseline;gap:6px}.next .v b{font-size:40px;letter-spacing:-.01em;line-height:1}.next .v i{font-style:normal;font-size:20px;color:var(--mut)}
+.prog{height:8px;background:var(--line);flex:none}.prog div{height:100%;background:var(--red);width:0}
+.strip{flex:none;border-top:1px solid var(--line);padding-top:12px;position:relative}
+.strip svg{display:block}
+.cells{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,1fr);column-gap:24px;min-height:0}
+.cell{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.cell .a{display:flex;align-items:baseline;gap:8px}.cell b{font-size:42px;letter-spacing:-.01em;line-height:1}.cell i{font-style:normal;font-size:20px;color:var(--mut)}
+.lap{height:40px;display:grid;grid-template-columns:2.2fr 1fr 1fr 1.3fr 1fr 1fr;align-items:center;border-top:1px solid var(--line);font-size:24px}
+.lap.h{height:34px;border-top:0;font-size:16px;font-weight:700;letter-spacing:.12em;color:var(--mut);text-transform:uppercase}
+.lap.rest{color:#8A8A95}
+.fgrp{display:flex;flex-direction:column;gap:8px}
+.frow{display:flex;align-items:center;justify-content:space-between;gap:14px;min-height:56px}
+.erow{flex:none;height:60px;padding:0 20px;justify-content:space-between;gap:12px;text-align:left}
+.erow .a{display:flex;align-items:center;gap:12px;min-width:0}.erow .a b{font-size:26px;line-height:1;white-space:nowrap;letter-spacing:normal}.erow .a i{width:16px;height:16px;flex:none}.erow .r{font-size:20px;color:var(--mut);white-space:nowrap;text-transform:none;letter-spacing:normal}
+.scroll{overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.btm{flex:none;display:grid;gap:24px}
+.sensor{height:44px;padding:0 18px;justify-content:space-between;gap:12px;text-align:left;flex:none}
+.sensor b{font-size:22px;line-height:1}.sensor span{font-size:16px;color:var(--mut);text-transform:none;letter-spacing:normal}
+</style>
+</head>
+<body>
+<div id="stage">
+<div id="clock">--:--</div><div id="err" style="display:none"></div><div id="net"><i></i>Kobler til</div><div id="lube" hidden><i></i>Smøring</div>
+
+<section id="s-user" class="scr" style="gap:40px">
+  <div style="display:flex;flex-direction:column;gap:14px"><div class="bar6"></div><span class="h1">VELG BRUKER</span></div>
+  <div class="ug" id="ug"></div>
+  <div class="grid2" style="margin-top:auto">
+    <button class="btn mc lock" id="mc-man" data-act="mode" data-m="man"><b>MANUELL</b><em>Fri fart og hurtigtaster</em></button>
+    <button class="btn mc lock" id="mc-int" data-act="mode" data-m="int"><b>INTERVALL</b><em>Programmerte profiler</em></button>
+  </div>
+</section>
+
+<section id="s-man" class="scr">
+  <div class="top" id="man-top"><div><button class="btn tb" data-act="goUser" id="man-user"></button><button class="btn tb" data-act="mode" data-m="int">Gå til intervall</button></div><div><button class="btn tb" data-act="setup">Oppsett</button></div></div>
+  <div style="flex:none;height:350px;display:grid;grid-template-columns:7fr 5fr;gap:56px">
+    <div style="display:flex;flex-direction:column;min-height:0">
+      <div class="bar6" style="margin-bottom:6px"></div>
+      <div class="rowk" style="flex-direction:column;align-items:stretch;justify-content:space-between;padding:14px 0 6px"><span class="lab">TID</span><span class="hero"><b id="m-tid" style="font-size:134px">00:00</b></span></div>
+      <div class="rowk" style="flex-direction:column;align-items:stretch;justify-content:space-between;padding:14px 0 6px"><span class="lab">DISTANSE</span><span class="hero"><b id="m-dist" style="font-size:134px">0,00</b><i style="font-size:40px">km</i></span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;min-height:0">
+      <div class="rowk" style="flex:1.7"><span class="l"><span class="lab">FART</span><span class="s" id="m-fsub"></span></span><span class="v"><b class="n" id="m-fart" style="font-size:96px">–</b><span class="u" id="m-fu">/km</span></span></div>
+      <div class="rowk" id="m-pr"><span class="l"><span class="lab">PULS</span></span><span class="v"><b class="n" id="m-puls" style="font-size:60px">--</b><span class="u">bpm</span></span></div>
+      <div class="rowk"><span class="l"><span class="lab">STIGNING</span><span class="s" id="m-isub"></span></span><span class="v"><b class="n" id="m-inc" style="font-size:60px">0</b><span class="u">%</span></span></div>
+      <div class="rowk" id="m-kr"><span class="l"><span class="lab">KLATRET</span></span><span class="v"><b class="n" id="m-klat" style="font-size:60px">0</b><span class="u">m</span></span></div>
+    </div>
+  </div>
+  <div id="man-ctrl" style="flex:none;display:flex;flex-direction:column;justify-content:flex-end">
+    <div id="man-keys"><div class="keys8" id="m-sk"></div><div class="keys8" id="m-ik" style="margin-top:24px"></div>
+      <div class="grid2" style="margin-top:24px;height:90px" id="m-pre"></div></div>
+    <div id="man-status" style="flex:1;min-height:0;display:flex;flex-direction:column;gap:24px">
+      <div class="band"><span style="display:flex;flex-direction:column;gap:6px"><span class="bt"><i></i><span id="m-bt">KLAR</span></span><span class="bm" id="m-bm"></span></span><span class="qs"><span>Trykk</span><b>Quick Start</b><span id="m-qs">for å starte</span></span></div>
+      <div class="grid2" id="m-endw"><div style="grid-column:2"><button class="hold btn" data-hold="end" id="m-end"><b></b><span class="t"><span class="sq r"></span><span>Avslutt økt</span></span><span class="h">Hold inne</span></button></div></div>
+    </div>
+  </div>
+</section>
+
+<section id="s-velg" class="scr" style="padding-top:72px">
+  <div class="top on"><div><button class="btn tb" data-act="goUser" id="v-user"></button><button class="btn tb" data-act="mode" data-m="man">Gå til manuell</button></div><div><button class="btn tb" data-act="setup">Oppsett</button></div></div>
+  <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:20px">
+    <div style="flex:none;display:flex;align-items:flex-end;justify-content:space-between;gap:40px">
+      <div style="display:flex;flex-direction:column;min-width:0"><div class="bar6" style="margin-bottom:14px"></div><span id="v-name" style="font-size:56px;font-weight:700;letter-spacing:-.02em;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:700px">&nbsp;</span><span style="display:flex;align-items:center;gap:10px;margin-top:10px;font-size:28px"><span>Trykk</span><b>Quick Start</b><span>for å starte</span></span></div>
+      <div id="v-stats" style="flex:none;display:flex;gap:40px"></div>
+    </div>
+    <div id="v-prof" style="flex:none;position:relative;width:1184px;height:290px"></div>
+    <div id="v-cards" style="flex:1;min-height:0;display:flex;gap:12px;overflow-x:auto"></div>
+  </div>
+  <div class="btm" id="v-slots" style="grid-template-columns:repeat(3,minmax(0,1fr));position:relative"></div>
+</section>
+
+<section id="s-run" class="scr" style="gap:22px">
+  <div class="top" id="run-top"><div><button class="btn tb" data-act="goUser" id="run-user"></button></div><div><button class="btn tb" data-act="setup">Oppsett</button></div></div>
+  <div style="flex:1;min-height:0;display:grid;grid-template-columns:7fr 5fr;gap:56px">
+    <div style="display:flex;flex-direction:column;min-height:0;gap:18px">
+      <div style="display:flex;flex-direction:column;gap:14px"><div class="bar6"></div><div style="display:flex;align-items:center;gap:14px;white-space:nowrap"><span class="sq" id="r-sq"></span><span id="r-ph" style="font-size:26px;font-weight:700;letter-spacing:.12em">DRAG</span><span id="r-phs" style="font-size:26px;color:var(--mut)"></span></div></div>
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:10px">
+        <span class="hero"><b id="r-cnt" style="font-size:250px">0:00</b><i id="r-cu"></i></span>
+        <span style="height:36px;display:flex;align-items:center;gap:14px;font-size:30px;color:var(--mut)"><span id="r-cs"></span><span id="r-qs" style="display:none;align-items:center;gap:10px;color:var(--ink)"><span>Trykk</span><b>Quick Start</b><span id="r-qst">for å fortsette</span></span></span>
+      </div>
+      <div class="prog"><div id="r-prog"></div></div>
+      <div class="next"><span class="a"><div><i id="r-nsq"></i><span id="r-nl">NESTE</span></div><b id="r-nn">–</b></span><span class="v"><span><b id="r-nv1" style="font-size:40px"></b><i id="r-nu1"></i></span><span><b id="r-nv2" style="font-size:40px"></b><i>%</i></span><span id="r-nd"><b id="r-nv3" style="font-size:40px"></b><i id="r-nu3"></i></span></span></div>
+    </div>
+    <div style="display:flex;flex-direction:column;min-height:0">
+      <div class="rowk" style="flex:1.3"><span class="l"><span class="lab">ØKT IGJEN</span></span><span class="v"><b class="n" id="r-left" style="font-size:68px">--</b></span></div>
+      <div class="rowk" style="flex:1.3"><span class="l"><span class="lab">DISTANSE</span></span><span class="v"><b class="n" id="r-dist" style="font-size:68px">0,00</b><span class="u">km</span></span></div>
+      <div class="rowk" style="flex:1.3"><span class="l"><span class="lab">FART</span><span class="s" id="r-fsub"></span></span><span class="v"><b class="n" id="r-fart" style="font-size:68px">–</b><span class="u" id="r-fu">/km</span></span></div>
+      <div class="rowk" id="r-pr"><span class="l"><span class="lab">PULS</span></span><span class="v"><b class="n" id="r-puls" style="font-size:60px">--</b><span class="u">bpm</span></span></div>
+      <div class="rowk"><span class="l"><span class="lab">STIGNING</span><span class="s" id="r-isub"></span></span><span class="v"><b class="n" id="r-inc" style="font-size:60px">0</b><span class="u">%</span></span></div>
+      <div class="rowk" id="r-kr"><span class="l"><span class="lab">KLATRET</span></span><span class="v"><b class="n" id="r-klat" style="font-size:60px">0</b><span class="u">m</span></span></div>
+    </div>
+  </div>
+  <div class="keys8" id="r-keys" style="flex:none;height:96px;display:none"></div>
+  <div class="strip" id="r-strip"><svg id="r-svg" width="1184" height="96"></svg></div>
+  <div style="flex:none;display:flex;flex-direction:column;gap:14px">
+    <div class="grid2" id="a-drag" style="display:none"><div style="grid-column:2"><button class="hold btn" data-hold="cut" id="h-cut"><b></b><span class="t"><span class="sq"></span><span>Kutt drag</span></span><span class="h">Hold inne</span></button></div></div>
+    <div class="grid2" id="a-rest" style="display:none"><div id="a-p30"><button class="btn act guard" data-act="plus30"><span class="t"><span class="sq"></span><span>Legg til 30 sek</span></span><span style="font-size:28px;color:var(--mut)">+0:30</span><i></i></button></div><div id="a-go" style="grid-column:2"><button class="btn act guard" data-act="gotodrag"><span class="t"><span class="sq r"></span><span>Gå til drag</span></span><span>&#8250;</span><i></i></button></div></div>
+    <div class="grid2" id="a-ramp" style="display:none"><div style="grid-column:2"><button class="btn act guard" data-act="cancelramp"><span class="t"><span>Avbryt</span></span><i></i></button></div></div>
+    <div class="grid2" id="a-pause" style="display:none"><div><button class="hold btn neu" data-hold="toman"><b></b><span class="t"><span class="sq g"></span><span>Gå til manuell</span></span><span class="h">Hold inne</span></button></div><div style="grid-column:2"><button class="hold btn" data-hold="fin" id="h-fin"><b></b><span class="t"><span class="sq r"></span><span>Avslutt økt</span></span><span class="h">Hold inne</span></button></div></div>
+    <div class="grid2" id="a-cont" style="display:none"><div><button class="btn act go" data-act="resume"><span class="t"><span>Fortsett</span></span></button></div><div><button class="hold btn" data-hold="fin2"><b></b><span class="t"><span class="sq r"></span><span>Avslutt økt</span></span><span class="h">Hold inne</span></button></div></div>
+    <div class="grid2" id="a-prompt" style="display:none"><div style="display:flex;align-items:center;gap:22px;min-width:0"><span style="position:relative;width:84px;height:84px;flex:none"><svg width="84" height="84" viewBox="0 0 84 84" style="display:block;transform:rotate(-90deg)"><circle cx="42" cy="42" r="36" fill="none" stroke="#E3E3E9" stroke-width="8"/><circle id="p-arc" cx="42" cy="42" r="36" fill="none" stroke="#F8283B" stroke-width="8" stroke-dasharray="226.2" stroke-dashoffset="0"/></svg><b id="p-sec" style="position:absolute;left:0;top:0;width:84px;height:84px;display:flex;align-items:center;justify-content:center;font-size:32px">15</b></span><div id="p-txt" style="font-size:28px;line-height:1.1"></div></div><div class="grid2" style="gap:24px"><button class="btn act" data-act="spdno" style="padding:0 28px;justify-content:center">Nei</button><button class="btn act go" data-act="spdyes" style="padding:0 28px;justify-content:center">Ja</button></div></div>
+  </div>
+</section>
+
+<section id="s-done" class="scr" style="padding-top:52px;gap:20px">
+  <div style="flex:none;display:flex;justify-content:center;margin-bottom:20px"><svg viewBox="395 524 1206 145" width="665" height="80" style="display:block;fill:#03000B" role="img" aria-label="Sportsmaster"><path d="m1600 559-1-1h-67l-1 1h-3l-1 1h-1l-1 1-3 1-6 6v1l-1 1v1l-2 3v2l-1 1v1l-1 1v1l-2 3v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-2 3v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-2 3v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-2 3v2l-1 1v3l1 1h21l3-3v-1l2-3v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l2-3v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l2-3v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l2-3v-2l1-1 1-3 2-2v-1l3-3h1l1-1h50l3-3v-1l1-1v-2l1-1v-2Zm-179 3-7 7-10 20v2l-3 4v2l-4 7v2l-6 11v2l-3 6v5l1 2 3 3 2 1h3l1 1h76l2-1 2-3v-2l2-4v-3h-65l-2-2 8-16 4-2h52l1-1h3l4-2 3-3h1l4-5 5-10v-2l5-9v-4l1-1-1-1v-2l-1-2-2-2-2-1h-2l-1-1h-62l-1 1h-5Zm8 28v-1l1-1v-1l2-2v-2l2-2v-1l1-1v-2l1-1v-1l4-4h1l1-1h34l2 2v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v2l-1 1v1l-3 3h-1l-1 1h-37Zm-97-32h-66l-1 1-6 1-5 3-5 6-10 20v2l-2 4 1 4 5 4h47l1 2-4 7v2l-3 6-5 4h-54l-2 2-4 8v2l2 1h66l1-1h5l8-4 4-4 1-3 2-2 1-4 4-7v-2l4-7v-2l1-1v-4l-2-4-3-2h-3l-1-1h-44l-1-1 4-7v-2l2-4 5-5h52l3-4v-2l2-3Zm-172 0-2 2-3 6v4h55l1 1v3l-1 1v2l-5 10-2 2h-50l-1 1h-3l-1 1h-2l-4 2-5 5v1l-2 2-3 6v2l-6 11v2l-2 3v4l1 1v2l3 3 2 1h2l1 1h71l2-1 2-2 1-3 3-4v-2l5-9v-2l5-9v-2l12-24v-2l3-6v-5l-1-1v-2l-4-4h-3l-1-1Zm38 46-1 1v1l-1 1v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-2 2h-1l-1 1h-35l-1-1v-1l1-1v-2l2-2v-1l1-1v-2l1-1v-1l2-2v-1l1-1v-1l3-3h30l1-1 1 1h4Zm-217 32 1 1h21l2-2 1-4 5-9v-2l18-37 3-9 3-4h23l2 2-28 61v3l2 1h19l2-1 23-48 6-16 2-2h22l2 2-1 4-27 57v3l2 1h19l4-3 12-25v-2l7-13v-2l8-15 3-9-1-4-2-3-6-3h-106l-4 1-4 3-6 11v2l-6 11v2l-12 25-3 9-6 11Zm19-77-1-1h-66l-1 1h-4l-7 4-4 4-1 3-2 2-2 4v2l-2 2-4 8v2l-2 4v3l1 2 5 4h48l1 2-2 2v2l-6 12-2 2h-2l-1 1h-55l-2 1-1 4-3 5v2l2 1h68l1-1h5l8-4 4-4 5-10v-2l4-7v-2l3-5v-8l-4-4h-2l-1-1h-46l-1-1 1-1v-2l6-12 2-2h2l1-1h52l3-4Zm-173-1h-61l-1 1h-3l-1 1h-2l-1 1h-1l-2 2h-1l-4 4v1l-2 2v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-2 3v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-2 3v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-2 3v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-2 3v2l-1 1v1l-2 3v2l-1 1v2h1l1 1h21l3-3v-1l2-3v-2l1-1v-1l1-1v-1l2-3v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l2-3v-2l1-1v-1l1-1v-1l2-3v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l2-3v-2l1-1v-1l4-4h46l2-2v-1l1-1v-2l1-1v-2l1-1Zm-182 4-7 7v1l-1 1v1l-1 1v1l-3 5v2l-1 1v1l-1 1v1l-1 1v1l-3 5v2l-2 2v2l-1 1v1l-3 5v2l-1 1v1l-1 1v1l-3 5v2l-1 1v2l-1 1v2l-1 1v3l1 1v2l4 4h1l1 1h4l1 1h63l1-1h4l1-1h3l1-1h1l3-3h1l2-2v-1l3-3v-1l2-2v-2l1-1v-1l1-1v-1l1-1v-1l3-5v-2l1-1v-1l1-1v-1l3-5v-2l1-1v-1l1-1v-1l1-1v-1l3-5v-2l2-2v-2l3-5v-2l1-1v-6l-1-1v-1l-4-4h-3l-1-1h-69l-1 1h-3l-1 1h-1l-1 1Zm61 11-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v2l-1 1v1l-1 1v1l-1 1v1l-2 2h-1l-2 2h-38l-1-1v-3l1-1v-1l1-1v-1l1-1v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l4-4h1l1-1h36Zm-84-12h-1l-2-2h-2l-1-1h-68l-1 1h-3l-1 1-5 2-5 5v1l-5 9v2l-1 1v1l-4 7v2l-6 11v2l-3 5v2l-7 13v2l-4 7v2l-2 2v2l-3 5v2l-1 1v1l-4 7v2l-4 7v4l1 1h22l2-2v-1l8-15v-2l6-11h50l1-1h6l1-1h2l4-3h1l5-5v-1l2-2v-1l2-3v-2l5-9v-2l5-9v-2l9-17v-2l1-1v-1l1-1v-2l1-1v-6l-1-1Zm-25 11v1l-1 1v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v2l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v1l-1 1v2l-1 1v1l-1 1v1l-1 1v2l-4 4h-1l-1 1h-36l-1-1 1-1v-1l1-1v-1l1-1v-1l1-1v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-2l1-1v-1l1-1v-1l1-1v-1l1-1v-1l1-1v-2l5-5h35Zm-75-14h-70l-1 1h-4l-7 4-6 7-3 6v2l-2 2-3 6v2l-2 3v7l2 3 5 2h46l1 1v2l-6 13-6 5h-65l-3 3v2l-3 6 3 2h76l1-1h5l7-3 5-4 1-3 2-2 1-4 7-14v-2l2-3v-6l-3-4-5-2h-46l-1-1v-2l6-12 5-4h56l2-2Zm878-34h-2l-1 1-1-1h-14l-1 1h-3l-2 2v1l-9 17v2l-1 1-3 7-2 2h-1l-1 1h-5l-1-1h-1l-1 1h-9l-1 1v1l-3 5-1 5h16l1 1v2l-6 11v2l-2 2v2l-6 11v2l-4 7v2l-5 9v2l-1 1v8l3 3h1l1 1h4l1 1h33l3-2v-2l3-5v-4h-22l-1-1v-3l11-21v-2l6-11v-2l5-9v-2l1-1v-1l1-1h25l3-4v-2l1-1 1-5h-22l-1-1v-1l2-2v-2l1-1v-1l9-17v-2l2-3v-3Zm-501 0h-21l-1 1h-1v1l-2 2v2l-2 2v1l-2 3v2l-8 15v2l-3 3-1-1h-1l-1 1h-9l-1-1h-1l-1 1h-8v1l-2 3v2l-2 3v3h21l1 1v2l-6 11v2l-6 11v2l-2 2v2l-3 5v2l-3 5v2l-1 1v1l-1 1v2l-1 1v8l3 4h1l1 1h3l1 1h34l1-1h1v-1l1-1v-2l1-1v-1l1-1v-2l1-1v-1l-1-1h-21l-2-2v-1l1-1v-2l9-17v-2l8-15v-2l3-5v-2l1-1v-1l3-3h24l3-5v-2l1-1v-2l1-1-1-1h-21l-1-1v-2l5-9v-2l8-15v-2l1-1Z" fill-rule="evenodd"/></svg></div>
+  <div style="flex:none;height:326px;display:grid;grid-template-columns:763px 1fr;gap:40px">
+    <div style="display:flex;flex-direction:column;gap:10px;min-width:0">
+      <div style="height:36px;display:flex;align-items:center;justify-content:space-between"><span style="display:flex;align-items:center;gap:28px"><span style="display:flex;align-items:center;gap:10px"><i class="sq" style="width:14px;height:14px"></i><span class="lab16">Fart</span></span><span id="d-hl" style="display:flex;align-items:center;gap:10px"><i class="sq r" style="width:14px;height:14px"></i><span class="lab16">Puls</span></span></span><span style="display:flex;gap:14px"><button class="btn on" id="d-tt" data-act="dx" data-x="t" style="width:150px;height:40px;font-size:20px">Tid</button><button class="btn" id="d-td" data-act="dx" data-x="d" style="width:150px;height:40px;font-size:20px">Distanse</button></span></div>
+      <div id="d-chart" style="position:relative;width:763px;height:280px"></div>
+    </div>
+    <div class="cells" id="d-cells"></div>
+  </div>
+  <div style="flex:none;display:flex;flex-direction:column;border-top:1px solid var(--line)">
+    <div class="lap h"><span>Runde</span><span>Tid</span><span>Distanse</span><span>Fart</span><span>Puls</span><span>Maks</span></div>
+    <div class="scroll" id="d-laps" style="height:120px"></div>
+  </div>
+  <div class="grid2" style="flex:none"><div style="grid-column:2"><button class="btn pri act" data-act="doneok"><span class="t"><span>Ferdig</span></span><span>&#8250;</span></button></div></div>
+</section>
+
+<section id="s-setup" class="scr">
+  <div style="flex:none;display:flex;align-items:flex-end;justify-content:space-between;height:64px"><div style="display:flex;flex-direction:column;gap:14px"><div class="bar6"></div><span class="h1">OPPSETT</span></div><span class="mut" style="font-size:22px;letter-spacing:.08em">SPORTSMASTER T610</span></div>
+  <div class="grid2" style="flex:none">
+    <div style="display:flex;flex-direction:column;gap:10px;min-width:0"><div style="height:34px;padding-top:10px;border-top:1px solid var(--line)" class="lab16">Pulsmålere</div>
+      <div style="display:flex;flex-direction:column;gap:10px;height:168px"><button class="btn" id="hr-scan" data-act="hrscan" style="flex:none;height:64px;font-size:26px">Søk etter sensor</button><div id="hr-body" style="flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;overflow:hidden"></div></div></div>
+    <div style="display:flex;flex-direction:column;gap:10px;min-width:0"><div style="height:34px;padding-top:10px;border-top:1px solid var(--line)" class="lab16">Fartsvisning</div>
+      <div style="display:flex;flex-direction:column;gap:10px;height:168px"><div class="grid2"><button class="btn on" id="st-pace" data-act="spdmode" data-p="1" style="height:64px;font-size:26px;padding:0">Pace</button><button class="btn" id="st-kmt" data-act="spdmode" data-p="0" style="height:64px;font-size:26px;padding:0">km/t</button></div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:var(--surf2)"><span class="lab16">Eksempel</span><span style="display:flex;align-items:baseline;gap:12px"><b id="st-ex" style="font-size:44px;letter-spacing:-.01em;line-height:1">5:00</b><span class="mut" id="st-eu" style="font-size:20px">/km</span><span class="mut" id="st-es" style="font-size:18px">· 12,0 km/t</span></span></div></div></div>
+  </div>
+  <div class="grid2" style="flex:none">
+    <div style="display:flex;flex-direction:column;gap:10px;min-width:0"><div style="display:flex;align-items:center;gap:12px;height:34px;padding-top:10px;border-top:1px solid var(--line)"><i class="sq" style="width:16px;height:16px"></i><span class="lab16">HVILE</span><span class="mut" style="margin-left:auto;font-size:16px">Hurtigtast</span></div><div id="st-h" style="height:60px"></div></div>
+    <div style="display:flex;flex-direction:column;gap:10px;min-width:0"><div style="display:flex;align-items:center;gap:12px;height:34px;padding-top:10px;border-top:1px solid var(--line)"><i class="sq r" style="width:16px;height:16px"></i><span class="lab16">DRAG</span><span class="mut" style="margin-left:auto;font-size:16px">Hurtigtast</span></div><div id="st-d" style="height:60px"></div></div>
+  </div>
+  <div class="grid2" style="flex:none"><button class="btn act" data-act="goedit" style="height:90px"><span class="t"><span>Intervaller</span></span><span>&#8250;</span></button><button class="btn act" data-act="gokeys" style="height:90px"><span class="t"><span>Hurtigtaster</span></span><span>&#8250;</span></button></div>
+  <div class="grid2" style="margin-top:auto;flex:none"><button class="btn act" data-act="setupcancel"><span class="t"><span>Avbryt</span></span></button><button class="btn pri act" data-act="setupsave"><span class="t"><span>Lagre</span></span></button></div>
+</section>
+
+<section id="s-edit" class="scr" style="gap:20px">
+  <div style="flex:none;display:flex;flex-direction:column;gap:14px"><div class="bar6"></div>
+    <div style="display:flex;align-items:center;gap:16px;height:56px;position:relative">
+      <span style="font-size:36px;font-weight:700;letter-spacing:-.01em;line-height:1;white-space:nowrap">INTERVALLER</span>
+      <div style="position:relative;flex:none;width:230px"><button class="btn" data-act="eddd" style="width:100%;height:56px;padding:0 18px;justify-content:space-between;gap:10px"><span id="e-ddn" style="font-size:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:none;letter-spacing:normal"></span><svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" aria-hidden="true"><path d="M4 9l9 9 9-9"/></svg></button><div class="dd" id="e-dd" style="display:none;left:0;top:100%;margin-top:8px;width:400px"></div></div>
+      <label style="flex:1;min-width:0;display:block"><input class="txt" id="e-name" type="text" maxlength="31" aria-label="Navn på økt"></label>
+      <div style="flex:none;width:250px"><button class="hold btn sm" data-hold="delses"><b></b><span class="t"><span class="sq r"></span><span>Slett økt</span></span><span class="h">Hold inne</span></button></div>
+      <span style="flex:none;display:flex;align-items:center;gap:12px;height:56px;padding:0 20px;background:var(--surf2)"><span class="lab16">VARIGHET</span><b id="e-tot" style="font-size:30px;line-height:1">0:00</b></span>
+    </div></div>
+  <div style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:24px">
+    <div class="scroll" id="e-list" style="position:relative;display:flex;flex-direction:column;gap:8px;min-height:0;border-top:1px solid var(--line);padding-top:12px"></div>
+    <div style="display:flex;flex-direction:column;gap:16px;min-height:0;border-top:1px solid var(--line);padding-top:12px">
+      <div style="flex:none;display:flex;align-items:center;gap:14px;height:44px"><i class="sq" id="e-tsq"></i><span id="e-ttl" style="font-size:36px;font-weight:700;letter-spacing:.02em;line-height:1"></span></div>
+      <div class="scroll" id="e-det" style="flex:1;min-height:0;display:flex;flex-direction:column;gap:14px"></div>
+    </div>
+  </div>
+  <div id="e-add" style="flex:none"><button class="btn" data-act="addstep" style="width:100%;height:64px;font-size:26px">+ Legg til steg</button></div>
+  <div class="grid2" style="flex:none"><button class="btn act" data-act="editcancel"><span class="t"><span>Avbryt</span></span></button><button class="btn pri act" data-act="editsave"><span class="t"><span>Lagre</span></span></button></div>
+  <div class="dd" id="e-pick" style="display:none;left:50%;top:300px;margin-left:-240px;width:480px;z-index:20"></div>
+</section>
+
+<section id="s-keys" class="scr" style="gap:20px">
+  <div style="flex:none;display:flex;flex-direction:column;gap:14px"><div class="bar6"></div><span class="h1">HURTIGTASTER</span></div>
+  <div style="flex:none;display:flex;flex-direction:column;gap:12px"><span class="lab16">Fartstaster</span><div class="keys8" id="k-sk"></div><span class="lab16" style="margin-top:8px">Stigningstaster</span><div class="keys8" id="k-ik"></div></div>
+  <div style="flex:1;min-height:0;border-top:1px solid var(--line);padding-top:16px;display:flex;align-items:center;justify-content:space-between"><span style="display:flex;flex-direction:column;gap:6px"><span class="lab16" id="k-lab">FARTSTRINN 1 AV 8</span><span class="mut" id="k-sub" style="font-size:22px"></span></span><div id="k-nf"></div></div>
+  <div class="grid2" style="flex:none"><button class="btn act" data-act="keyscancel"><span class="t"><span>Avbryt</span></span></button><button class="btn pri act" data-act="keyssave"><span class="t"><span>Lagre</span></span></button></div>
+</section>
+
+<div id="toast" class="toast" style="display:none"></div>
+<div id="warn" class="toast warn" style="display:none"></div>
+<div id="ovCount"></div>
+<div id="ovStop"><b>NØDSTOPP</b><span>Tilbakestill nødstoppen på møllen</span></div>
+</div>
+<script>
+'use strict';
+// =============================================================================
+// common.js - helpers shared by the tablet UI and the sessions page.
+// Nothing in this file depends on application state.
+// =============================================================================
+
+// ===== DOM helpers =====
+const byId = (id) => document.getElementById(id);
+const queryAll = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+
+// Writes are skipped when the value did not change. This saves layout work on the tablet.
+const lastWrittenText = new Map();
+function setText(id, value) {
+  const text = String(value);
+  if (lastWrittenText.get(id) === text) return;
+  lastWrittenText.set(id, text);
+  byId(id).textContent = text;
+}
+
+function setVisible(id, visible, displayValue) {
+  const element = byId(id);
+  if (!element) return;
+  const display = visible ? displayValue || '' : 'none';
+  if (element.style.display !== display) element.style.display = display;
+}
+
+function setHtmlIfChanged(element, html) {
+  if (element.lastHtml === html) return;
+  element.lastHtml = html;
+  element.innerHTML = html;
+}
+
+// ===== Storage (never throws: localStorage is blocked in some sandboxes and private modes) =====
+const storage = {
+  get(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (error) {
+      return null;
+    }
+  },
+  set(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (error) {
+      /* storage unavailable: the value is simply not remembered */
+    }
+  },
+};
+
+// ===== Numbers and time (Norwegian formatting: decimal comma) =====
+const pad2 = (n) => String(n).padStart(2, '0');
+const isFiniteNumber = (value) => typeof value === 'number' && isFinite(value);
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const roundToTenth = (value) => Math.round(value * 10) / 10;
+
+const formatOneDecimal = (n) => n.toFixed(1).replace('.', ',');
+const formatIntOrDecimal = (n) => (Number.isInteger(n) ? String(n) : formatOneDecimal(n));
+
+/** Speed in km/h -> pace "m:ss" per km. A placeholder is returned when the belt is (almost) stopped. */
+function formatPace(kmh) {
+  if (!(kmh > 0.3)) return '–:––';
+  const seconds = Math.round(3600 / kmh);
+  return Math.floor(seconds / 60) + ':' + pad2(seconds % 60);
+}
+
+/** Splits seconds into whole hours, minutes and seconds. */
+function splitSeconds(totalSeconds) {
+  return { hours: Math.floor(totalSeconds / 3600), minutes: Math.floor((totalSeconds % 3600) / 60), seconds: totalSeconds % 60 };
+}
+
+/** Milliseconds -> "mm:ss", or "h:mm:ss" from one hour (clock style, minutes always two digits). */
+function formatClock(ms) {
+  const { hours, minutes, seconds } = splitSeconds(Math.max(0, Math.floor(ms / 1000)));
+  return hours ? hours + ':' + pad2(minutes) + ':' + pad2(seconds) : pad2(minutes) + ':' + pad2(seconds);
+}
+
+/** Seconds -> "m:ss", or "h:mm:ss" from one hour (duration style). */
+function formatDuration(totalSeconds) {
+  const { hours, minutes, seconds } = splitSeconds(Math.round(totalSeconds));
+  return hours ? hours + ':' + pad2(minutes) + ':' + pad2(seconds) : minutes + ':' + pad2(seconds);
+}
+
+/** "12,5" or "12.5" -> 12.5, anything else -> null. */
+function parseDecimal(text) {
+  const value = parseFloat(String(text).replace(',', '.'));
+  return isFinite(value) ? value : null;
+}
+
+/** "m:ss" or plain seconds -> seconds, anything else -> null. */
+function parseTimeSeconds(text) {
+  const trimmed = String(text).trim();
+  const match = /^(\d+):(\d{1,2})$/.exec(trimmed);
+  if (match) return +match[1] * 60 + +match[2];
+  const value = parseDecimal(trimmed);
+  return value === null ? null : Math.round(value);
+}
+
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
+const escapeHtml = (text) => String(text).replace(/[&<>"]/g, (character) => HTML_ESCAPES[character]);
+
+// ===== Toast =====
+let toastTimer = null;
+/**
+ * Shows a message at the bottom of the screen.
+ * @param {string} message
+ * @param {number} [durationMs]
+ * @param {{act: string, label: string}} [action] optional button (data-act handled by the page)
+ * `showToast.onHide` lets a page react when the toast disappears (used to expire "Undo").
+ */
+function showToast(message, durationMs = 3000, action = null) {
+  const toast = byId('toast');
+  toast.textContent = message;
+  if (action) {
+    const button = document.createElement('button');
+    button.dataset.act = action.act;
+    button.textContent = action.label;
+    toast.appendChild(button);
+  }
+  toast.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.style.display = 'none';
+    if (showToast.onHide) showToast.onHide();
+  }, durationMs);
+}
+
+// ===== HTTP =====
+/**
+ * JSON request to the ESP32. Never throws: resolves to { ok, status, data } and status 0 means
+ * "no answer" (network error or timeout). The timeout covers the whole response, headers and body.
+ * @param {string} path
+ * @param {object|null} [body] JSON body; the method defaults to POST with a body and GET without
+ * @param {string} [method]
+ * @param {number} [timeoutMs] no timeout when omitted
+ */
+async function apiRequest(path, body, method, timeoutMs) {
+  const hasBody = body !== null && body !== undefined;
+  const controller = new AbortController();
+  const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const response = await fetch(path, {
+      method: method || (hasBody ? 'POST' : 'GET'),
+      headers: hasBody ? { 'Content-Type': 'application/json' } : undefined,
+      body: hasBody ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+      cache: 'no-cache',
+    });
+    let data = null;
+    try {
+      data = await response.json();
+    } catch (error) {
+      /* empty or non-JSON body */
+    }
+    return { ok: response.ok, status: response.status, data };
+  } catch (error) {
+    return { ok: false, status: 0, data: null };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+'use strict';
+// =============================================================================
+// workout-model.js - the editor's workout model, its conversion to and from the firmware JSON,
+// and the plan / validation maths. Shared by the tablet UI and the sessions page.
+//
+// Model (short field names for now; they are renamed to the firmware vocabulary in a later step):
+//   workout = { id, name, lastUsed, warm, cool, groups: [group] }
+//   group   = { rep, single?, steps: [step] }   single: stored as SINGLE_STEP, otherwise REPEATING_GROUP
+//   warm / cool step: { dm, dv, sm, v, im, i }
+//   work step ("drag"): { k: 'd', dm, dv, sm, v, vp, im, i }
+//   rest step:          { k: 'r', dm, dv, sm, v, im, i }
+// where
+//   dm = duration mode      't' seconds | 'm' meters          dv = duration value
+//   sm = speed mode         'man' manual | 'fast' fixed | 'fd' follow the work speed (rest only)
+//   v  = speed in km/h      vp = speed change per repetition in km/h (work steps only)
+//   im = incline mode       'keep' unchanged | 'fast' fixed   i  = incline in %
+// =============================================================================
+
+// Limits enforced by the firmware. 14 groups + warm-up + cool-down = 16 segments.
+const WORKOUT_LIMITS = { maxGroups: 14, maxSegments: 16, maxStepsPerGroup: 8, maxTotalSteps: 96, maxNameLength: 31 };
+
+// ===== Defaults and factories =====
+const DEFAULT_WARMUP = { dm: 't', dv: 600, sm: 'man', v: 8, im: 'keep', i: 0 };
+const DEFAULT_COOLDOWN = Object.assign({}, DEFAULT_WARMUP, { dv: 300, sm: 'fast', v: 6 });
+const createWorkStep = () => ({ k: 'd', dm: 't', dv: 60, sm: 'fast', v: 15, vp: 0, im: 'keep', i: 0 });
+const createRestStep = () => ({ k: 'r', dm: 't', dv: 60, sm: 'fd', v: 6, im: 'keep', i: 0 });
+const cloneWorkout = (workout) => JSON.parse(JSON.stringify(workout));
+
+const createEmptyWorkout = () => ({
+  id: 0,
+  name: 'Ny økt',
+  lastUsed: 0,
+  warm: Object.assign({}, DEFAULT_WARMUP),
+  cool: Object.assign({}, DEFAULT_COOLDOWN),
+  groups: [{ rep: 8, steps: [createWorkStep(), createRestStep()] }],
+});
+
+/** Speeds used when a step has no speed of its own (from the user's profile, otherwise fixed defaults). */
+const defaultSpeeds = (user) => ({
+  warm: 8,
+  cool: 6,
+  rest: (user && user.hvileSpeedKmh) || 6,
+  drag: (user && user.dragSpeedKmh) || 15,
+});
+
+/** Library sorted with the most recently used workout first. */
+const workoutsByRecentUse = (workouts) => workouts.slice().sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+
+// ===== Firmware JSON -> model =====
+function stepFromFirmware(fwStep) {
+  return {
+    role: String(fwStep.role).toUpperCase(),
+    dm: fwStep.durationType === 'METERS' ? 'm' : 't',
+    dv: fwStep.durationValue || 60,
+    free: fwStep.speedMode === 'FREE',
+    fixed: fwStep.speedMode === 'FIXED' && fwStep.targetSpeedKmh >= 0.5,
+    v: fwStep.targetSpeedKmh || 0,
+    vp: isFiniteNumber(fwStep.speedProgressionPerRepKmh) ? fwStep.speedProgressionPerRepKmh : null,
+    im: fwStep.setIncline ? 'fast' : 'keep',
+    i: fwStep.targetInclinePct || 0,
+  };
+}
+
+/** Warm-up / cool-down step of the model: fixed speed when the firmware step has one, otherwise manual. */
+function bookendFromFirmware(step, fallbackSpeed) {
+  return { dm: step.dm, dv: step.dv, sm: step.fixed ? 'fast' : 'man', v: step.v >= 0.5 ? step.v : fallbackSpeed, im: step.im, i: step.i };
+}
+
+function workoutFromFirmware(fw) {
+  const segments = fw.segments || [];
+  const workout = {
+    id: fw.id,
+    name: fw.name || 'ØKT',
+    lastUsed: fw.lastUsedTimestamp || 0,
+    warm: Object.assign({}, DEFAULT_WARMUP),
+    cool: Object.assign({}, DEFAULT_COOLDOWN),
+    groups: [],
+  };
+  segments.forEach((segment, index) => {
+    const steps = (segment.steps || []).map(stepFromFirmware);
+    const isFirst = index === 0;
+    const isLast = index === segments.length - 1;
+    if (isFirst && steps[0] && steps[0].role === 'WARMUP') {
+      workout.warm = bookendFromFirmware(steps[0], 8);
+      return;
+    }
+    if (isLast && steps[0] && steps[0].role === 'COOLDOWN') {
+      workout.cool = bookendFromFirmware(steps[0], 6);
+      return;
+    }
+    const group = { rep: segment.repetitions || 1, steps: [] };
+    const segmentSpeed = segment.startSpeedKmh || 0;
+    const segmentProgression = segment.speedProgressionPerRepKmh || 0;
+    if (segment.type === 'SINGLE_STEP') group.single = true;
+    steps.forEach((step) => {
+      if (step.role === 'WORK') {
+        // Same rule as the firmware: own speed when FIXED and >= 0.5, otherwise the segment's start speed.
+        // Own progression when set, otherwise the segment's.
+        const manual = step.free;
+        const speed = step.fixed ? step.v : segmentSpeed >= 0.5 ? segmentSpeed : 15;
+        group.steps.push({
+          k: 'd', dm: step.dm, dv: step.dv, sm: manual ? 'man' : 'fast', v: manual ? 15 : speed,
+          vp: step.vp !== null ? step.vp : segmentProgression, im: step.im, i: step.i,
+        });
+      } else if (step.role === 'REST') {
+        group.steps.push({ k: 'r', dm: step.dm, dv: step.dv, sm: step.fixed ? 'fast' : 'fd', v: step.v >= 0.5 ? step.v : 6, im: step.im, i: step.i });
+      }
+    });
+    if (group.steps.length) workout.groups.push(group);
+  });
+  return workout;
+}
+
+// ===== Model -> firmware JSON =====
+function stepToFirmware(step, role, fixedSpeed, speedKmh) {
+  return {
+    id: 1,
+    role,
+    durationType: step.dm === 'm' ? 'METERS' : 'TIME_SECONDS',
+    durationValue: Math.round(step.dv),
+    speedMode: fixedSpeed ? 'FIXED' : 'FREE',
+    targetSpeedKmh: fixedSpeed ? roundToTenth(speedKmh) : 0,
+    targetInclinePct: Math.round(step.i || 0),
+    setIncline: step.im === 'fast',
+  };
+}
+
+const roleOf = (step) => (step.k === 'd' ? 'WORK' : 'REST');
+
+function singleStepSegment(step, role) {
+  return {
+    id: 0, type: 'SINGLE_STEP', repetitions: 1, startSpeedKmh: 0, speedProgressionPerRepKmh: 0,
+    steps: [stepToFirmware(step, role, step.sm === 'fast', step.v)],
+  };
+}
+
+function workoutToFirmware(workout) {
+  const segments = [singleStepSegment(workout.warm, 'WARMUP')];
+  workout.groups.forEach((group) => {
+    if (group.single) {
+      segments.push(singleStepSegment(group.steps[0], roleOf(group.steps[0])));
+      return;
+    }
+    // The segment's start speed and progression are those of the first fixed-speed work step
+    // (kept for older clients and as a fallback), always set.
+    const firstFixedWork = group.steps.find((step) => step.k === 'd' && step.sm === 'fast');
+    segments.push({
+      id: 0, type: 'REPEATING_GROUP', repetitions: group.rep,
+      startSpeedKmh: firstFixedWork ? roundToTenth(firstFixedWork.v) : 0,
+      speedProgressionPerRepKmh: firstFixedWork ? roundToTenth(firstFixedWork.vp || 0) : 0,
+      steps: group.steps.map((step, index) => {
+        const fwStep = stepToFirmware(step, roleOf(step), step.sm === 'fast', step.v);
+        fwStep.id = index + 1;
+        if (step.k === 'd' && step.sm === 'fast') fwStep.speedProgressionPerRepKmh = roundToTenth(step.vp || 0);
+        return fwStep;
+      }),
+    });
+  });
+  segments.push(singleStepSegment(workout.cool, 'COOLDOWN'));
+  segments.forEach((segment, index) => {
+    segment.id = index + 1;
+  });
+  return { id: workout.id || 0, name: workout.name, segments };
+}
+
+// ===== Plan =====
+/**
+ * Flat list of steps as the firmware expands them: repetitions x steps, and the last rest of an
+ * interval is dropped (no extra rest between the last repetition and what follows; 3-2-1 x 2 = 12 steps).
+ * Entry: { key, k, s (the step), gi, si, rep } where k is 'w' warm-up, 'c' cool-down, 'd' work or 'r' rest.
+ */
+function expandWorkout(workout) {
+  const sequence = [];
+  const push = (key, kind, step, extra) => sequence.push(Object.assign({ key, k: kind, s: step }, extra));
+  push('w', 'w', workout.warm);
+  workout.groups.forEach((group, groupIndex) => {
+    const start = sequence.length;
+    for (let rep = 0; rep < group.rep; rep++) {
+      group.steps.forEach((step, stepIndex) => push('g' + groupIndex + 's' + stepIndex, step.k, step, { gi: groupIndex, si: stepIndex, rep }));
+    }
+    if (!group.single) while (sequence.length > start && sequence[sequence.length - 1].k === 'r') sequence.pop();
+  });
+  push('c', 'c', workout.cool);
+  return sequence;
+}
+
+/**
+ * Expanded steps with planned speed and incline. Added fields:
+ *   v (planned km/h, null = manual/unknown), inc (incline in effect), incSet (step sets the incline),
+ *   vEff (km/h used for the estimate), sec (estimated seconds).
+ */
+function planWorkout(workout, defaults) {
+  const sequence = expandWorkout(workout);
+  let lastWorkSpeed = null;
+  let currentIncline = 0;
+  sequence.forEach((entry) => {
+    const step = entry.s;
+    let speed = null;
+    if (entry.k === 'd') {
+      speed = step.sm === 'fast' ? roundToTenth(step.v + (step.vp || 0) * entry.rep) : null;
+      lastWorkSpeed = speed;
+    } else if (entry.k === 'r') {
+      speed = step.sm === 'fast' ? step.v : lastWorkSpeed;
+    } else {
+      speed = step.sm === 'fast' ? step.v : null;
+    }
+    if (step.im === 'fast') currentIncline = step.i;
+    entry.v = speed;
+    entry.inc = currentIncline;
+    entry.incSet = step.im === 'fast';
+    const fallback = entry.k === 'w' ? defaults.warm : entry.k === 'c' ? defaults.cool : entry.k === 'd' ? defaults.drag : defaults.rest;
+    entry.vEff = speed !== null ? speed : fallback;
+    entry.sec = step.dm === 't' ? step.dv : step.dv / (entry.vEff / 3.6);
+  });
+  return sequence;
+}
+
+/** { seq, T: seconds, D: meters, K: meters climbed } */
+function computePlanStats(workout, defaults) {
+  const seq = planWorkout(workout, defaults);
+  let T = 0;
+  let D = 0;
+  let K = 0;
+  seq.forEach((entry) => {
+    const meters = (entry.vEff / 3.6) * entry.sec;
+    T += entry.sec;
+    D += meters;
+    K += meters * (entry.inc / 100);
+  });
+  return { seq, T, D, K };
+}
+
+/** Returns a user-facing error message (Norwegian), or null when the workout can be saved. */
+function validateWorkout(workout, maxSpeedKmh) {
+  if (!workout.name || !workout.name.trim()) return 'Gi økta et navn';
+  if (workout.name.length > WORKOUT_LIMITS.maxNameLength) return 'Navnet kan maks ha ' + WORKOUT_LIMITS.maxNameLength + ' tegn';
+  if (!workout.groups.length) return 'Økta trenger minst ett intervall';
+  const stepCount = expandWorkout(workout).length;
+  if (stepCount > WORKOUT_LIMITS.maxTotalSteps) return 'For mange steg (' + stepCount + ' av maks ' + WORKOUT_LIMITS.maxTotalSteps + ')';
+  if (exceedsWorkoutLimits(workout)) return workoutFullMessage();
+  for (const group of workout.groups) {
+    for (const step of group.steps) {
+      if (step.k !== 'd' || step.sm !== 'fast') continue;
+      if (!(step.vp >= -2 && step.vp <= 2)) return 'Økning per drag må ligge mellom −2 og +2 km/t';
+      for (const endSpeed of [step.v, step.v + step.vp * (group.rep - 1)]) {
+        if (!(endSpeed >= 0.5 && endSpeed <= maxSpeedKmh)) return 'Dragfarten ender utenfor 0,5 til ' + formatIntOrDecimal(maxSpeedKmh) + ' km/t';
+      }
+    }
+  }
+  return null;
+}
+
+/** "Plassen er full" message listing the firmware limits (shown when a move or add would exceed them). */
+const workoutFullMessage = () =>
+  'Plassen er full (maks ' + WORKOUT_LIMITS.maxSegments + ' segmenter, ' + WORKOUT_LIMITS.maxStepsPerGroup + ' steg i et intervall, ' + WORKOUT_LIMITS.maxTotalSteps + ' totalt)';
+
+/** True when the workout is over one of the firmware limits. */
+const exceedsWorkoutLimits = (workout) =>
+  workout.groups.length > WORKOUT_LIMITS.maxGroups ||
+  expandWorkout(workout).length > WORKOUT_LIMITS.maxTotalSteps ||
+  workout.groups.some((group) => group.steps.length > WORKOUT_LIMITS.maxStepsPerGroup);
+
+'use strict';
+// =============================================================================
+// number-field.js - number input with small "-" and "+" buttons (tap the number for the keypad).
+// Shared by the tablet UI and the sessions page. Needs common.js.
+// =============================================================================
+
+/** Registered fields by input id: { get, set, format, parse, apply(n), step(direction) } */
+const numberFields = {};
+
+function numberFieldHtml(id, ariaLabel, unit) {
+  return (
+    '<div class="nf"><button class="btn" data-nf="' + id + '" data-d="-1" aria-label="Mindre">−</button>' +
+    '<label><input id="' + id + '" type="text" inputmode="decimal" aria-label="' + ariaLabel + '">' +
+    '<span class="u">' + unit + '</span></label>' +
+    '<button class="btn" data-nf="' + id + '" data-d="1" aria-label="Mer">+</button></div>'
+  );
+}
+
+/**
+ * Connects an input created by numberFieldHtml to its model.
+ * @param {string} id input id
+ * @param {{get: function(): number, format: function(number): string, parse: function(string): (number|null),
+ *          apply: function(number): void, step: function(number): void}} field
+ */
+function bindNumberField(id, field) {
+  numberFields[id] = field;
+  const input = byId(id);
+  input.value = field.format(field.get());
+  input.oninput = () => {
+    const value = field.parse(input.value);
+    if (value !== null) field.apply(value);
+  };
+  input.onblur = () => {
+    input.value = field.format(field.get());
+  };
+  input.onfocus = () => {
+    try {
+      input.select();
+    } catch (error) {
+      /* select() is not supported everywhere */
+    }
+  };
+}
+
+/** Re-reads the model value into the input unless the user is typing in it. */
+function refreshNumberField(id) {
+  const field = numberFields[id];
+  const input = byId(id);
+  if (field && input && document.activeElement !== input) input.value = field.format(field.get());
+}
+
+'use strict';
+// =============================================================================
+// speed-format.js - speed display in pace (m:ss per km) or km/h, following the user's choice.
+// Needs a global `state` with `showPace` (true = pace, false = km/h). Shared by both pages.
+// =============================================================================
+
+/** Speed as text in the unit the user prefers: "5:30" (pace) or "10,9" (km/h). */
+const formatSpeed = (kmh) => (state.showPace ? formatPace(kmh) : formatOneDecimal(kmh));
+
+/** Unit label that goes with formatSpeed. */
+const speedUnitLabel = () => (state.showPace ? '/km' : 'km/t');
+
+'use strict';
+// =============================================================================
+// editor.js - the workout editor shared by the tablet UI and the sessions page:
+//   * editor state and selection
+//   * step list and step detail panel
+//   * drag-and-drop re-ordering (finger hold or mouse drag, ghost row, drop line)
+//
+// Needs: common.js, workout-model.js, number-field.js, speed-format.js and a global `state`
+// with { showPace, capabilities: { maxSpeedKmh }, user, workouts }.
+// Each page tunes the editor through `editorConfig` and `editorHooks` below.
+// =============================================================================
+
+const editor = {
+  draft: null, // the workout being edited (a deep copy of the library entry)
+  selectedKey: 'w', // 'w' warm-up | 'c' cool-down | 'g<i>' interval i | 'g<i>s<j>' step j of group i
+  originalId: null, // id of the workout being edited, null for a new workout
+  dropdownOpen: false,
+};
+
+const editorConfig = {
+  holdToDelete: true, // tablet: press-and-hold delete button; sessions page: ordinary button
+  showMoveButtons: true, // tablet: "Flytt opp / Flytt ned" in the detail panel
+  rowGrip: false, // sessions page (phone): drag handle on every movable row
+  dotColors: { w: '#9A9AA6', c: '#9A9AA6', d: '#F8283B', r: 'var(--ink)', g: 'var(--ink)' },
+};
+
+const editorHooks = {
+  renderList: null, // () => true when the page rendered the step list itself (sessions page on PC)
+  renderDetail: null, // () => true when the page rendered the detail panel itself
+  afterListRendered: null, // () => void
+  afterDetailRendered: null, // (hostElement) => void
+};
+
+const STEP_LABELS = { w: 'Oppvarming', c: 'Nedjogg', d: 'Drag', r: 'Hvile' };
+const STEP_INDENT_PX = 28; // steps inside an interval are indented by this much
+
+// ===== Selection =====
+const cloneDraft = () => cloneWorkout(editor.draft);
+
+function loadDraft(workout, isNew) {
+  editor.draft = cloneWorkout(workout);
+  editor.originalId = isNew ? null : workout.id;
+  editor.selectedKey = editor.draft.groups.length ? 'g0s0' : 'w';
+  renderEditor();
+}
+
+/**
+ * Looks up what a selection key points at.
+ * @returns {{o: object, kind: string, gi?: number, si?: number}|null}
+ *   o = the warm-up/cool-down/group/step object, kind = 'w' | 'c' | 'g' | 'd' | 'r'
+ */
+function resolveTarget(key) {
+  const draft = editor.draft;
+  if (key === 'w') return { o: draft.warm, kind: 'w' };
+  if (key === 'c') return { o: draft.cool, kind: 'c' };
+  let match = /^g(\d+)$/.exec(key);
+  if (match && draft.groups[+match[1]]) return { o: draft.groups[+match[1]], kind: 'g', gi: +match[1] };
+  match = /^g(\d+)s(\d+)$/.exec(key);
+  if (match) {
+    const group = draft.groups[+match[1]];
+    const step = group && group.steps[+match[2]];
+    if (step) return { o: step, kind: step.k, gi: +match[1], si: +match[2] };
+  }
+  return null;
+}
+
+/** Moves the selected step (or interval) one position up (-1) or down (+1) among its siblings. */
+function moveSelected(direction) {
+  const target = resolveTarget(editor.selectedKey);
+  if (!target || target.kind === 'w' || target.kind === 'c') return;
+  const groups = editor.draft.groups;
+  const group = groups[target.gi];
+  const isTopLevel = target.kind === 'g' || group.single;
+  const siblings = isTopLevel ? groups : group.steps;
+  const index = isTopLevel ? target.gi : target.si;
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= siblings.length) return;
+  const moved = siblings[index];
+  siblings[index] = siblings[newIndex];
+  siblings[newIndex] = moved;
+  editor.selectedKey = target.kind === 'g' ? 'g' + newIndex : isTopLevel ? 'g' + newIndex + 's0' : 'g' + target.gi + 's' + newIndex;
+  renderEditor();
+}
+
+// ===== Rendering =====
+const formatSpeedProgression = (kmhPerRep) => (kmhPerRep ? (kmhPerRep > 0 ? '+' : '−') + formatOneDecimal(Math.abs(kmhPerRep)) : '');
+
+/** Right-hand summary of a row, for example "0:45 · 3:45 /km · 12 %". */
+function describeStep(step, kind) {
+  const duration = step.dm === 't' ? formatDuration(step.dv) : step.dv + ' m';
+  const incline = step.im === 'fast' ? ' · ' + formatIntOrDecimal(step.i) + ' %' : '';
+  if (kind === 'd') {
+    const speed = step.sm === 'fast' ? formatSpeed(step.v) + ' ' + speedUnitLabel() + (step.vp ? ' ' + formatSpeedProgression(step.vp) : '') : 'manuell fart';
+    return duration + ' · ' + speed + incline;
+  }
+  const speed = step.sm === 'fast' ? formatSpeed(step.v) + ' ' + speedUnitLabel() : kind === 'r' ? 'følger drag' : 'manuell fart';
+  return duration + ' · ' + speed + incline;
+}
+
+function renderEditor() {
+  const draft = editor.draft;
+  if (!draft) return;
+  byId('e-name').value = draft.name;
+  setText('e-ddn', draft.name);
+  renderStepList();
+  renderStepDetail();
+}
+
+function renderStepList() {
+  if (!editor.draft) return;
+  if (!(editorHooks.renderList && editorHooks.renderList())) renderDefaultStepList();
+  if (editorHooks.afterListRendered) editorHooks.afterListRendered();
+}
+
+function renderDefaultStepList() {
+  const draft = editor.draft;
+  const row = (key, kind, label, summary, indentPx) => {
+    const movable = key !== 'w' && key !== 'c';
+    return (
+      '<button class="btn erow' + (editor.selectedKey === key ? ' on' : '') + '" data-act="esel" data-k="' + key + '" style="margin-left:' + indentPx + 'px">' +
+      '<span class="a"><i style="background:' + editorConfig.dotColors[kind] + '"></i><b>' + label + '</b></span>' +
+      '<span class="r">' + escapeHtml(summary) + '</span>' +
+      (editorConfig.rowGrip && movable ? '<span class="grip" aria-label="Dra for å flytte"></span>' : '') +
+      '</button>'
+    );
+  };
+  let html = row('w', 'w', STEP_LABELS.w, describeStep(draft.warm, 'w'), 0);
+  let intervalNumber = 0;
+  draft.groups.forEach((group, groupIndex) => {
+    if (!group.single) html += row('g' + groupIndex, 'g', 'Intervall ' + ++intervalNumber, group.rep + ' ×', 0);
+    group.steps.forEach((step, stepIndex) => {
+      html += row('g' + groupIndex + 's' + stepIndex, step.k, STEP_LABELS[step.k], describeStep(step, step.k), group.single ? 0 : STEP_INDENT_PX);
+    });
+  });
+  html += row('c', 'c', STEP_LABELS.c, describeStep(draft.cool, 'c'), 0);
+  setHtmlIfChanged(byId('e-list'), html);
+  const stats = computePlanStats(draft, defaultSpeeds(state.user));
+  setText('e-tot', formatDuration(stats.T));
+  byId('e-tot').title = expandWorkout(draft).length + ' av ' + WORKOUT_LIMITS.maxTotalSteps + ' steg';
+}
+
+/** Segmented control: options are [value, label, minWidthPx?]. */
+function segmentedHtml(field, options, current) {
+  const buttons = options.map(
+    (option) =>
+      '<button class="btn' + (option[0] === current ? ' on' : '') + '" data-act="eseg" data-f="' + field + '" data-v="' + option[0] + '" style="min-width:' + (option[2] || 90) + 'px">' + option[1] + '</button>'
+  );
+  return '<span class="seg">' + buttons.join('') + '</span>';
+}
+
+function renderStepDetail() {
+  if (editorHooks.renderDetail && editorHooks.renderDetail()) return;
+  const target = resolveTarget(editor.selectedKey);
+  const host = byId('e-det');
+  if (!target) {
+    editor.selectedKey = 'w';
+    renderStepDetail();
+    return;
+  }
+  const item = target.o;
+  const kind = target.kind;
+  setText('e-ttl', kind === 'g' ? 'INTERVALL' : STEP_LABELS[kind].toUpperCase());
+  byId('e-tsq').style.background = kind === 'd' ? 'var(--red)' : kind === 'r' || kind === 'g' ? 'var(--ink)' : '#9A9AA6';
+
+  const field = (label, inner) => '<div class="fgrp"><span class="lab16">' + label + '</span><div class="frow">' + inner + '</div></div>';
+  const deleteButton = (text) =>
+    '<div style="margin-top:auto">' +
+    (editorConfig.holdToDelete
+      ? '<button class="hold btn sm" data-hold="delstep"><b></b><span class="t"><i class="sq r"></i><span>' + text + '</span></span><span class="h">Hold inne</span></button>'
+      : '<button class="delbtn" data-act="sdel">' + text + '</button>') +
+    '</div>';
+  const moveButtons = editorConfig.showMoveButtons
+    ? '<div class="grid2"><button class="btn" data-act="mvup" style="height:56px;font-size:22px">Flytt opp</button><button class="btn" data-act="mvdn" style="height:56px;font-size:22px">Flytt ned</button></div>'
+    : '';
+  const fixedOrManual = [['man', 'Manuell', 100], ['fast', 'Fast', 74]];
+  const speedField = (options) => field('Fart', segmentedHtml('sm', options, item.sm) + (item.sm === 'fast' ? numberFieldHtml('ed-v', 'Fart', 'km/t') : ''));
+
+  let html = '';
+  if (kind === 'g') {
+    html += field('Antall ganger', '<span></span>' + numberFieldHtml('ed-rep', 'Antall ganger', '×')) + moveButtons + deleteButton('Slett intervall');
+  } else {
+    html += field('Varighet', segmentedHtml('dm', [['t', 'Tid'], ['m', 'Meter']], item.dm) + numberFieldHtml('ed-dur', 'Varighet', item.dm === 't' ? '' : 'm'));
+    if (kind === 'd') {
+      html += speedField(fixedOrManual);
+      const group = editor.draft.groups[target.gi];
+      if (item.sm === 'fast' && !group.single && group.rep > 1) {
+        html += field('Økning per drag', '<span class="mut" style="font-size:20px;text-transform:none">Per gjentakelse av intervallet</span>' + numberFieldHtml('ed-vp', 'Økning per drag', 'km/t'));
+      }
+    } else {
+      html += speedField(kind === 'r' ? [['fd', 'Følg drag', 110], ['fast', 'Fast', 74]] : fixedOrManual);
+    }
+    html += field('Stigning', segmentedHtml('im', [['keep', kind === 'r' ? 'Følg drag' : 'Uendret', 110], ['fast', 'Fast', 74]], item.im) + (item.im === 'fast' ? numberFieldHtml('ed-i', 'Stigning', '%') : ''));
+    if (kind === 'd' || kind === 'r') html += moveButtons + deleteButton('Slett steg');
+  }
+  host.innerHTML = html;
+  if (editorHooks.afterDetailRendered) editorHooks.afterDetailRendered(host);
+  bindDetailFields(item);
+  setVisible('e-add', true, 'block');
+}
+
+/** Connects the number fields that exist in the detail panel to the selected item. */
+function bindDetailFields(item) {
+  const maxSpeed = () => state.capabilities.maxSpeedKmh; // read when used: capabilities arrive after startup
+  const changed = () => renderStepList();
+  if (byId('ed-rep')) {
+    bindNumberField('ed-rep', {
+      get: () => item.rep,
+      format: String,
+      parse: parseDecimal,
+      apply: (n) => { item.rep = clamp(Math.round(n), 1, 99); changed(); },
+      step: (direction) => { item.rep = clamp(item.rep + direction, 1, 99); refreshNumberField('ed-rep'); changed(); },
+    });
+  }
+  if (byId('ed-dur')) {
+    const isTime = item.dm === 't';
+    const minimum = isTime ? 5 : 50;
+    bindNumberField('ed-dur', {
+      get: () => item.dv,
+      format: (value) => (isTime ? formatDuration(value) : String(value)),
+      parse: (text) => (isTime ? parseTimeSeconds(text) : parseDecimal(text)),
+      apply: (n) => { item.dv = Math.max(minimum, Math.round(n)); changed(); },
+      step: (direction) => {
+        // Time steps grow with the duration: 5 s up to 2 min, 15 s up to 10 min, then 1 min. Distance: 50 m.
+        const stepSize = isTime ? (item.dv <= 120 ? 5 : item.dv <= 600 ? 15 : 60) : 50;
+        item.dv = Math.max(minimum, item.dv + stepSize * direction);
+        refreshNumberField('ed-dur');
+        changed();
+      },
+    });
+  }
+  if (byId('ed-v')) {
+    bindNumberField('ed-v', {
+      get: () => item.v,
+      format: formatOneDecimal,
+      parse: parseDecimal,
+      apply: (n) => { item.v = roundToTenth(clamp(n, 0.5, maxSpeed())); changed(); },
+      step: (direction) => { item.v = roundToTenth(clamp(item.v + 0.5 * direction, 0.5, maxSpeed())); refreshNumberField('ed-v'); changed(); },
+    });
+  }
+  if (byId('ed-vp')) {
+    bindNumberField('ed-vp', {
+      get: () => item.vp || 0,
+      format: (value) => (value > 0 ? '+' : '') + formatOneDecimal(value),
+      parse: parseDecimal,
+      apply: (n) => { item.vp = roundToTenth(clamp(n, -2, 2)); changed(); },
+      step: (direction) => { item.vp = roundToTenth(clamp((item.vp || 0) + 0.1 * direction, -2, 2)); refreshNumberField('ed-vp'); changed(); },
+    });
+  }
+  if (byId('ed-i')) {
+    bindNumberField('ed-i', {
+      get: () => item.i,
+      format: String,
+      parse: parseDecimal,
+      apply: (n) => { item.i = clamp(Math.round(n), 0, 15); changed(); },
+      step: (direction) => { item.i = clamp(item.i + direction, 0, 15); refreshNumberField('ed-i'); changed(); },
+    });
+  }
+}
+
+/** Shows the "add" picker: items are [value, label]. */
+function showPicker(items, action) {
+  const picker = byId('e-pick');
+  picker.innerHTML =
+    items.map((item) => '<button class="btn" data-act="' + (action || 'epick') + '" data-v="' + item[0] + '" style="height:64px"><span style="font-size:28px">' + item[1] + '</span></button>').join('') +
+    '<button class="btn" data-act="epickx" style="height:64px"><span class="mut" style="font-size:24px">Avbryt</span></button>';
+  picker.style.display = 'flex';
+}
+
+/** Deletes the selected step or interval (the last interval of a workout is kept). */
+function deleteSelectedStep() {
+  const target = resolveTarget(editor.selectedKey);
+  if (!target) return;
+  const draft = editor.draft;
+  if (target.kind === 'g') {
+    if (draft.groups.length <= 1) {
+      showToast('Økta trenger minst ett intervall');
+      return;
+    }
+    draft.groups.splice(target.gi, 1);
+  } else {
+    const group = draft.groups[target.gi];
+    group.steps.splice(target.si, 1);
+    if (!group.steps.length) {
+      if (draft.groups.length <= 1) {
+        group.steps.push(createWorkStep());
+        showToast('Intervallet trenger minst ett steg');
+      } else {
+        draft.groups.splice(target.gi, 1);
+      }
+    }
+  }
+  editor.selectedKey = 'w';
+  renderEditor();
+}
+
+// ===== Drag and drop =====
+// Finger: hold 0.3 s (or touch a drag handle) and drag. Mouse: drag more than 4 px.
+// The row follows the pointer as a "ghost"; a line shows where it will land.
+const dragState = { active: false, lastDropAt: 0 };
+
+/** Zoom factor of the page (the tablet UI scales its 1280x800 stage to the screen). */
+const layoutScale = (element) => element.getBoundingClientRect().width / element.offsetWidth || 1;
+
+/** Nearest ancestor (or the element itself) that actually scrolls, or null. */
+function findScrollParent(element) {
+  for (let node = element; node && node !== document.body; node = node.parentElement) {
+    const overflowY = getComputedStyle(node).overflowY;
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight + 1) return node;
+  }
+  return null;
+}
+
+/**
+ * Every legal place the dragged item can be dropped.
+ * Slot: { cy: list-relative y that "hits" it, line: { y, x } where the drop line is drawn,
+ *         destination: { group: interval to insert into (null = top level), before: item to insert in front of (null = last) } }
+ */
+function computeDropSlots(listElement, source) {
+  const groups = editor.draft.groups;
+  const movingSingle = source.wholeGroup || (source.group && source.group.single ? source.group : null);
+  const nextGroupAfter = (index) => {
+    for (let j = index + 1; j < groups.length; j++) if (groups[j] !== movingSingle) return groups[j];
+    return null;
+  };
+  const rows = queryAll('.erow:not(.gst)', listElement)
+    .filter((element) => element.style.display !== 'none')
+    .map((element) => {
+      const match = /^g(\d+)(?:s(\d+))?$/.exec(element.dataset.k);
+      return { key: element.dataset.k, gi: match ? +match[1] : -1, si: match && match[2] != null ? +match[2] : -1, top: element.offsetTop, height: element.offsetHeight };
+    });
+  const slots = [];
+  const addSlot = (cy, lineY, lineX, group, before) => slots.push({ cy, line: { y: lineY, x: lineX }, destination: { group, before } });
+
+  rows.forEach((row, index) => {
+    const bottom = row.top + row.height;
+    const quarter = row.height / 4;
+    if (row.key === 'w') {
+      addSlot(bottom, bottom + 4, 0, null, nextGroupAfter(-1));
+      return;
+    }
+    if (row.key === 'c') {
+      addSlot(row.top, row.top - 4, 0, null, null);
+      return;
+    }
+    const group = groups[row.gi];
+    const isFirstInGroup = index === 0 || rows[index - 1].gi !== row.gi;
+    const next = rows[index + 1];
+    const isLastInGroup = !next || next.gi !== row.gi;
+    if (source.wholeGroup || group.single) {
+      // whole intervals and single steps: only before the first / after the last row of an item
+      if (isFirstInGroup) addSlot(row.top + quarter, row.top - 4, 0, null, group);
+      if (isLastInGroup) addSlot(bottom - quarter, bottom + 4, 0, null, nextGroupAfter(row.gi));
+      return;
+    }
+    if (row.si < 0) {
+      // interval header: before the interval | first inside it
+      addSlot(row.top + quarter, row.top - 4, 0, null, group);
+      addSlot(bottom - quarter, bottom + 4, STEP_INDENT_PX, group, group.steps.find((step) => step !== source.step) || null);
+      return;
+    }
+    addSlot(row.top + quarter, row.top - 4, STEP_INDENT_PX, group, group.steps[row.si]);
+    if (isLastInGroup) {
+      // last inside the interval | directly below the interval
+      addSlot(bottom - quarter * 1.5, bottom + 2, STEP_INDENT_PX, group, null);
+      addSlot(bottom + 6, bottom + 8, 0, null, nextGroupAfter(row.gi));
+    }
+  });
+  return slots;
+}
+
+/** Lifts a row: creates the ghost and the drop line and hides the rows that move with it. */
+function startDrag(listElement, row, startEvent) {
+  const key = row.dataset.k;
+  const match = /^g(\d+)(?:s(\d+))?$/.exec(key);
+  if (!match) return null;
+  const groups = editor.draft.groups;
+  const groupIndex = +match[1];
+  const stepIndex = match[2] != null ? +match[2] : -1;
+  const group = groups[groupIndex];
+  const source = stepIndex < 0 ? { wholeGroup: group } : { group, step: group.steps[stepIndex], gi: groupIndex, si: stepIndex };
+  const hiddenKeys = new Set([key]);
+  if (stepIndex < 0) group.steps.forEach((step, index) => hiddenKeys.add('g' + groupIndex + 's' + index));
+
+  // Measured before the row is hidden: a hidden row has no position.
+  const grabOffsetY = (startEvent.clientY - row.getBoundingClientRect().top) / layoutScale(listElement);
+
+  const ghost = row.cloneNode(true);
+  ghost.classList.add('gst');
+  ghost.style.width = row.offsetWidth + 'px';
+  ghost.style.margin = '0';
+  ghost.style.transform = 'scale(1.02)';
+  const dropLine = document.createElement('div');
+  dropLine.id = 'dline';
+  listElement.appendChild(dropLine);
+  listElement.appendChild(ghost);
+
+  const rows = queryAll('.erow:not(.gst)', listElement);
+  rows.forEach((element) => {
+    if (hiddenKeys.has(element.dataset.k)) element.style.display = 'none';
+  });
+  return { source, ghost, dropLine, rows, slots: computeDropSlots(listElement, source), currentSlot: null, grabOffsetY };
+}
+
+/** The slot closest to list-relative y. */
+function pickDropSlot(slots, y) {
+  let best = null;
+  let bestDistance = Infinity;
+  slots.forEach((slot) => {
+    const distance = Math.abs(slot.cy - y);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = slot;
+    }
+  });
+  return best;
+}
+
+/** Applies a drop to the draft. Returns the new selection key, or null when nothing changed. */
+function applyDrop(source, destination) {
+  const backup = cloneDraft();
+  const groups = editor.draft.groups;
+  const indexOfGroup = (group) => groups.indexOf(group);
+  const wholeGroup = source.wholeGroup;
+  const step = source.step;
+  if (destination.group && destination.group === source.group && source.group.steps.length === 1) return null; // would empty its own interval
+
+  let intervalRemoved = false;
+  if (wholeGroup) {
+    groups.splice(indexOfGroup(wholeGroup), 1);
+  } else {
+    source.group.steps.splice(source.group.steps.indexOf(step), 1);
+    if (source.group.single || !source.group.steps.length) {
+      groups.splice(indexOfGroup(source.group), 1);
+      intervalRemoved = !source.group.single;
+    }
+  }
+  if (destination.group) {
+    const steps = destination.group.steps;
+    steps.splice(destination.before ? steps.indexOf(destination.before) : steps.length, 0, step);
+  } else {
+    const item = wholeGroup || { single: true, rep: 1, steps: [step] };
+    if (!wholeGroup && step.k === 'd') step.vp = 0; // a single step has no progression
+    groups.splice(destination.before ? indexOfGroup(destination.before) : groups.length, 0, item);
+  }
+  if (exceedsWorkoutLimits(editor.draft)) {
+    editor.draft = backup;
+    showToast(workoutFullMessage());
+    return null;
+  }
+  if (intervalRemoved) showToast('Intervallet ble tomt og er fjernet');
+  if (wholeGroup) return 'g' + indexOfGroup(wholeGroup);
+  const groupIndex = groups.findIndex((group) => group.steps.includes(step));
+  return 'g' + groupIndex + 's' + groups[groupIndex].steps.indexOf(step);
+}
+
+function bindDragAndDrop() {
+  const list = byId('e-list');
+  let holdTimer = 0;
+  let drag = null; // returned by startDrag while a row is lifted
+  let pointerStart = null; // { id, x, y, row, mouse } from pointer down until the drag ends
+  let frameRequest = 0;
+  let listY = 0; // pointer y relative to the list's content
+  let scrollVelocity = 0; // px per frame while the pointer is near the top/bottom edge
+  let stopMouseTracking = null; // removes the document-level mouse listeners
+  const listYAt = (clientY) => (clientY - list.getBoundingClientRect().top) / layoutScale(list) + list.scrollTop;
+
+  const updateGhost = () => {
+    if (!drag) return;
+    const slot = pickDropSlot(drag.slots, listY);
+    drag.ghost.style.transform = 'translateY(' + (listY - drag.grabOffsetY) + 'px) scale(1.02)';
+    drag.ghost.style.top = '0';
+    drag.currentSlot = slot;
+    if (slot) {
+      drag.dropLine.style.display = 'block';
+      drag.dropLine.style.left = slot.line.x + 'px';
+      drag.dropLine.style.width = list.clientWidth - slot.line.x + 'px';
+      drag.dropLine.style.transform = 'translateY(' + slot.line.y + 'px)';
+    } else {
+      drag.dropLine.style.display = 'none';
+    }
+  };
+
+  const animationLoop = () => {
+    if (!drag) return;
+    if (scrollVelocity) {
+      const topBefore = list.getBoundingClientRect().top;
+      const scrollTopBefore = list.scrollTop;
+      list.scrollTop += scrollVelocity;
+      let scrolled = list.scrollTop - scrollTopBefore;
+      if (!scrolled) {
+        // The list itself does not scroll (sessions page): scroll the page instead and follow it.
+        const parent = findScrollParent(list);
+        if (parent) {
+          parent.scrollTop += scrollVelocity;
+          scrolled = (topBefore - list.getBoundingClientRect().top) / layoutScale(list);
+        }
+      }
+      listY += scrolled;
+    }
+    updateGhost();
+    frameRequest = requestAnimationFrame(animationLoop);
+  };
+
+  const endDrag = (drop) => {
+    clearTimeout(holdTimer);
+    document.removeEventListener('pointermove', onPointerMove);
+    document.removeEventListener('pointerup', onPointerUp);
+    document.removeEventListener('pointercancel', onPointerCancel);
+    if (stopMouseTracking) stopMouseTracking();
+    if (!drag) {
+      pointerStart = null;
+      return;
+    }
+    cancelAnimationFrame(frameRequest);
+    const finished = drag;
+    drag = null;
+    dragState.active = false;
+    dragState.lastDropAt = Date.now();
+    finished.ghost.remove();
+    finished.dropLine.remove();
+    finished.rows.forEach((element) => {
+      element.style.display = '';
+    });
+    if (drop && finished.currentSlot) {
+      const key = applyDrop(finished.source, finished.currentSlot.destination);
+      if (key) editor.selectedKey = key;
+      renderEditor();
+    }
+    pointerStart = null;
+  };
+
+  const lift = (point) => {
+    const row = pointerStart && pointerStart.row;
+    if (!row) return;
+    drag = startDrag(list, row, point);
+    if (!drag) return;
+    dragState.active = true;
+    listY = listYAt(point.clientY);
+    if (window.getSelection) window.getSelection().removeAllRanges(); // no text selection while dragging
+    try {
+      if (navigator.vibrate) navigator.vibrate(12);
+    } catch (error) {
+      /* vibration is optional */
+    }
+    animationLoop();
+  };
+
+  /** Same logic for finger and mouse: x/y are viewport coordinates of the pointer. */
+  const onMove = (clientX, clientY) => {
+    if (!pointerStart) return;
+    if (!drag) {
+      const moved = Math.abs(clientY - pointerStart.y) + Math.abs(clientX - pointerStart.x);
+      if (moved > (pointerStart.mouse ? 4 : 10)) {
+        if (pointerStart.mouse) lift({ clientX, clientY }); // mouse: the drag starts after 4 px
+        else {
+          clearTimeout(holdTimer); // finger moved before the hold time: this is scrolling
+          endDrag(false);
+        }
+      }
+      return;
+    }
+    listY = listYAt(clientY);
+    const scrollParent = findScrollParent(list);
+    const edgeRect = (scrollParent || list).getBoundingClientRect();
+    const edge = 70 * layoutScale(list);
+    scrollVelocity = clientY < edgeRect.top + edge ? -14 : clientY > edgeRect.bottom - edge ? 14 : 0;
+  };
+
+  // ----- Finger and pen: pointer events. Hold 0.3 s (or touch a drag handle) to lift. -----
+  const onPointerMove = (event) => {
+    if (pointerStart && event.pointerId === pointerStart.id) onMove(event.clientX, event.clientY);
+  };
+  const onPointerUp = () => endDrag(true);
+  const onPointerCancel = () => endDrag(false);
+  list.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse') return; // handled by the mouse events below
+    const row = event.target.closest('.erow');
+    if (!row || row.dataset.k === 'w' || row.dataset.k === 'c') return;
+    pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY, row, mouse: false };
+    try {
+      row.releasePointerCapture(event.pointerId);
+    } catch (error) {
+      /* no capture to release */
+    }
+    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', onPointerCancel);
+    const onHandle = event.target.closest('.grip'); // drag handle: lift at once, otherwise hold 0.3 s
+    holdTimer = setTimeout(() => lift(event), onHandle ? 0 : 300);
+  });
+
+  // ----- Mouse: classic mouse events (the same on the wide table and the phone layout) -----
+  list.addEventListener('mousedown', (event) => {
+    if (event.button !== 0) return;
+    const row = event.target.closest('.erow');
+    if (!row || row.dataset.k === 'w' || row.dataset.k === 'c') return;
+    if (event.target.closest('input, select, textarea, .x, .mv')) return; // controls inside a table row keep working
+    pointerStart = { id: 'mouse', x: event.clientX, y: event.clientY, row, mouse: true };
+    const onMouseMove = (moveEvent) => {
+      onMove(moveEvent.clientX, moveEvent.clientY);
+      if (drag) moveEvent.preventDefault();
+    };
+    const onMouseUp = () => endDrag(true);
+    stopMouseTracking = () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+      stopMouseTracking = null;
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+
+  list.addEventListener('touchmove', (event) => {
+    if (dragState.active) event.preventDefault();
+  }, { passive: false });
+  list.addEventListener('contextmenu', (event) => event.preventDefault());
+}
+
+// ===== Actions (data-act values handled by both pages) =====
+const EDITOR_ACTIONS = {
+  esel(element) {
+    if (Date.now() - dragState.lastDropAt < 400) return; // the tap that ends a drag must not select
+    editor.selectedKey = element.dataset.k;
+    renderStepList();
+    renderStepDetail();
+  },
+  eseg(element) {
+    const target = resolveTarget(editor.selectedKey);
+    if (!target) return;
+    const field = element.dataset.f;
+    const value = element.dataset.v;
+    const item = target.o;
+    if (field === 'dm') {
+      if (item.dm !== value) {
+        // Switching between time and distance keeps the step roughly as long as before.
+        const speed = item.sm === 'fast' ? item.v : target.kind === 'd' ? 15 : 8;
+        item.dv = value === 'm' ? Math.max(50, Math.round((item.dv * speed) / 3.6 / 10) * 10) : Math.max(5, Math.round(item.dv / (speed / 3.6)));
+        item.dm = value;
+      }
+    } else {
+      item[field] = value;
+    }
+    renderStepList();
+    renderStepDetail();
+  },
+  addstep() {
+    showPicker([['i', 'Intervall'], ['d', 'Drag'], ['r', 'Hvile']]);
+  },
+  epick(element) {
+    byId('e-pick').style.display = 'none';
+    const groups = editor.draft.groups;
+    const choice = element.dataset.v;
+    const target = resolveTarget(editor.selectedKey);
+    const makeStep = () => (choice === 'd' ? createWorkStep() : createRestStep());
+    if (choice === 'i' || !target || target.kind === 'w' || target.kind === 'c' || groups[target.gi].single) {
+      // Top level: after the selected item (after warm-up = first, after cool-down = last).
+      if (groups.length >= WORKOUT_LIMITS.maxGroups) {
+        showToast('Maks ' + WORKOUT_LIMITS.maxSegments + ' segmenter (inkl. oppvarming og nedjogg)');
+        return;
+      }
+      const at = !target || target.kind === 'c' ? groups.length : target.kind === 'w' ? 0 : target.gi + 1;
+      groups.splice(at, 0, choice === 'i' ? { rep: 4, steps: [createWorkStep(), createRestStep()] } : { single: true, rep: 1, steps: [makeStep()] });
+      editor.selectedKey = choice === 'i' ? 'g' + at : 'g' + at + 's0';
+      renderEditor();
+      return;
+    }
+    const group = groups[target.gi];
+    if (group.steps.length >= WORKOUT_LIMITS.maxStepsPerGroup) {
+      showToast('Maks ' + WORKOUT_LIMITS.maxStepsPerGroup + ' steg i et intervall');
+      return;
+    }
+    const at = target.kind === 'g' ? 0 : target.si + 1; // inside the selected interval
+    group.steps.splice(at, 0, makeStep());
+    editor.selectedKey = 'g' + target.gi + 's' + at;
+    renderEditor();
+  },
+  epickx() {
+    byId('e-pick').style.display = 'none';
+  },
+  mvup() {
+    moveSelected(-1);
+  },
+  mvdn() {
+    moveSelected(1);
+  },
+};
+
+'use strict';
+// =============================================================================
+// tablet-core.js - tablet-only basics: feature switches, timing constants, screen scaling,
+// clock, application state, commands and press-and-hold buttons.
+// Loaded after common.js, workout-model.js, number-field.js, speed-format.js and editor.js.
+// =============================================================================
+
+// Features that need matching firmware. Without it the button is hidden / sending fails silently.
+const FEATURES = {
+  cancelRamp: true, // POST /api/v1/control/workout/cancelramp and session.rampCancelable
+  history: true, // POST /api/v1/history
+};
+
+const SPEED_PROMPT_DURATION_MS = 15000; // firmware gives the user 15 s to answer a speed suggestion
+const TELEMETRY_POLL_MS = 500;
+const TELEMETRY_TIMEOUT_MS = 5000;
+const CONNECTION_HINT_AFTER_MS = 3000; // small yellow sign after this long without telemetry
+const CONNECTION_STALE_AFTER_MS = 6000; // numbers are dimmed and clocks freeze after this long
+const PAUSE_TIMEOUT_MS = 15 * 60 * 1000; // a suspended workout is closed after 15 minutes
+const FREE_RUN_WORKOUT_ID = 65535; // workoutId the firmware reports for a manual (free) run
+
+// ===== Scaling: the UI is designed for 1280x800 and scaled to fit the screen =====
+function fitStageToViewport() {
+  document.documentElement.style.setProperty('--fit', Math.min(innerWidth / 1280, innerHeight / 800));
+}
+fitStageToViewport();
+addEventListener('resize', fitStageToViewport);
+addEventListener('orientationchange', fitStageToViewport);
+
+// ===== Clock in the header =====
+function updateClock() {
+  const now = new Date();
+  setText('clock', pad2(now.getHours()) + ':' + pad2(now.getMinutes()));
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ===== Application state =====
+const state = {
+  settings: null, rev: null, user: null, mode: null, screen: 'user', before: null,
+  T: null, live: false, lastOk: 0, lastTs: 0, capabilities: { maxSpeedKmh: 25, deadTimeMs: 3000 },
+  showPace: storage.get('sc_pace_v1') !== '0', workouts: [], selId: null,
+  doneAck: false, lastState: null, suspendedAt: null, intStarted: false,
+  t0: Date.now(), stale: false, noAuth: false,
+  clocks: { man: null, tot: null, step: null, cont: null }, off: null, offW: [], fw: null, t1: 0,
+  futSec: null, rec: null, doneData: null, dx: 't', prevMs: null, recentUsers: null,
+};
+
+// ===== Number formats used only on the tablet screens =====
+/** Milliseconds -> "m:ss" (minutes keep counting past 60). */
+function formatMinutesSeconds(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  return Math.floor(totalSeconds / 60) + ':' + pad2(totalSeconds % 60);
+}
+
+/** The same speed in the unit the user does NOT prefer, with its unit: "10,9 km/t" or "5:30 /km". */
+const formatSpeedAlternate = (kmh) => (state.showPace ? formatOneDecimal(kmh) + ' km/t' : formatPace(kmh) + ' /km');
+
+// ===== Commands =====
+/** POST to a control endpoint and tell the user when it did not work. */
+async function sendCommand(path, body) {
+  const result = await apiRequest(path, body || {});
+  if (!result.ok) showToast(result.status === 0 ? 'Ingen forbindelse til møllen' : 'Kommando avvist av møllen');
+  return result;
+}
+
+// ===== Press-and-hold buttons (1 s, red fill) =====
+const HOLD_DURATION_MS = 1000;
+const holdActions = {}; // data-hold name -> function, registered by the screens that use them
+
+function bindHoldButton(button) {
+  if (button.dataset.b) return;
+  button.dataset.b = '1';
+  const actionName = button.dataset.hold;
+  const fill = button.querySelector('b');
+  const hint = button.querySelector('.h');
+  let timer = null;
+  const reset = () => {
+    clearTimeout(timer);
+    timer = null;
+    fill.style.transition = 'width 140ms linear';
+    fill.style.width = '0';
+    if (hint && !button.holdDone) hint.textContent = 'Hold inne';
+  };
+  button.addEventListener('pointerdown', () => {
+    if (timer) return;
+    button.holdDone = false;
+    fill.style.transition = 'width ' + HOLD_DURATION_MS + 'ms linear';
+    fill.style.width = '100%';
+    if (hint) hint.textContent = 'Hold…';
+    timer = setTimeout(() => {
+      timer = null;
+      button.holdDone = true;
+      if (hint) hint.textContent = 'Utført';
+      if (holdActions[actionName]) holdActions[actionName]();
+      setTimeout(() => {
+        button.holdDone = false;
+        reset();
+      }, 600);
+    }, HOLD_DURATION_MS);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((eventName) => {
+    button.addEventListener(eventName, () => {
+      if (timer) reset();
+    });
+  });
+}
+queryAll('[data-hold]').forEach(bindHoldButton);
+
+// The shared editor builds hold buttons in its detail panel; they need the same behaviour.
+holdActions.delstep = deleteSelectedStep;
+editorHooks.afterDetailRendered = (host) => queryAll('[data-hold]:not([data-b])', host).forEach(bindHoldButton);
+
+// ===== Skjermbytte =====
+function go(name) {
+  state.screen = name;
+  if (name === 'user') state.ord = null; // rekkefølgen på øktknappene settes når bruker velges, aldri ellers
+  queryAll('.scr').forEach((el) => el.classList.toggle('on', el.id === 's-' + name));
+  if (name === 'user') renderUsers();
+  if (name === 'man') {
+    renderManKeys(true);
+    updMan();
+  }
+  if (name === 'velg') renderVelg();
+  if (name === 'run') {
+    lastWrittenText.clear();
+    updRun(true);
+  }
+  if (name === 'done') renderDone();
+  if (name === 'setup') enterSetup();
+  if (name === 'edit') enterEdit();
+  if (name === 'keys') enterKeys();
+}
+
+// ===== Brukere og innstillinger =====
+const validName = (n) => typeof n === 'string' && n.trim() && !/^bruker\s*\d+$/i.test(n.trim());
+function renderUsers() {
+  const us = (state.settings && state.settings.users) || [];
+  let h = '';
+  for (let i = 0; i < 4; i++) {
+    const u = us[i],
+      ok = u && validName(u.name),
+      sel = state.user && u && state.user.id === u.id;
+    h +=
+      '<button class="btn' +
+      (sel ? ' pri' : '') +
+      (state.intStarted ? ' off' : '') +
+      '" data-act="user" data-i="' +
+      i +
+      '"' +
+      (ok ? '' : ' disabled') +
+      '>' +
+      (ok ? escapeHtml(u.name) : '&nbsp;') +
+      '</button>';
+  }
+  setHtmlIfChanged(byId('ug'), h);
+  const has = !!state.user;
+  ['mc-man', 'mc-int'].forEach((id) => byId(id).classList.toggle('lock', !has));
+}
+function applyUser(u) {
+  state.user = u;
+  state.workouts = (u.workouts || []).map(workoutFromFirmware);
+  state.workoutsVersion++;
+  const sel = state.workouts.find((w) => w.id === u.selectedWorkoutId);
+  state.selId = sel ? sel.id : (workoutsByRecentUse(state.workouts)[0] || {}).id || null;
+  ['man-user', 'v-user', 'run-user'].forEach((id) => {
+    byId(id).textContent = validName(u.name) ? u.name : '';
+  });
+  if (state.sentUser !== u.id) {
+    state.sentUser = u.id;
+    apiRequest('/api/v1/control/selectuser', {
+      userId: u.id,
+    });
+  }
+  state.recentSig = null;
+  renderManKeys(true);
+}
+function applySettings(data, boot) {
+  if (!data || !Array.isArray(data.users) || !data.users.length) return;
+  state.settings = data;
+  if (state.user) {
+    const nu = data.users.find((u) => u.id === state.user.id);
+    const st = state.T && state.T.session && state.T.session.state;
+    const active = st && !['Idle', 'Completed', 'Aborted'].includes(st);
+    if (
+      nu &&
+      (boot ||
+        (!active &&
+          state.screen !== 'edit' &&
+          state.screen !== 'keys' &&
+          state.screen !== 'setup' &&
+          JSON.stringify(nu) !== JSON.stringify(state.user)))
+    )
+      applyUser(nu);
+  }
+  if (state.screen === 'user') renderUsers();
+}
+function loadCache() {
+  try {
+    const p = JSON.parse(storage.get('sc_settings_v1'));
+    if (p && typeof p.rev === 'number' && p.data && Array.isArray(p.data.users)) {
+      state.rev = p.rev;
+      applySettings(p.data, true);
+    }
+  } catch (e) {
+    /* ødelagt cache ignoreres */
+  }
+}
+let setFlight = false,
+  setErrAt = 0,
+  setErrRev = null;
+async function fetchSettings(rev) {
+  if (setFlight) return;
+  setFlight = true;
+  try {
+    const res = await fetch('/api/settings', {
+      cache: 'no-cache',
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data && Array.isArray(data.users) && data.users.length) {
+      applySettings(data, false);
+      if (typeof rev === 'number') {
+        state.rev = rev;
+        try {
+          storage.set(
+            'sc_settings_v1',
+            JSON.stringify({
+              rev,
+              data,
+            })
+          );
+        } catch (e) {
+          /* full lagring */
+        }
+      }
+      setErrAt = 0;
+      setErrRev = null;
+    }
+  } catch (e) {
+    setErrAt = Date.now();
+    setErrRev = typeof rev === 'number' ? rev : null;
+  } finally {
+    setFlight = false;
+  }
+}
+
+// ===== Moduser =====
+function setMode(m) {
+  if (!state.user) return;
+  state.mode = m;
+  if (m === 'man') state.intStarted = false;
+  apiRequest('/api/v1/control/mode', {
+    userId: state.user.id,
+    isManual: m === 'man',
+  });
+  if (m === 'int') {
+    initVelgSel();
+    armWorkout(state.selId);
+  }
+  go(m === 'man' ? 'man' : 'velg');
+}
+function armWorkout(id) {
+  if (state.user && typeof id === 'number')
+    sendCommand('/api/v1/control/workout/select', {
+      userId: state.user.id,
+      workoutId: id,
+    });
+}
+function initVelgSel() {
+  const s = workoutsByRecentUse(state.workouts);
+  if (!s.find((w) => w.id === state.selId)) state.selId = s[0] ? s[0].id : null;
+}
+
+// ===== Lokale klokker: jevne og aldri baklengs =====
+// Firmware sender sin egen tid (timestampMs) i hver pakke. Nedtelling lagres som SLUTTTIDSPUNKT i firmware-tid (timestampMs + gjenstående),
+// opptelling som STARTPUNKT. Tabletten teller selv (performance.now) mot dette, og forskjellen mellom de to klokkene (OFF) estimeres
+// fra pakken med kortest ventetid (så trege svar fra ESP32 ikke flytter klokka). Støy < 250 ms ignoreres, små avvik glir inn, aldri baklengs.
+const nowM = () => performance.now();
+const fwNow = () => nowM() - (state.off || 0);
+function syncOff(fw, t1) {
+  if (!isFiniteNumber(fw)) return;
+  const W = state.offW;
+  W.push(t1 - fw);
+  if (W.length > 40) W.shift();
+  const m = Math.min.apply(null, W);
+  if (state.off === null || Math.abs(m - state.off) > 5000) {
+    state.off = m;
+    W.length = 0;
+    W.push(m);
+  } else state.off += clamp(m - state.off, -5, 5);
+}
+function clockMs(key) {
+  const c = state.clocks[key];
+  if (!c) return null;
+  if (c.dir === 'paused') return c.ms;
+  const n = fwNow();
+  let v = c.dir === 'down' ? Math.max(0, c.t - n) : Math.max(0, n - c.t);
+  if (c.hold != null) v = c.dir === 'down' ? Math.min(v, c.hold) : Math.max(v, c.hold);
+  c.hold = v;
+  return v;
+}
+function anchor(key, ms, dir, id) {
+  if (!isFiniteNumber(ms) || ms < 0) {
+    state.clocks[key] = null;
+    return;
+  }
+  if (dir === 'paused') {
+    state.clocks[key] = {
+      dir,
+      id,
+      ms,
+    };
+    return;
+  }
+  const ref = isFiniteNumber(state.fw) ? state.fw : fwNow(),
+    t = dir === 'down' ? ref + ms : ref - ms,
+    c = state.clocks[key];
+  if (!c || c.dir !== dir || c.id !== id) {
+    state.clocks[key] = {
+      dir,
+      id,
+      t,
+      hold: null,
+    };
+    return;
+  }
+  const d = t - c.t,
+    ad = Math.abs(d);
+  if (ad < 250) return; // støy
+  if (ad > 1500) {
+    c.t = t;
+    c.hold = null;
+    return;
+  } // reell endring (+30 sek, kutt, nytt steg)
+  c.t += d * 0.3; // lite avvik: glid mykt
+}
+function showClocks() {
+  if (state.screen === 'man') {
+    const m = clockMs('man');
+    if (m !== null) setText('m-tid', formatClock(m));
+  } else if (state.screen === 'run') {
+    const cont = state.T && state.T.session && state.T.session.continuationWindowActive,
+      m = clockMs(cont ? 'cont' : 'step');
+    if (m !== null) {
+      setText('r-cnt', formatMinutesSeconds(Math.ceil(m / 1000) * 1000));
+      if (!cont && isFiniteNumber(state.futSec)) {
+        const r = Math.ceil(m / 1000) + state.futSec;
+        setText('r-left', r >= 3600 ? formatClock(r * 1000) : formatMinutesSeconds(r * 1000));
+      }
+    }
+    const pm = clockMs('prm');
+    if (pm !== null) setText('p-sec', String(Math.ceil(pm / 1000)));
+  }
+  scheduleTick();
+}
+let tickT = null;
+function scheduleTick() {
+  clearTimeout(tickT);
+  let d = 1000;
+  ['man', 'step', 'cont', 'prm'].forEach((k) => {
+    const c = state.clocks[k];
+    if (!c || c.dir === 'paused') return;
+    const v = clockMs(k);
+    d = Math.min(d, c.dir === 'down' ? v % 1000 || 1000 : 1000 - (v % 1000));
+  });
+  tickT = setTimeout(showClocks, Math.max(15, d + 8));
+}
+
+// ===== Feillogg og synlig feilindikator =====
+const ERR = [];
+function logErr(e, where) {
+  ERR.push({
+    t: Date.now(),
+    w: where,
+    m: String((e && e.message) || e),
+  });
+  if (ERR.length > 20) ERR.shift();
+  const el = byId('err');
+  el.style.display = 'block';
+  el.title = ERR.map((x) => x.w + ': ' + x.m).join('\n');
+  try {
+    console.error(where, e);
+  } catch (x) {
+    /* */
+  }
+}
+addEventListener('error', (ev) => logErr(ev.error || ev.message, 'window'));
+addEventListener('unhandledrejection', (ev) => logErr(ev.reason, 'promise'));
+setInterval(() => {
+  if (ERR.length && Date.now() - ERR[ERR.length - 1].t > 60000) {
+    ERR.length = 0;
+    byId('err').style.display = 'none';
+  }
+}, 5000);
+// Tre faser: 0-3 s ingenting (klokkene teller videre lokalt) · 3-6 s lite gult tegn · over 6 s rolig varsel, tall dempet og klokker fryst (ingen «--»)
+function freezeClocks() {
+  Object.keys(state.clocks).forEach((k) => {
+    const c = state.clocks[k];
+    if (c && c.dir !== 'paused')
+      state.clocks[k] = {
+        dir: 'paused',
+        id: c.id,
+        ms: clockMs(k),
+      };
+  });
+}
+function renderWarn() {
+  const age = Date.now() - (state.lastOk || state.t0),
+    ph = age >= CONNECTION_STALE_AFTER_MS ? 2 : age >= CONNECTION_HINT_AFTER_MS ? 1 : 0,
+    w = byId('warn'),
+    stale = ph === 2 || state.noAuth;
+  const msg = state.fwWarn
+    ? 'Mistet kontakt. Kobler til … Farten endres ikke.'
+    : stale
+      ? 'Venter på data fra mølla …'
+      : '';
+  if (msg) {
+    w.textContent = msg;
+    w.className = 'toast warn' + (state.fwWarn ? '' : ' calm');
+    w.style.display = 'block';
+  } else w.style.display = 'none';
+  byId('net').style.display = ph === 1 && !state.fwWarn && !state.noAuth ? 'flex' : 'none';
+  if (stale !== state.stale) {
+    state.stale = stale;
+    byId('stage').classList.toggle('stale', stale);
+    if (stale) freezeClocks();
+  }
+}
+setInterval(renderWarn, 500);
+// ===== Hold skjermen våken (krever sikker kontekst, ellers ingen effekt) =====
+let wl = null;
+async function wake(on) {
+  try {
+    if (on && !wl && navigator.wakeLock) {
+      wl = await navigator.wakeLock.request('screen');
+      wl.addEventListener('release', () => {
+        wl = null;
+      });
+    } else if (!on && wl) {
+      await wl.release();
+      wl = null;
+    }
+  } catch (e) {
+    wl = null;
+  }
+}
+
+// ===== Telemetri: fast takt (500 ms i bruk, 1 s i ro, 3 s skjult), ingen forskyvning =====
+let polling = false,
+  pollT = null;
+state.failN = 0;
+state.everLive = false;
+state.fwWarn = false;
+state.workoutsVersion = 0;
+function pollPeriod() {
+  if (document.hidden) return 3000;
+  const T = state.T;
+  if (!state.live || !T) return 1000;
+  const st = T.session && T.session.state,
+    ms = T.csafe && T.csafe.machineState;
+  return (st && st !== 'Idle') || (ms && ms !== 'READY') ? TELEMETRY_POLL_MS : 1000;
+}
+async function pollTelemetry() {
+  if (polling) return;
+  polling = true;
+  const ctl = new AbortController(),
+    to = setTimeout(() => ctl.abort(), TELEMETRY_TIMEOUT_MS);
+  try {
+    const res = await fetch('/api/v1/telemetry', {
+      signal: ctl.signal,
+      cache: 'no-cache',
+    });
+    clearTimeout(to);
+    if (res.ok) {
+      const d = await res.json();
+      state.failN = 0;
+      state.t1 = nowM();
+      try {
+        onTelemetry(d);
+      } catch (e) {
+        logErr(e, 'onTelemetry');
+      }
+    } else state.failN++;
+  } catch (e) {
+    clearTimeout(to);
+    state.failN++;
+  } finally {
+    if (state.live && Date.now() - state.lastOk > CONNECTION_STALE_AFTER_MS) setLive(false);
+    polling = false;
+    renderWarn();
+  }
+}
+function pollLoop() {
+  const t = nowM();
+  pollTelemetry().finally(() => {
+    pollT = setTimeout(pollLoop, Math.max(30, pollPeriod() - (nowM() - t)));
+  });
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    clearTimeout(pollT);
+    pollLoop();
+    const st = state.T && state.T.session && state.T.session.state;
+    wake(st === 'Running' || st === 'Suspended' || st === 'Armed');
+  }
+});
+function setLive(on) {
+  if (state.live === on) return;
+  state.live = on;
+  if (on) state.everLive = true;
+  renderWarn();
+}
+function onTelemetry(d) {
+  if (!d || typeof d !== 'object') return;
+  if (isFiniteNumber(d.timestampMs)) {
+    if (d.timestampMs < state.lastTs && state.lastTs - d.timestampMs < 60000) return;
+    state.lastTs = d.timestampMs;
+  }
+  state.fwWarn = d.connectionWarningActive === true;
+  byId('ovStop').style.display =
+    d.estopActive === true || (d.session && d.session.isEmergencyStopped === true) ? 'flex' : 'none';
+  if (d.authority !== true) {
+    state.noAuth = true;
+    setLive(false);
+    return;
+  }
+  state.noAuth = false;
+  state.T = d;
+  state.lastOk = Date.now();
+  state.fw = isFiniteNumber(d.timestampMs) ? d.timestampMs : null;
+  syncOff(state.fw, state.t1);
+  setLive(true);
+  countdownCheck(d.csafe && d.csafe.machineState);
+  lubeCheck(d.maintenance);
+  record(d);
+  const st0 = d.session && d.session.state;
+  wake(st0 === 'Running' || st0 === 'Suspended' || st0 === 'Armed');
+  if (isFiniteNumber(d.settingsRevision) && state.rev !== d.settingsRevision) {
+    if (d.settingsRevision !== setErrRev || Date.now() - setErrAt >= 5000) fetchSettings(d.settingsRevision);
+  } else if (!state.settings) fetchSettings();
+  restoreIfNeeded(d);
+  route(d);
+  if (state.screen === 'man') updMan();
+  else if (state.screen === 'run') updRun();
+  else if (state.screen === 'velg') updVelg();
+  scheduleTick();
+}
+function restoreIfNeeded(d) {
+  if (state.user || !state.settings || !d.session || !d.session.hasActiveUser) return;
+  const st = d.session.state,
+    u = state.settings.users.find((x) => x.id === d.session.activeUserId);
+  if (!u || !['Running', 'Suspended', 'Armed'].includes(st)) return;
+  applyUser(u);
+  state.mode = d.session.workoutId === FREE_RUN_WORKOUT_ID ? 'man' : 'int';
+  state.intStarted = state.mode === 'int' && st !== 'Armed';
+  go(state.mode === 'man' ? 'man' : st === 'Armed' ? 'velg' : 'run');
+}
+function route(d) {
+  const sess = d.session || {},
+    st = sess.state,
+    ms = d.csafe && d.csafe.machineState;
+  if (st !== 'Completed' && st !== 'CompletionPending') state.doneAck = false;
+  state.lastState = st;
+  if (st === 'Suspended') {
+    if (state.suspendedAt === null) state.suspendedAt = Date.now();
+    else if (Date.now() - state.suspendedAt >= PAUSE_TIMEOUT_MS && (state.screen === 'man' || state.screen === 'run')) {
+      state.suspendedAt = null;
+      state.intStarted = false;
+      go('user');
+      return;
+    }
+  } else state.suspendedAt = null;
+  if (!['man', 'velg', 'run', 'done'].includes(state.screen) || !state.mode) return;
+  const starting = ms === 'STARTING',
+    inUse = ms === 'IN_USE';
+  if ((st === 'Completed' || st === 'CompletionPending') && !state.doneAck) {
+    if (state.screen !== 'done') {
+      state.doneData = null;
+      go('done');
+    }
+    return;
+  }
+  if (state.screen === 'done') return;
+  if (state.mode === 'man') {
+    if (state.screen !== 'man') go('man');
+    return;
+  }
+  if (st === 'Suspended' && sess.workoutId === FREE_RUN_WORKOUT_ID) {
+    state.intStarted = false;
+    if (state.screen !== 'velg') go('velg');
+    return;
+  }
+  if (st === 'Armed' || st === 'Idle' || !st) {
+    if (starting || inUse) {
+      state.intStarted = true;
+      if (state.screen !== 'run') go('run');
+    } else if (state.screen !== 'velg') go('velg');
+    return;
+  }
+  if (st === 'Running' || st === 'Suspended' || st === 'Aborted') {
+    state.intStarted = st !== 'Aborted' || state.intStarted;
+    if (state.screen !== 'run') go('run');
+  }
+}
+
+// ===== Opptak til Ferdig-skjermen (fart/puls/avstand hvert 2. sekund) =====
+function record(d) {
+  const s = d.session || {},
+    st = s.state;
+  if (st !== 'Running') {
+    if (st === 'Armed' || st === 'Idle') state.rec = null;
+    return;
+  }
+  if (!state.rec)
+    state.rec = {
+      s: [],
+      next: 0,
+    };
+  const t = isFiniteNumber(s.elapsedTimeMs) ? s.elapsedTimeMs : d.elapsedTimeMs;
+  if (!isFiniteNumber(t) || t < state.rec.next) return;
+  state.rec.next = t + 2000;
+  state.rec.s.push({
+    t,
+    v: (d.speed && d.speed.kmh) || 0,
+    hr: d.heartRate && d.heartRate.valid ? d.heartRate.bpm : 0,
+    d: s.totalValidatedDistanceKm || 0,
+    step: s.stepIndex || 0,
+    se: s.stepElapsedMs || 0,
+  });
+  if (state.rec.s.length > 4000) state.rec.s.splice(0, 1000);
+}
+
+// ===== Nedtelling 3-2-1 og smøreindikator =====
+let cdActive = false,
+  cdLast = null;
+function countdownCheck(ms) {
+  const entering = ms === 'STARTING' && cdLast !== 'STARTING';
+  cdLast = ms;
+  if (!entering || cdActive) return;
+  apiRequest('/api/v1/capabilities/speed', null, 'GET').then((r) => {
+    if (r.ok && r.data) {
+      if (isFiniteNumber(r.data.maxAchievableSpeedKmh) && r.data.maxAchievableSpeedKmh > 0)
+        state.capabilities.maxSpeedKmh = r.data.maxAchievableSpeedKmh;
+      if (isFiniteNumber(r.data.deadTimeMs) && r.data.deadTimeMs >= 300)
+        state.capabilities.deadTimeMs = r.data.deadTimeMs;
+    }
+  });
+  cdActive = true;
+  const ov = byId('ovCount'),
+    tot = state.capabilities.deadTimeMs,
+    step = tot / 3;
+  ov.style.display = 'flex';
+  ov.textContent = '3';
+  // 3 is already shown; switch to 2 and 1, then hide the overlay when the dead time is over
+  setTimeout(() => {
+    ov.textContent = '2';
+  }, step);
+  setTimeout(() => {
+    ov.textContent = '1';
+  }, step * 2);
+  setTimeout(() => {
+    ov.style.display = 'none';
+    cdActive = false;
+  }, tot);
+}
+function lubeCheck(m) {
+  let due = false;
+  if (m && typeof m === 'object') {
+    if (m.lubricationDue === true) due = true;
+    else if (
+      m.lastLubricationDate &&
+      isFiniteNumber(m.lastLubricationTimeSeconds) &&
+      m.lastLubricationTimeSeconds >= 0
+    ) {
+      const ih = m.lubricationIntervalHours > 0 ? m.lubricationIntervalHours : 50,
+        id = m.lubricationIntervalDays > 0 ? m.lubricationIntervalDays : 60,
+        hs = Math.max(0, ((m.timeSeconds || 0) - m.lastLubricationTimeSeconds) / 3600),
+        ld = new Date(m.lastLubricationDate + 'T00:00:00');
+      due = hs >= ih || (!isNaN(ld.getTime()) && Math.floor((Date.now() - ld.getTime()) / 86400000) >= id);
+    }
+  }
+  byId('lube').hidden = !due;
+}
+
+// ===== Taster =====
+function keyHtml(v, inc, dim, h) {
+  const st = h ? ' style="height:' + h + 'px"' : '';
+  if (inc)
+    return (
+      '<button class="btn key inc' +
+      (dim ? ' dim' : '') +
+      '"' +
+      st +
+      ' data-act="inc" data-v="' +
+      v +
+      '"><span class="a">' +
+      formatIntOrDecimal(v) +
+      '</span><span class="b">%</span></button>'
+    );
+  return (
+    '<button class="btn key' +
+    (dim ? ' dim' : '') +
+    '"' +
+    st +
+    ' data-act="spd" data-v="' +
+    v +
+    '"><span class="a">' +
+    formatSpeed(v) +
+    '</span><span class="b">' +
+    (state.showPace ? formatOneDecimal(v) + ' km/t' : formatPace(v) + ' /km') +
+    '</span></button>'
+  );
+}
+let keysSig = '';
+function renderManKeys(force) {
+  const u = state.user;
+  if (!u) return;
+  const belt = beltRunning(),
+    sig = [
+      u.id,
+      JSON.stringify(u.speedQuickKeys),
+      JSON.stringify(u.inclineQuickKeys),
+      state.showPace,
+      u.hvileSpeedKmh,
+      u.dragSpeedKmh,
+      belt,
+    ].join('|');
+  if (!force && sig === keysSig) return;
+  keysSig = sig;
+  const sk = u.speedQuickKeys || [],
+    ik = u.inclineQuickKeys || [];
+  setHtmlIfChanged(
+    byId('m-sk'),
+    sk
+      .slice(0, 8)
+      .map((v) => keyHtml(v, false, !belt))
+      .join('')
+  );
+  setHtmlIfChanged(
+    byId('m-ik'),
+    ik
+      .slice(0, 8)
+      .map((v) => keyHtml(v, true, !belt))
+      .join('')
+  );
+  const pre = (name, sq, v, act) =>
+    '<button class="btn guard' +
+    (belt ? '' : ' off') +
+    '" data-act="' +
+    act +
+    '" style="height:90px;padding:0 32px;justify-content:space-between"><span style="display:flex;align-items:center;gap:18px"><i class="sq ' +
+    sq +
+    '"></i><span style="font-size:40px;letter-spacing:.04em">' +
+    name +
+    '</span></span><span style="font-size:32px;color:var(--mut);letter-spacing:normal;text-transform:none">' +
+    formatSpeed(v) +
+    ' ' +
+    speedUnitLabel() +
+    '</span><i></i></button>';
+  setHtmlIfChanged(
+    byId('m-pre'),
+    pre('HVILE', '', u.hvileSpeedKmh || 6, 'rest') + pre('DRAG', 'r', u.dragSpeedKmh || 16, 'work')
+  );
+}
+function beltRunning() {
+  const T = state.T;
+  if (!state.live || !T) return false;
+  const ms = T.csafe && T.csafe.machineState,
+    st = T.session && T.session.state;
+  return (ms === 'IN_USE' || ms === 'STARTING') && !['Stopped', 'Completed', 'Aborted', 'Suspended'].includes(st);
+}
+
+// ===== Manuell =====
+function updMan() {
+  const T = state.T || {},
+    sess = T.session || {},
+    live = !!state.T;
+  const spd = live ? T.speed && T.speed.kmh : null,
+    inc = live ? T.incline && T.incline.pct : null;
+  const st = sess.state,
+    belt = beltRunning(),
+    paused = live && st === 'Suspended',
+    ready = !belt;
+  const scr = byId('s-man');
+  scr.style.paddingTop = ready ? '72px' : '28px';
+  byId('man-top').classList.toggle('on', ready);
+  byId('man-ctrl').style.height = ready ? '326px' : '370px';
+  setVisible('man-keys', !ready);
+  setVisible('man-status', ready, 'flex');
+  setVisible('m-endw', paused, 'grid');
+  setText('m-bt', paused ? 'PAUSET' : 'KLAR');
+  setText(
+    'm-bm',
+    paused && state.suspendedAt ? 'Pauset i ' + formatMinutesSeconds(Date.now() - state.suspendedAt) : ''
+  );
+  setText('m-qs', paused ? 'for å fortsette' : 'for å starte');
+  renderManKeys(false);
+  const elapsed = live
+    ? isFiniteNumber(T.manualElapsedTimeMs)
+      ? T.manualElapsedTimeMs
+      : isFiniteNumber(T.elapsedTimeMs)
+        ? T.elapsedTimeMs
+        : sess.elapsedTimeMs
+    : null;
+  anchor('man', elapsed, belt ? 'up' : 'paused');
+  setText(
+    'm-tid',
+    live && isFiniteNumber(elapsed) ? formatClock(clockMs('man') != null ? clockMs('man') : elapsed) : '--'
+  );
+  setText(
+    'm-dist',
+    live && isFiniteNumber(sess.totalValidatedDistanceKm)
+      ? sess.totalValidatedDistanceKm.toFixed(2).replace('.', ',')
+      : '--'
+  );
+  const adjS =
+    belt &&
+    (T.hasSpeedTarget === true || sess.hasSpeedTarget === true) &&
+    isFiniteNumber(T.targetSpeedKmh) &&
+    isFiniteNumber(spd) &&
+    Math.abs(T.targetSpeedKmh - spd) > 0.2;
+  setText('m-fart', isFiniteNumber(spd) ? (belt || spd > 0.3 ? formatSpeed(spd) : formatSpeed(0)) : '--');
+  setText('m-fu', speedUnitLabel());
+  byId('m-fart').classList.toggle('chg', !!adjS);
+  setText(
+    'm-fsub',
+    adjS
+      ? 'Justerer til ' + formatSpeed(T.targetSpeedKmh) + ' ' + speedUnitLabel()
+      : isFiniteNumber(spd) && spd > 0.3 && !ready
+        ? formatSpeedAlternate(spd)
+        : ''
+  );
+  const adjI =
+    belt &&
+    (T.hasInclineTarget === true || sess.hasInclineTarget === true) &&
+    isFiniteNumber(T.targetInclinePct) &&
+    isFiniteNumber(inc) &&
+    Math.abs(T.targetInclinePct - inc) > 0.2;
+  setText('m-inc', isFiniteNumber(inc) ? formatIntOrDecimal(Math.round(inc * 2) / 2) : '--');
+  byId('m-inc').classList.toggle('chg', !!adjI);
+  setText('m-isub', adjI ? 'Justerer til ' + formatIntOrDecimal(T.targetInclinePct) + ' %' : '');
+  const hr = live && T.heartRate && T.heartRate.valid && T.heartRate.bpm > 0 ? String(T.heartRate.bpm) : '--';
+  setVisible('m-pr', live && sess.heartRateEverValid === true, 'flex');
+  setText('m-puls', hr);
+  const climb = sess.totalElevationMeters;
+  setVisible('m-kr', live && isFiniteNumber(climb) && climb > 0, 'flex');
+  setText('m-klat', isFiniteNumber(climb) ? Math.round(climb) : 0);
+}
+
+// ===== Velg økt =====
+function curModel() {
+  return state.workouts.find((w) => w.id === state.selId) || null;
+}
+function updVelg() {
+  const q = document.querySelector('#s-velg b');
+  if (q) q.textContent = 'Quick Start';
+}
+function statsFor(m) {
+  return computePlanStats(m, defaultSpeeds(state.user));
+}
+function profileSvg(seq, W, H, base, selIdx, tick, hr) {
+  let T = 0;
+  seq.forEach((x) => {
+    T += x.sec;
+  });
+  if (T <= 0) return '';
+  let x0 = 0,
+    h = '',
+    vmax = 20;
+  seq.forEach((x, i) => {
+    const w = Math.max(1, (x.sec / T) * W - 2),
+      hh = Math.max(6, (x.vEff / vmax) * (base - 6)),
+      col = x.k === 'd' ? '#F8283B' : x.k === 'r' ? '#C9C9D2' : '#9A9AA6';
+    let c = col,
+      op = 1;
+    if (selIdx != null) {
+      if (i < selIdx) op = 0.45;
+    }
+    h +=
+      '<rect x="' +
+      x0.toFixed(1) +
+      '" y="' +
+      (base - hh).toFixed(1) +
+      '" width="' +
+      w.toFixed(1) +
+      '" height="' +
+      hh.toFixed(1) +
+      '" fill="' +
+      c +
+      '" opacity="' +
+      op +
+      '"/>';
+    x0 += (x.sec / T) * W;
+  });
+  return {
+    h,
+    T,
+  };
+}
+function renderVelg() {
+  const m = curModel();
+  setText('v-name', m ? m.name : 'Ingen økter');
+  const sr = byId('v-stats'),
+    cd = byId('v-cards'),
+    pr = byId('v-prof');
+  if (!m) {
+    setHtmlIfChanged(sr, '');
+    setHtmlIfChanged(cd, '');
+    setHtmlIfChanged(pr, '');
+    renderSlots();
+    return;
+  }
+  const st = statsFor(m);
+  setHtmlIfChanged(
+    sr,
+    [
+      ['VARIGHET', formatDuration(st.T), ''],
+      ['DISTANSE · CA.', (st.D / 1000).toFixed(1).replace('.', ','), 'km'],
+      ['KLATRET · CA.', String(Math.round(st.K)), 'm'],
+    ]
+      .map(
+        (s) =>
+          '<div class="stat"><span class="lab16">' +
+          s[0] +
+          '</span><span class="a"><b>' +
+          s[1] +
+          '</b><i>' +
+          s[2] +
+          '</i></span></div>'
+      )
+      .join('')
+  );
+  const p = profileSvg(st.seq, 1184, 260, 260, null);
+  let ticks = '';
+  for (let i = 0; i <= 4; i++) {
+    const x = i * 296;
+    ticks +=
+      '<text x="' +
+      x +
+      '" y="284" font-size="16" font-weight="600" fill="#6B6B76" text-anchor="' +
+      (i === 0 ? 'start' : i === 4 ? 'end' : 'middle') +
+      '">' +
+      formatDuration((st.T * i) / 4) +
+      '</text>';
+  }
+  setHtmlIfChanged(
+    pr,
+    '<svg width="1184" height="290">' +
+      (p.h || '') +
+      '<rect class="bl" x="0" y="260" width="1184" height="2"/>' +
+      ticks +
+      '</svg>'
+  );
+  let cards = [
+    {
+      l: 'OPPVARMING',
+      v: formatDuration(m.warm.dm === 't' ? m.warm.dv : st.seq[0].sec),
+      s1: m.warm.sm === 'fast' ? formatSpeed(m.warm.v) + ' ' + speedUnitLabel() : 'Manuell fart',
+      s2: m.warm.im === 'fast' ? formatIntOrDecimal(m.warm.i) + ' % stigning' : 'Stigning uendret',
+    },
+  ];
+  let ni = 0;
+  m.groups.forEach((g, gi) => {
+    const drags = g.steps.filter((x) => x.k === 'd'),
+      r = g.steps.find((x) => x.k === 'r');
+    const dur = (x) => (x.dm === 't' ? formatDuration(x.dv) : x.dv + ' m');
+    const dspd = (x) =>
+      x.sm === 'fast' ? formatSpeed(x.v) + (x.vp ? (x.vp > 0 ? ' +' : ' ') + formatOneDecimal(x.vp) : '') : 'man.';
+    if (g.single) {
+      const x = g.steps[0];
+      cards.push({
+        l: x.k === 'd' ? 'DRAG' : 'HVILE',
+        v: dur(x),
+        s1:
+          x.k === 'd'
+            ? x.sm === 'fast'
+              ? formatSpeed(x.v) + ' ' + speedUnitLabel()
+              : 'Manuell fart'
+            : x.sm === 'fast'
+              ? formatSpeed(x.v) + ' ' + speedUnitLabel()
+              : 'Følger drag',
+        s2: x.im === 'fast' ? formatIntOrDecimal(x.i) + ' % stigning' : '',
+      });
+      return;
+    }
+    cards.push({
+      l: 'INTERVALL ' + ++ni + ' · ' + g.rep + '×',
+      v: g.steps.map(dur).join(' / '),
+      s1: drags.length ? 'Drag ' + drags.map(dspd).join(' / ') + ' ' + speedUnitLabel() : '',
+      s2: r ? 'Hvile ' + (r.sm === 'fast' ? formatSpeed(r.v) + ' ' + speedUnitLabel() : 'følger drag') : '',
+    });
+  });
+  cards.push({
+    l: 'NEDJOGG',
+    v: formatDuration(m.cool.dm === 't' ? m.cool.dv : st.seq[st.seq.length - 1].sec),
+    s1: m.cool.sm === 'fast' ? formatSpeed(m.cool.v) + ' ' + speedUnitLabel() : 'Manuell fart',
+    s2: m.cool.im === 'fast' ? formatIntOrDecimal(m.cool.i) + ' % stigning' : 'Stigning uendret',
+  });
+  setHtmlIfChanged(
+    cd,
+    cards
+      .map(
+        (c) =>
+          '<div class="card"><span class="a">' +
+          c.l +
+          '</span><span class="b">' +
+          escapeHtml(c.v) +
+          '</span><span class="c"><span>' +
+          escapeHtml(c.s1) +
+          '</span><span>' +
+          escapeHtml(c.s2) +
+          '</span></span></div>'
+      )
+      .join('')
+  );
+  renderSlots();
+}
+let ddOpen = false;
+function renderSlots() {
+  const base = workoutsByRecentUse(state.workouts),
+    host = byId('v-slots');
+  if (!state.ord) state.ord = base.map((w) => w.id); // fryst rekkefølge: innholdet oppdateres, men knappene flytter seg ikke
+  const s = base
+    .filter((w) => state.ord.indexOf(w.id) < 0)
+    .concat(state.ord.map((id) => base.find((w) => w.id === id)).filter(Boolean));
+  const slot = (w) =>
+    '<button class="btn slot' +
+    (w.id === state.selId ? ' on' : '') +
+    '" data-act="pick" data-id="' +
+    w.id +
+    '"><span class="a"><b>' +
+    escapeHtml(w.name) +
+    '</b><i>' +
+    formatDuration(statsFor(w).T) +
+    '</i></span></button>';
+  const rest = s.slice(2),
+    selInRest = rest.some((w) => w.id === state.selId);
+  const first = s.slice(0, 2).map(slot).join('') + (s.length < 2 ? '<span></span>'.repeat(2 - s.length) : '');
+  const more =
+    '<button class="btn slot' +
+    (selInRest ? ' on' : '') +
+    '" data-act="moreopen"><span class="a"><b>Flere</b><i>' +
+    (rest.length ? rest.length + ' økter' : 'Ny økt') +
+    '</i></span><svg width="26" height="26" viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="square" aria-hidden="true"><path d="M4 9l9 9 9-9"/></svg></button>';
+  const dd =
+    '<div class="dd" id="v-dd" style="display:' +
+    (ddOpen ? 'flex' : 'none') +
+    ';right:0;bottom:100%;margin-bottom:12px;width:378px">' +
+    rest
+      .map(
+        (w) =>
+          '<button class="btn' +
+          (w.id === state.selId ? ' on' : '') +
+          '" data-act="pick" data-id="' +
+          w.id +
+          '" style="height:64px"><span style="font-size:28px;white-space:nowrap">' +
+          escapeHtml(w.name) +
+          '</span><span class="mut" style="font-size:22px;letter-spacing:normal;text-transform:none">' +
+          formatDuration(statsFor(w).T) +
+          '</span></button>'
+      )
+      .join('') +
+    '<button class="btn" data-act="newwk" style="height:64px"><span style="font-size:28px">+ Ny økt</span></button></div>';
+  setHtmlIfChanged(host, first + more + dd);
+}
+
+// ===== Intervall kjører =====
+const ROLE = {
+  WARMUP: ['OPPVARMING', 'g'],
+  WORK: ['DRAG', 'r'],
+  REST: ['HVILE', ''],
+  COOLDOWN: ['NEDJOGG', 'g'],
+};
+let planCache = {
+  key: '',
+  seq: null,
+  T: 0,
+};
+function activePlan(sess) {
+  const m = state.workouts.find((w) => w.id === sess.workoutId);
+  if (!m) return null;
+  const key = sess.workoutId + '|' + state.workoutsVersion + '|' + state.user.hvileSpeedKmh;
+  if (planCache.key !== key) {
+    const seq = planWorkout(m, defaultSpeeds(state.user));
+    let T = 0;
+    seq.forEach((x) => {
+      T += x.sec;
+    });
+    planCache = {
+      key,
+      seq,
+      T,
+      m,
+    };
+  }
+  return planCache;
+}
+function layoutOf(plan, sess, idx) {
+  const D = sess.actualStepDurationsMs || [],
+    lens = [],
+    starts = [];
+  let T = 0;
+  plan.seq.forEach((x, i) => {
+    let L = x.sec;
+    if (i < idx && D.length) L = isFiniteNumber(D[i]) ? D[i] / 1000 : 0;
+    else if (i === idx && isFiniteNumber(sess.stepElapsedMs) && isFiniteNumber(sess.stepRemainingMs))
+      L = (sess.stepElapsedMs + sess.stepRemainingMs) / 1000;
+    starts.push(T);
+    lens.push(L);
+    T += L;
+  });
+  return {
+    lens,
+    starts,
+    T,
+  };
+}
+function stripSpeeds(plan, sess, idx) {
+  const P = sess.completedStepProfiles || [],
+    live = state.T && state.T.speed && state.T.speed.kmh,
+    sh = state.shift;
+  let last = null,
+    lastDrag = null;
+  const out = plan.seq.map((x, i) => {
+    let v;
+    if (i < idx) {
+      const a = P[i];
+      v = a && a.length ? a.reduce((s, q) => s + q, 0) / a.length / 10 : x.v != null ? x.v : x.vEff;
+      last = v;
+    } else if (i === idx) {
+      v = isFiniteNumber(live) ? live : x.v != null ? x.v : x.vEff;
+      last = v;
+    } else {
+      v = x.v != null ? x.v : last != null ? last : x.vEff;
+      if (x.k === 'd' && x.v != null && sh && x.gi === sh.gi) v += sh.d;
+      if (x.k === 'r' && x.s.sm !== 'fast' && lastDrag != null) v = lastDrag;
+    }
+    if (x.k === 'd') lastDrag = v;
+    return Math.max(0.5, v);
+  });
+  return out;
+}
+function stripSvg(plan, sess, idx, hrSamples) {
+  const W = 1184,
+    H = +byId('r-svg').getAttribute('height'),
+    seq = plan.seq,
+    lay = layoutOf(plan, sess, idx),
+    T = lay.T || 1,
+    spd = stripSpeeds(plan, sess, idx),
+    vmax = Math.max(12, Math.max.apply(null, spd));
+  let h = '';
+  seq.forEach((x, i) => {
+    const L = lay.lens[i];
+    if (!(L > 0)) return;
+    const hh = Math.max(6, (spd[i] / vmax) * (H - 4)),
+      col = x.k === 'd' ? '#F8283B' : x.k === 'r' ? '#C9C9D2' : '#9A9AA6';
+    h +=
+      '<rect x="' +
+      ((lay.starts[i] / T) * W).toFixed(1) +
+      '" y="' +
+      (H - hh).toFixed(1) +
+      '" width="' +
+      Math.max(1, (L / T) * W - 2).toFixed(1) +
+      '" height="' +
+      hh.toFixed(1) +
+      '" fill="' +
+      col +
+      '" opacity="' +
+      (i < idx ? 0.4 : 1) +
+      '"/>';
+  });
+  const fr = clamp(isFiniteNumber(sess.stepProgressFraction) ? sess.stepProgressFraction : 0, 0, 1);
+  const px = idx >= seq.length ? W : ((lay.starts[idx] + lay.lens[idx] * fr) / T) * W;
+  let hr = '';
+  if (hrSamples && hrSamples.length > 1) {
+    const pts = [];
+    hrSamples.forEach((q) => {
+      if (q.hr > 0 && q.step <= idx && q.step < seq.length)
+        pts.push(
+          (((lay.starts[q.step] + Math.min(q.se / 1000, lay.lens[q.step])) / T) * W).toFixed(1) +
+            ',' +
+            (H - clamp((q.hr - 70) / 130, 0, 1) * (H - 8)).toFixed(1)
+        );
+    });
+    if (pts.length > 1) {
+      const pl = pts.join(' ');
+      hr =
+        '<polyline points="' +
+        pl +
+        '" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="7" stroke-linejoin="round" stroke-linecap="round"/><polyline points="' +
+        pl +
+        '" fill="none" stroke="#F8283B" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>';
+    }
+  }
+  return (
+    h +
+    hr +
+    '<line x1="' +
+    px.toFixed(1) +
+    '" x2="' +
+    px.toFixed(1) +
+    '" y1="0" y2="' +
+    H +
+    '" stroke="#fff" stroke-opacity=".9" stroke-width="6"/><line x1="' +
+    px.toFixed(1) +
+    '" x2="' +
+    px.toFixed(1) +
+    '" y1="0" y2="' +
+    H +
+    '" class="ph" stroke-width="2"/>'
+  );
+}
+let stripAt = 0;
+function updRun(force) {
+  const T = state.T || {},
+    sess = T.session || {},
+    live = !!state.T,
+    st = sess.state,
+    ms = T.csafe && T.csafe.machineState;
+  const cont = live && sess.continuationWindowActive === true,
+    aborted = live && st === 'Aborted';
+  const resuming = live && st === 'Suspended' && ms === 'STARTING';
+  const paused = live && (st === 'Suspended' || aborted || cont);
+  const role = sess.currentRole,
+    plan = live ? activePlan(sess) : null,
+    idx = sess.stepIndex || 0;
+  const cur = plan && plan.seq[idx],
+    next = plan && plan.seq[idx + 1];
+  const unset =
+    live &&
+    !paused &&
+    (role === 'WARMUP' || role === 'WORK' || role === 'COOLDOWN') &&
+    (isFiniteNumber(sess.stepTargetSpeedKmh) ? sess.stepTargetSpeedKmh < 0.5 : cur ? cur.v == null : false);
+  const ramp = live && sess.rampPreFireActive === true && !paused;
+  byId('s-run').style.paddingTop = paused ? '72px' : '28px';
+  byId('run-top').classList.toggle('on', !!paused && !resuming);
+  byId('r-cnt').style.fontSize = (unset ? 150 : paused ? 240 : 250) + 'px';
+  setVisible('r-keys', unset, 'grid');
+  byId('r-svg').setAttribute('height', unset ? 100 : paused ? 96 : 120);
+  // fase
+  let ph = '–',
+    sub = '',
+    sq = 'sq';
+  if (live) {
+    if (cont) {
+      ph = 'AVSLUTTE ØKTEN?';
+      sq = 'sq r';
+    } else if (resuming) {
+      ph = 'STARTER PÅ NYTT';
+      sq = 'sq g';
+    } else if (aborted) {
+      ph = 'ØKT AVSLUTTET';
+      sq = 'sq r';
+    } else if (paused) {
+      ph = 'PAUSET';
+      sq = 'sq r';
+    } else if (role && ROLE[role]) {
+      ph = ROLE[role][0];
+      sq = 'sq ' + ROLE[role][1];
+      if (cur && cur.gi != null) sub = cur.rep + 1 + ' / ' + plan.m.groups[cur.gi].rep;
+    }
+  }
+  setText('r-ph', ph);
+  setText('r-phs', sub);
+  byId('r-sq').className = sq;
+  // hero
+  const stepRem = live ? sess.stepRemainingMs : null;
+  if (cont) {
+    anchor('cont', sess.continuationWindowRemainingMs || 0, 'down', 'c');
+    setText('r-cnt', formatMinutesSeconds(Math.ceil((clockMs('cont') || 0) / 1000) * 1000));
+    setText('r-cs', 'Valg utløper om');
+  } else {
+    anchor('step', stepRem, live && st === 'Running' ? 'down' : 'paused', idx);
+    const m0 = clockMs('step');
+    setText('r-cnt', isFiniteNumber(m0) ? formatMinutesSeconds(Math.ceil(m0 / 1000) * 1000) : '--:--');
+    setText('r-cs', aborted ? 'Økta kan ikke fortsettes' : '');
+  }
+  const hint = live && st === 'Suspended' && !cont && !resuming;
+  byId('r-qs').style.display = hint ? 'flex' : 'none';
+  if (resuming) setText('r-cs', 'Møllen teller ned');
+  byId('r-prog').style.width =
+    (live && isFiniteNumber(sess.stepProgressFraction) ? clamp(sess.stepProgressFraction, 0, 1) * 100 : 0) + '%';
+  // neste
+  const spd = live ? T.speed && T.speed.kmh : null,
+    inc = live ? T.incline && T.incline.pct : null;
+  if (ramp && next && role !== 'WORK') {
+    const tgt = isFiniteNumber(T.targetSpeedKmh) ? T.targetSpeedKmh : next.vEff,
+      up = tgt >= (spd || 0);
+    setText('r-nl', up ? 'ØKER TIL' : 'SENKER TIL');
+    setText('r-nn', ROLE[next.k === 'd' ? 'WORK' : next.k === 'r' ? 'REST' : 'COOLDOWN'][0]);
+    setText('r-nv1', formatSpeed(spd || 0) + ' til ' + formatSpeed(tgt));
+    setText('r-nu1', speedUnitLabel());
+    setText(
+      'r-nv2',
+      sess.rampPreFireInclineChanging
+        ? formatIntOrDecimal(Math.round(inc || 0)) + ' til ' + formatIntOrDecimal(next.inc)
+        : formatIntOrDecimal(next.inc)
+    );
+    setVisible('r-nd', false);
+    byId('r-nsq').style.background = next.k === 'd' ? 'var(--red)' : 'var(--ink)';
+  } else {
+    setText('r-nl', 'NESTE');
+    if (next) {
+      setText(
+        'r-nn',
+        ROLE[next.k === 'd' ? 'WORK' : next.k === 'r' ? 'REST' : next.k === 'c' ? 'COOLDOWN' : 'WARMUP'][0]
+      );
+      setText('r-nv1', next.v != null ? formatSpeed(next.v) : '–');
+      setText('r-nu1', next.v != null ? speedUnitLabel() : '');
+      setText('r-nv2', formatIntOrDecimal(next.inc));
+      const dm = next.s.dm === 'm';
+      setText('r-nv3', dm ? String(next.s.dv) : formatDuration(next.sec));
+      setText('r-nu3', dm ? 'm' : '');
+      setVisible('r-nd', true, 'flex');
+      byId('r-nsq').style.background = next.k === 'd' ? 'var(--red)' : next.k === 'r' ? 'var(--ink)' : '#9A9AA6';
+    } else {
+      setText('r-nn', live ? 'FERDIG' : '–');
+      setText('r-nv1', '');
+      setText('r-nu1', '');
+      setText('r-nv2', '');
+      setVisible('r-nd', false);
+      byId('r-nsq').style.background = '#9A9AA6';
+    }
+  }
+  // tall til høyre
+  let rem = null;
+  if (plan && isFiniteNumber(stepRem)) {
+    rem = stepRem / 1000;
+    for (let i = idx + 1; i < plan.seq.length; i++) rem += plan.seq[i].sec;
+  }
+  state.futSec = plan && isFiniteNumber(stepRem) ? rem - stepRem / 1000 : null;
+  {
+    const cm = clockMs('step'),
+      r2 = cm !== null && isFiniteNumber(state.futSec) ? Math.ceil(cm / 1000) + state.futSec : rem;
+    setText(
+      'r-left',
+      isFiniteNumber(r2) ? (r2 >= 3600 ? formatClock(r2 * 1000) : formatMinutesSeconds(r2 * 1000)) : '--'
+    );
+  }
+  setText(
+    'r-dist',
+    live && isFiniteNumber(sess.totalValidatedDistanceKm)
+      ? sess.totalValidatedDistanceKm.toFixed(2).replace('.', ',')
+      : '--'
+  );
+  const adjS =
+    live &&
+    (T.hasSpeedTarget === true || sess.hasSpeedTarget === true) &&
+    isFiniteNumber(T.targetSpeedKmh) &&
+    isFiniteNumber(spd) &&
+    Math.abs(T.targetSpeedKmh - spd) > 0.2 &&
+    !paused;
+  setText('r-fart', isFiniteNumber(spd) ? formatSpeed(spd) : '--');
+  setText('r-fu', speedUnitLabel());
+  byId('r-fart').classList.toggle('chg', !!adjS);
+  setText(
+    'r-fsub',
+    adjS
+      ? 'Justerer til ' + formatSpeed(T.targetSpeedKmh) + ' ' + speedUnitLabel()
+      : isFiniteNumber(spd) && spd > 0.3 && !paused
+        ? formatSpeedAlternate(spd)
+        : ''
+  );
+  const adjI =
+    live &&
+    (T.hasInclineTarget === true || sess.hasInclineTarget === true) &&
+    isFiniteNumber(T.targetInclinePct) &&
+    isFiniteNumber(inc) &&
+    Math.abs(T.targetInclinePct - inc) > 0.2 &&
+    !paused;
+  setText('r-inc', isFiniteNumber(inc) ? formatIntOrDecimal(Math.round(inc * 2) / 2) : '--');
+  byId('r-inc').classList.toggle('chg', !!adjI);
+  setText('r-isub', adjI ? 'Justerer til ' + formatIntOrDecimal(T.targetInclinePct) + ' %' : '');
+  setVisible('r-pr', live && sess.heartRateEverValid === true, 'flex');
+  setText('r-puls', live && T.heartRate && T.heartRate.valid && T.heartRate.bpm > 0 ? String(T.heartRate.bpm) : '--');
+  const climb = sess.totalElevationMeters;
+  setVisible('r-kr', live && isFiniteNumber(climb) && climb > 0, 'flex');
+  setText('r-klat', isFiniteNumber(climb) ? Math.round(climb) : 0);
+  // hurtigtaster til manuell fart
+  if (unset) {
+    const u = state.user,
+      sk = (u && u.speedQuickKeys) || [];
+    setHtmlIfChanged(
+      byId('r-keys'),
+      sk
+        .slice(0, 8)
+        .map((v) => keyHtml(v, false, false, 96))
+        .join('')
+    );
+  }
+  // profilstripe (1 Hz)
+  if (plan && (force || Date.now() - stripAt > 900)) {
+    stripAt = Date.now();
+    byId('r-svg').innerHTML = stripSvg(plan, sess, idx, state.rec && state.rec.s);
+  }
+  // handlinger
+  const prompt = live && sess.speedAdjustmentPromptActive === true && !paused;
+  const isWork = live && role === 'WORK' && !paused,
+    canGo = live && !paused && role !== 'WORK' && sess.hasUpcomingDragStep === true && !ramp;
+  setVisible('a-drag', isWork && !ramp, 'grid');
+  setVisible('a-rest', canGo && !prompt && !isWork, 'grid');
+  setVisible('a-p30', role === 'REST', '');
+  setVisible('a-ramp', ramp && FEATURES.cancelRamp && sess.rampCancelable === true, 'grid');
+  setVisible('a-pause', paused && !cont && !resuming, 'grid');
+  setVisible('a-cont', cont, 'grid');
+  setVisible('a-prompt', prompt, 'grid');
+  if (prompt) {
+    const dl = sess.suggestedSpeedDeltaKmh || 0;
+    setText(
+      'p-txt',
+      (dl > 0 ? 'Øke' : 'Redusere') +
+        ' farten med ' +
+        formatOneDecimal(Math.abs(dl)) +
+        ' km/t på kommende drag i denne gruppen?'
+    );
+    let promptRemainingMs = isFiniteNumber(sess.speedAdjustmentPromptRemainingMs)
+      ? sess.speedAdjustmentPromptRemainingMs
+      : isFiniteNumber(sess.speedAdjustmentPromptExpiresMs) && isFiniteNumber(T.timestampMs)
+        ? sess.speedAdjustmentPromptExpiresMs - T.timestampMs
+        : null;
+    if (promptRemainingMs === null) {
+      // fallback when the firmware does not send the remaining time
+      if (!state.pLoc) state.pLoc = nowM();
+      promptRemainingMs = SPEED_PROMPT_DURATION_MS - (nowM() - state.pLoc);
+    }
+    promptRemainingMs = clamp(promptRemainingMs, 0, 60000);
+    anchor('prm', promptRemainingMs, 'down', 'p');
+    setText('p-sec', String(Math.ceil((clockMs('prm') != null ? clockMs('prm') : promptRemainingMs) / 1000)));
+    const arc = byId('p-arc');
+    if (!state.pArc) {
+      state.pArc = 1;
+      arc.style.transition = 'none';
+      arc.style.strokeDashoffset = String(226.2 * (1 - clamp(promptRemainingMs / SPEED_PROMPT_DURATION_MS, 0, 1)));
+      arc.getBoundingClientRect();
+      arc.style.transition = 'stroke-dashoffset ' + Math.round(promptRemainingMs) + 'ms linear';
+      arc.style.strokeDashoffset = '226.2';
+    }
+  } else {
+    state.pArc = 0;
+    state.pLoc = 0;
+    state.clocks.prm = null;
+  }
+  if (state.shift && (!cur || cur.gi !== state.shift.gi)) state.shift = null;
+}
+
+// ===== Ferdig =====
+function samplesFromProfiles(sess) {
+  const out = [],
+    P = sess.completedStepProfiles,
+    D = sess.actualStepDurationsMs;
+  if (!Array.isArray(P) || !Array.isArray(D)) return out;
+  let t = 0,
+    dist = 0;
+  P.forEach((arr, i) => {
+    const dur = D[i] || 0;
+    if (!Array.isArray(arr) || !arr.length || !dur) {
+      t += dur;
+      return;
+    }
+    arr.forEach((v, j) => {
+      const tt = t + (j / arr.length) * dur,
+        kmh = v / 10;
+      dist += ((kmh / 3.6) * (dur / arr.length / 1000)) / 1000;
+      out.push({
+        t: tt,
+        v: kmh,
+        hr: 0,
+        d: dist,
+        step: i,
+      });
+    });
+    t += dur;
+  });
+  return out;
+}
+// Sammendrag til firmware (siste 5 per bruker). Samme id to ganger = ingen duplikat; kort økt (< 2 min) lagres ikke.
+function histPost(o) {
+  if (!FEATURES.history || !state.user || o.durMs < 120000) return;
+  const id = state.user.id + '-' + o.durMs + '-' + Math.round(o.distKm * 1000);
+  let sent = '';
+  try {
+    sent = storage.get('sc_hid');
+  } catch (e) {
+    /* */
+  }
+  if (state.histId === id || sent === id) return;
+  state.histId = id;
+  const st = Math.max(1, Math.ceil(o.smp.length / 150)),
+    r1x = (v) => (v == null ? null : Math.round(v * 10) / 10);
+  const entry = {
+    id,
+    startedAt: Date.now() - o.durMs,
+    workoutName: o.free ? 'Manuell' : o.name,
+    mode: o.free ? 'manual' : 'interval',
+    summary: {
+      km: Math.round(o.distKm * 100) / 100,
+      s: Math.round(o.durMs / 1000),
+      avgKmh: r1x(o.avgV),
+      fastKmh: r1x(o.fast),
+      maxKmh: r1x(o.maxV),
+      avgHr: o.hrAvg ? Math.round(o.hrAvg) : null,
+      maxHr: o.hrMax ? Math.round(o.hrMax) : null,
+      climbM: Math.round(o.climb),
+      drags: o.nD,
+    },
+    laps: o.laps.map((l) => [
+      l.name,
+      l.k,
+      Math.round(l.ms / 1000),
+      l.dist != null ? Math.round(l.dist * 1000) : null,
+      r1x(l.v),
+      l.hr ? Math.round(l.hr) : null,
+      l.max ? Math.round(l.max) : null,
+    ]),
+    samples: o.smp
+      .filter((q, i) => i % st === 0)
+      .map((q) => [Math.round(q.t / 1000), Math.round(q.v * 10), q.hr ? Math.round(q.hr) : 0, Math.round(q.d * 1000)]),
+  };
+  apiRequest('/api/v1/history', {
+    userId: state.user.id,
+    entry,
+  }).then((r) => {
+    if (r && r.ok)
+      try {
+        storage.set('sc_hid', id);
+      } catch (e) {
+        /* */
+      }
+  });
+}
+function renderDone() {
+  const T = state.T || {},
+    sess = T.session || {},
+    free = sess.workoutId === FREE_RUN_WORKOUT_ID,
+    plan = !free ? activePlan(sess) : null;
+  let smp = state.rec && state.rec.s.length ? state.rec.s : samplesFromProfiles(sess);
+  const durMs = isFiniteNumber(sess.elapsedTimeMs)
+      ? sess.elapsedTimeMs
+      : isFiniteNumber(T.elapsedTimeMs)
+        ? T.elapsedTimeMs
+        : smp.length
+          ? smp[smp.length - 1].t
+          : 0,
+    distKm = isFiniteNumber(sess.totalValidatedDistanceKm)
+      ? sess.totalValidatedDistanceKm
+      : smp.length
+        ? smp[smp.length - 1].d
+        : 0;
+  const hrOn = sess.heartRateEverValid === true || smp.some((q) => q.hr > 0);
+  // runder
+  const laps = [];
+  let nD = 0,
+    nR = 0;
+  if (plan) {
+    const D = sess.actualStepDurationsMs || [];
+    plan.seq.forEach((x, i) => {
+      const part = smp.filter((q) => q.step === i),
+        dur = D[i] != null ? D[i] : part.length ? part[part.length - 1].t - part[0].t : x.sec * 1000;
+      if (D.length && i >= D.length && !part.length) return;
+      const name =
+        x.k === 'w' ? 'Oppvarming' : x.k === 'c' ? 'Nedjogg' : x.k === 'd' ? 'Drag ' + ++nD : 'Hvile ' + ++nR;
+      const hrs = part.filter((q) => q.hr > 0).map((q) => q.hr),
+        av = part.length ? part.reduce((a, q) => a + q.v, 0) / part.length : null,
+        dd = part.length ? part[part.length - 1].d - part[0].d : null;
+      laps.push({
+        name,
+        k: x.k,
+        ms: dur,
+        dist: dd,
+        v: av,
+        hr: hrs.length ? hrs.reduce((a, b) => a + b, 0) / hrs.length : null,
+        max: hrs.length ? Math.max.apply(null, hrs) : null,
+      });
+    });
+  } else
+    laps.push({
+      name: 'Løp',
+      k: 'w',
+      ms: durMs,
+      dist: distKm,
+      v: durMs ? distKm / (durMs / 3600000) : null,
+      hr: isFiniteNumber(sess.avgHeartRateBpm) && sess.avgHeartRateBpm > 0 ? sess.avgHeartRateBpm : null,
+      max: isFiniteNumber(sess.maxHeartRateBpm) && sess.maxHeartRateBpm > 0 ? sess.maxHeartRateBpm : null,
+    });
+  const dragLaps = laps.filter((l) => l.k === 'd' && l.v),
+    fast = dragLaps.length
+      ? Math.max.apply(
+          null,
+          dragLaps.map((l) => l.v)
+        )
+      : null;
+  const avgV = durMs > 0 ? distKm / (durMs / 3600000) : 0,
+    hrAvg = isFiniteNumber(sess.avgHeartRateBpm) && sess.avgHeartRateBpm > 0 ? sess.avgHeartRateBpm : null,
+    hrMax = isFiniteNumber(sess.maxHeartRateBpm) && sess.maxHeartRateBpm > 0 ? sess.maxHeartRateBpm : null,
+    climb = isFiniteNumber(sess.totalElevationMeters) ? sess.totalElevationMeters : 0;
+  const cells = [
+    ['Distanse', distKm.toFixed(2).replace('.', ','), 'km'],
+    ['Tid', formatClock(durMs), ''],
+    ['Snittfart', avgV > 0.3 ? formatSpeed(avgV) : '–', avgV > 0.3 ? speedUnitLabel() : ''],
+    [
+      plan ? 'Raskeste drag' : 'Maksfart',
+      plan ? (fast ? formatSpeed(fast) : '–') : isFiniteNumber(sess.maxSpeedKmh) ? formatSpeed(sess.maxSpeedKmh) : '–',
+      (plan ? fast : sess.maxSpeedKmh) ? speedUnitLabel() : '',
+    ],
+    ['Snittpuls', hrOn && hrAvg ? String(Math.round(hrAvg)) : '–', hrOn && hrAvg ? 'bpm' : ''],
+    ['Makspuls', hrOn && hrMax ? String(Math.round(hrMax)) : '–', hrOn && hrMax ? 'bpm' : ''],
+    ['Klatret', String(Math.round(climb)), 'm'],
+    ['Drag', plan ? String(nD) : '–', plan ? 'stk' : ''],
+  ];
+  {
+    const wm = state.workouts.find((m) => m.id === sess.workoutId);
+    histPost({
+      durMs,
+      distKm,
+      smp,
+      laps,
+      free,
+      name: wm ? wm.name : '',
+      avgV,
+      fast,
+      maxV: isFiniteNumber(sess.maxSpeedKmh) ? sess.maxSpeedKmh : null,
+      hrAvg,
+      hrMax,
+      climb,
+      nD,
+    });
+  }
+  setHtmlIfChanged(
+    byId('d-cells'),
+    cells
+      .map(
+        (c) =>
+          '<div class="cell"><span class="lab16">' +
+          c[0] +
+          '</span><span class="a"><b>' +
+          escapeHtml(c[1]) +
+          '</b><i>' +
+          escapeHtml(c[2]) +
+          '</i></span></div>'
+      )
+      .join('')
+  );
+  setHtmlIfChanged(
+    byId('d-laps'),
+    laps
+      .map(
+        (l) =>
+          '<div class="lap' +
+          (l.k === 'r' ? ' rest' : '') +
+          '"><span>' +
+          escapeHtml(l.name) +
+          '</span><span>' +
+          formatMinutesSeconds(l.ms) +
+          '</span><span>' +
+          (l.dist != null ? l.dist.toFixed(2).replace('.', ',') : '–') +
+          '</span><span>' +
+          (l.v ? formatSpeed(l.v) : '–') +
+          '</span><span>' +
+          (l.hr ? Math.round(l.hr) : '–') +
+          '</span><span>' +
+          (l.max ? Math.round(l.max) : '–') +
+          '</span></div>'
+      )
+      .join('')
+  );
+  byId('d-hl').style.display = hrOn ? 'flex' : 'none';
+  // diagram
+  const L = 56, // chart margins inside the 763 x 280 drawing: left and right edge of the plot area
+    R = 707,
+    y0 = 10,
+    yb = 250,
+    byT = state.dx === 't',
+    maxT = Math.max(durMs, smp.length ? smp[smp.length - 1].t : 1),
+    maxD = Math.max(distKm, smp.length ? smp[smp.length - 1].d : 0.01);
+  const X = (q) => L + (byT ? q.t / maxT : q.d / maxD) * (R - L),
+    Y = (v) => yb - clamp(v / 20, 0, 1) * (yb - y0),
+    YH = (h) => yb - clamp((h - 70) / 130, 0, 1) * (yb - y0);
+  const step = Math.max(1, Math.floor(smp.length / 220)),
+    ds = smp.filter((q, i) => i % step === 0);
+  const pp = ds.map((q) => X(q).toFixed(1) + ',' + Y(q.v).toFixed(1)).join(' '),
+    hp = hrOn
+      ? ds
+          .filter((q) => q.hr > 0)
+          .map((q) => X(q).toFixed(1) + ',' + YH(q.hr).toFixed(1))
+          .join(' ')
+      : '';
+  let g = '';
+  [20, 15, 10, 5, 0].forEach((v) => {
+    const y = Y(v);
+    g +=
+      '<line x1="' +
+      L +
+      '" x2="' +
+      R +
+      '" y1="' +
+      y +
+      '" y2="' +
+      y +
+      '" stroke="#E3E3E9" stroke-dasharray="4 4"/><text x="48" y="' +
+      (y + 5) +
+      '" text-anchor="end" font-size="16" font-weight="600" fill="#6B6B76">' +
+      (v > 0 ? formatSpeed(v) : '') +
+      '</text>' +
+      (hrOn
+        ? '<text x="715" y="' +
+          (y + 5) +
+          '" font-size="16" font-weight="600" fill="#F8283B">' +
+          Math.round(70 + (v / 20) * 130) +
+          '</text>'
+        : '');
+  });
+  for (let i = 0; i <= 4; i++) {
+    const x = L + ((R - L) * i) / 4,
+      lab = byT ? formatDuration((maxT * i) / 4000) : ((maxD * i) / 4).toFixed(1).replace('.', ',');
+    g +=
+      '<text x="' +
+      x +
+      '" y="276" text-anchor="middle" font-size="16" font-weight="600" fill="#6B6B76">' +
+      lab +
+      '</text>';
+  }
+  setHtmlIfChanged(
+    byId('d-chart'),
+    '<svg width="763" height="280" viewBox="0 0 763 280">' +
+      g +
+      (hp
+        ? '<polyline points="' + hp + '" fill="none" stroke="#F8283B" stroke-width="2.5" stroke-linejoin="round"/>'
+        : '') +
+      '<polyline points="' +
+      pp +
+      '" fill="none" stroke="#fff" stroke-opacity=".9" stroke-width="7" stroke-linejoin="round"/><polyline class="sl" points="' +
+      pp +
+      '" fill="none" stroke-width="3" stroke-linejoin="round"/></svg>'
+  );
+  byId('d-tt').classList.toggle('on', byT);
+  byId('d-td').classList.toggle('on', !byT);
+}
+
+// ===== Oppsett (pulsmåler, fartsvisning, hvile/drag) =====
+const SU = {
+  pace: true,
+  h: 6,
+  d: 16,
+};
+let hrSaved = '',
+  hrScanT = null,
+  hrFound = [],
+  hrScanning = false,
+  hrConnecting = false,
+  hrStat = null;
+function enterSetup() {
+  SU.pace = state.showPace;
+  SU.h = (state.user && state.user.hvileSpeedKmh) || 6;
+  SU.d = (state.user && state.user.dragSpeedKmh) || 16;
+  const fmtv = (v) => formatOneDecimal(v);
+  const bind = (host, id, key, lo, hi) => {
+    byId(host).innerHTML =
+      '<div style="display:flex;align-items:center;gap:16px;height:60px"><span class="lab16" style="width:110px">Fart</span>' +
+      numberFieldHtml(id, 'Fart', 'km/t') +
+      '</div>';
+    bindNumberField(id, {
+      get: () => SU[key],
+      format: fmtv,
+      parse: parseDecimal,
+      apply: (n) => {
+        SU[key] = roundToTenth(clamp(n, lo, hi));
+      },
+      step: (d) => {
+        SU[key] = roundToTenth(clamp(SU[key] + 0.5 * d, lo, hi));
+        refreshNumberField(id);
+      },
+    });
+  };
+  bind('st-h', 'su-h', 'h', 0.5, 20);
+  bind('st-d', 'su-d', 'd', 0.5, state.capabilities.maxSpeedKmh);
+  paintSpeedMode();
+  hrScanning = false;
+  hrConnecting = false;
+  hrFound = [];
+  renderHr();
+  fetchHr().then(renderHr);
+}
+function paintSpeedMode() {
+  byId('st-pace').classList.toggle('on', SU.pace);
+  byId('st-kmt').classList.toggle('on', !SU.pace);
+  setText('st-ex', SU.pace ? '5:00' : '12,0');
+  setText('st-eu', SU.pace ? '/km' : 'km/t');
+  setText('st-es', SU.pace ? '· 12,0 km/t' : '· 5:00 /km');
+}
+async function fetchHr() {
+  const r = await apiRequest('/api/v1/heartrate/status', null, 'GET');
+  if (r.ok) {
+    hrStat = r.data;
+    hrSaved = (r.data && r.data.savedAddress) || '';
+  }
+  return hrStat;
+}
+function renderHr() {
+  const host = byId('hr-body'),
+    d = hrStat,
+    conn = !!(d && d.connected && hrSaved);
+  let h = '';
+  if (conn)
+    h =
+      '<div style="flex:1;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 18px;background:var(--surf2)"><span style="display:flex;flex-direction:column;gap:6px"><b style="font-size:24px;line-height:1">' +
+      escapeHtml((d.name || hrSaved).slice(0, 16)) +
+      '</b><span style="display:flex;align-items:center;gap:8px"><i class="sq" style="width:12px;height:12px"></i><span class="lab16" style="letter-spacing:.1em">TILKOBLET</span></span></span>' +
+      (d.batteryValid && isFiniteNumber(d.batteryPercent)
+        ? '<span style="display:flex;flex-direction:column;align-items:flex-end;gap:5px"><span style="display:flex;align-items:baseline;gap:4px"><b style="font-size:40px;line-height:1">' +
+          d.batteryPercent +
+          '</b><span class="mut" style="font-size:20px">%</span></span><span class="lab16" style="font-size:14px">BATTERI</span></span>'
+        : '') +
+      '<button class="btn" data-act="hrforget" style="height:48px;width:130px;font-size:18px;padding:0">Koble fra</button></div>';
+  else if (hrConnecting)
+    h =
+      '<div style="flex:1;display:flex;align-items:center;justify-content:center"><span class="mut" style="font-size:22px">Kobler til …</span></div>';
+  else if (hrScanning && !hrFound.length)
+    h =
+      '<div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:12px"><div style="height:8px;background:var(--line)"><div style="width:45%;height:100%;background:var(--red)"></div></div><span class="mut" style="font-size:20px">Søker etter pulsmålere i nærheten …</span></div>';
+  else if (hrFound.length)
+    h = hrFound
+      .map(
+        (f) =>
+          '<button class="btn sensor" data-act="hrpick" data-a="' +
+          escapeHtml(f.address) +
+          '"><b>' +
+          escapeHtml((f.name || f.address).slice(0, 16)) +
+          '</b><span>' +
+          (isFiniteNumber(f.rssi) ? f.rssi + ' dBm' : '') +
+          '</span></button>'
+      )
+      .join('');
+  else
+    h =
+      '<div style="flex:1;display:flex;align-items:center;justify-content:center"><span class="mut" style="font-size:22px">' +
+      (hrScanT === 'done' ? 'Ingen sensorer funnet' : 'Ingen sensor tilkoblet') +
+      '</span></div>';
+  setHtmlIfChanged(host, h);
+  byId('hr-scan').textContent = hrScanning ? 'Søker …' : 'Søk etter sensor';
+  byId('hr-scan').disabled = hrScanning || hrConnecting;
+}
+async function hrScan() {
+  hrScanning = true;
+  hrFound = [];
+  hrScanT = null;
+  renderHr();
+  await apiRequest('/api/v1/heartrate/scan/start', {});
+  const poll = async () => {
+    const [a] = await Promise.all([apiRequest('/api/v1/heartrate/scan/results', null, 'GET'), fetchHr()]);
+    if (a.ok && Array.isArray(a.data))
+      hrFound = a.data.filter((f) => f && f.address && f.address.toUpperCase() !== hrSaved.toUpperCase());
+    renderHr();
+  };
+  poll();
+  const iv = setInterval(poll, 1000);
+  setTimeout(() => {
+    clearInterval(iv);
+    hrScanning = false;
+    hrScanT = 'done';
+    poll();
+  }, 8000);
+}
+async function hrPick(addr) {
+  hrConnecting = true;
+  renderHr();
+  await apiRequest('/api/v1/heartrate/save', {
+    address: addr,
+  });
+  const t0 = Date.now();
+  const poll = async () => {
+    await fetchHr();
+    if ((hrStat && hrStat.connected) || Date.now() - t0 > 10000) {
+      hrConnecting = false;
+      hrFound = [];
+      renderHr();
+    } else setTimeout(poll, 1000);
+  };
+  poll();
+}
+
+// ===== Redigering av intervaller =====
+function enterEdit() {
+  const m = state.pendingNew
+    ? createEmptyWorkout()
+    : curModel() || workoutsByRecentUse(state.workouts)[0] || createEmptyWorkout();
+  const isNew = !!state.pendingNew || (!curModel() && !workoutsByRecentUse(state.workouts)[0]);
+  state.pendingNew = false;
+  editor.dropdownOpen = false;
+  loadDraft(m, isNew || m.id === 0);
+}
+async function saveEdit() {
+  const d = editor.draft,
+    err = validateWorkout(d, state.capabilities.maxSpeedKmh);
+  if (err) {
+    showToast(err);
+    return;
+  }
+  if (!state.user) return;
+  const fw = workoutToFirmware(d),
+    r = await apiRequest('/api/v1/settings/workout', {
+      userId: state.user.id,
+      workout: fw,
+    });
+  if (!r.ok) {
+    showToast(r.data && r.data.error ? r.data.error : 'Kunne ikke lagre økt');
+    return;
+  }
+  const id = r.data && typeof r.data.workoutId === 'number' ? r.data.workoutId : d.id;
+  showToast('Økt lagret');
+  state.selId = id;
+  fetchSettings();
+  const obj = Object.assign({}, fw, {
+    id,
+    lastUsedTimestamp: Math.max.apply(null, [0].concat(state.workouts.map((w) => w.lastUsed))) + 1,
+  });
+  const ws = state.user.workouts || (state.user.workouts = []),
+    ix = ws.findIndex((w) => w.id === id);
+  if (ix >= 0) ws[ix] = obj;
+  else ws.push(obj);
+  state.workouts = ws.map(workoutFromFirmware);
+  state.workoutsVersion++;
+  go('setup');
+}
+holdActions.delses = async () => {
+  if (editor.originalId == null) {
+    showToast('Økta er ikke lagret ennå');
+    return;
+  }
+  const r = await apiRequest('/api/v1/settings/workout/delete', {
+    userId: state.user.id,
+    workoutId: editor.originalId,
+  });
+  if (!r.ok) {
+    showToast('Sletting støttes ikke av firmware ennå');
+    return;
+  }
+  state.user.workouts = (state.user.workouts || []).filter((w) => w.id !== editor.originalId);
+  state.workouts = state.user.workouts.map(workoutFromFirmware);
+  state.workoutsVersion++;
+  state.selId = (workoutsByRecentUse(state.workouts)[0] || {}).id || null;
+  showToast('Økta er slettet');
+  fetchSettings();
+  const m = workoutsByRecentUse(state.workouts)[0];
+  if (m) loadDraft(m, false);
+  else {
+    state.pendingNew = true;
+    go('setup');
+  }
+};
+// ===== Hurtigtaster =====
+const K = {
+  sk: [],
+  ik: [],
+  t: 's',
+  n: 0,
+};
+function enterKeys() {
+  const u = state.user || {};
+  K.sk = (u.speedQuickKeys || [6, 8, 10, 12, 14, 16, 18, 20]).slice(0, 8);
+  K.ik = (u.inclineQuickKeys || [0, 1, 2, 3, 4, 6, 8, 10]).slice(0, 8);
+  K.t = 's';
+  K.n = 0;
+  renderKeysEd();
+}
+function renderKeysEd() {
+  const kb = (arr, t) =>
+    arr
+      .map(
+        (v, n) =>
+          '<button class="btn key' +
+          (t === 'i' ? ' inc' : '') +
+          (K.t === t && K.n === n ? ' on' : '') +
+          '" data-act="kselect" data-t="' +
+          t +
+          '" data-n="' +
+          n +
+          '">' +
+          (t === 'i'
+            ? '<span class="a">' + formatIntOrDecimal(v) + '</span><span class="b">%</span>'
+            : '<span class="a">' +
+              formatSpeed(v) +
+              '</span><span class="b">' +
+              (state.showPace ? formatOneDecimal(v) + ' km/t' : formatPace(v) + ' /km') +
+              '</span>') +
+          '</button>'
+      )
+      .join('');
+  setHtmlIfChanged(byId('k-sk'), kb(K.sk, 's'));
+  setHtmlIfChanged(byId('k-ik'), kb(K.ik, 'i'));
+  const arr = K.t === 's' ? K.sk : K.ik;
+  setText('k-lab', (K.t === 's' ? 'FARTSTRINN ' : 'STIGNINGSTRINN ') + (K.n + 1) + ' AV 8');
+  setText('k-sub', K.t === 's' ? formatSpeedAlternate(arr[K.n]) : '');
+  const host = byId('k-nf');
+  host.innerHTML = numberFieldHtml('kv', 'Verdi', K.t === 's' ? 'km/t' : '%');
+  const lo = K.t === 's' ? 0.5 : 0,
+    hi = K.t === 's' ? state.capabilities.maxSpeedKmh : 15,
+    stp = K.t === 's' ? 0.5 : 1,
+    round = (v) => (K.t === 's' ? roundToTenth(v) : Math.round(v));
+  bindNumberField('kv', {
+    get: () => arr[K.n],
+    format: (v) => (K.t === 's' ? formatOneDecimal(v) : String(v)),
+    parse: parseDecimal,
+    apply: (n) => {
+      arr[K.n] = round(clamp(n, lo, hi));
+      softKeys();
+    },
+    step: (dd) => {
+      arr[K.n] = round(clamp(arr[K.n] + stp * dd, lo, hi));
+      refreshNumberField('kv');
+      softKeys();
+    },
+  });
+}
+function softKeys() {
+  renderKeysSoft();
+}
+function renderKeysSoft() {
+  const sk = queryAll('#k-sk .key'),
+    ik = queryAll('#k-ik .key');
+  sk.forEach((b, n) => {
+    b.querySelector('.a').textContent = formatSpeed(K.sk[n]);
+    b.querySelector('.b').textContent = state.showPace
+      ? formatOneDecimal(K.sk[n]) + ' km/t'
+      : formatPace(K.sk[n]) + ' /km';
+  });
+  ik.forEach((b, n) => {
+    b.querySelector('.a').textContent = formatIntOrDecimal(K.ik[n]);
+  });
+  setText('k-sub', K.t === 's' ? formatSpeedAlternate(K.sk[K.n]) : '');
+}
+async function saveSettings(patch) {
+  if (!state.settings || !state.user) {
+    showToast('Innstillinger er ikke lastet');
+    return false;
+  }
+  const target = state.settings.users.find((u) => u.id === state.user.id);
+  if (!target) return false;
+  const cand = Object.assign({}, target, patch);
+  if (hrSaved) cand.preferredHrMac = hrSaved;
+  const payload = Object.assign({}, state.settings, {
+    users: state.settings.users.map((u) => (u === target ? cand : u)),
+  });
+  const r = await apiRequest('/api/settings', payload);
+  if (!r.ok) {
+    showToast('Kunne ikke lagre innstillinger');
+    return false;
+  }
+  Object.assign(target, cand);
+  state.user = Object.assign(state.user, cand);
+  showToast('Innstillinger lagret');
+  renderManKeys(true);
+  return true;
+}
+
+// ===== Hold-handlinger =====
+const finalize = () => {
+  state.intStarted = false;
+  sendCommand('/api/v1/control/workout/finalize');
+};
+holdActions.end = () => {
+  finalize();
+  setTimeout(() => {
+    if (state.screen === 'man') {
+      state.doneData = null;
+      go('done');
+    }
+  }, 1800);
+};
+holdActions.cut = () => sendCommand('/api/v1/control/workout/cutdrag');
+holdActions.toman = () => setMode('man');
+holdActions.fin = () => {
+  finalize();
+  setTimeout(() => {
+    if (state.screen === 'run') {
+      state.doneData = null;
+      go('done');
+    }
+  }, 1800);
+};
+holdActions.fin2 = holdActions.fin;
+
+// ===== Klikk-dispatcher =====
+function leaveEdit() {
+  const to = state.editFrom === 'velg' ? 'velg' : 'setup';
+  state.editFrom = null;
+  go(to);
+}
+const ACT = {
+  user(el) {
+    const u = state.settings && state.settings.users[+el.dataset.i];
+    if (!u || state.intStarted) return;
+    applyUser(u);
+    renderUsers();
+  },
+  mode(el) {
+    if (state.user) setMode(el.dataset.m);
+  },
+  goUser() {
+    if (!state.intStarted) go('user');
+  },
+  setup() {
+    state.before = state.screen;
+    go('setup');
+  },
+  spd(el) {
+    sendCommand('/api/v1/control/speed', {
+      speed: +el.dataset.v,
+    });
+  },
+  inc(el) {
+    sendCommand('/api/v1/control/incline', {
+      incline: +el.dataset.v,
+    });
+  },
+  rest() {
+    sendCommand('/api/v1/control/speed', {
+      speed: (state.user && state.user.hvileSpeedKmh) || 6,
+    });
+  },
+  work() {
+    sendCommand('/api/v1/control/speed', {
+      speed: (state.user && state.user.dragSpeedKmh) || 16,
+    });
+  },
+  plus30() {
+    sendCommand('/api/v1/control/workout/extendrest');
+  },
+  gotodrag() {
+    sendCommand('/api/v1/control/workout/skiptodrag');
+  },
+  cancelramp() {
+    sendCommand('/api/v1/control/workout/cancelramp');
+  },
+  resume() {
+    sendCommand('/api/v1/control/resume');
+  },
+  spdyes() {
+    const s = state.T && state.T.session,
+      pl = s && activePlan(s),
+      c = pl && pl.seq[s.stepIndex || 0];
+    if (c && c.gi != null)
+      state.shift = {
+        gi: c.gi,
+        d: (state.shift && state.shift.gi === c.gi ? state.shift.d : 0) + (s.suggestedSpeedDeltaKmh || 0),
+      };
+    sendCommand('/api/v1/control/workout/acceptspeedshift');
+  },
+  spdno() {
+    sendCommand('/api/v1/control/workout/rejectspeedshift');
+  },
+  pick(el) {
+    const id = +el.dataset.id;
+    state.selId = id;
+    ddOpen = false;
+    armWorkout(id);
+    renderVelg();
+  },
+  // «sist brukt» settes av firmware først når økta er brukt
+  moreopen() {
+    ddOpen = !ddOpen;
+    renderSlots();
+  },
+  newwk() {
+    ddOpen = false;
+    state.pendingNew = true;
+    state.editFrom = 'velg';
+    state.before = 'velg';
+    go('edit');
+  },
+  dx(el) {
+    state.dx = el.dataset.x;
+    renderDone();
+  },
+  doneok() {
+    state.doneAck = true;
+    state.intStarted = false;
+    state.mode = null;
+    state.rec = null;
+    go('user');
+  },
+  // oppsett
+  hrscan() {
+    hrScan();
+  },
+  hrpick(el) {
+    hrPick(el.dataset.a);
+  },
+  hrforget() {
+    apiRequest('/api/v1/heartrate/forget', {}).then(() => {
+      hrStat = null;
+      hrSaved = '';
+      renderHr();
+    });
+  },
+  spdmode(el) {
+    SU.pace = el.dataset.p === '1';
+    paintSpeedMode();
+  },
+  goedit() {
+    state.editFrom = 'setup';
+    go('edit');
+  },
+  gokeys() {
+    go('keys');
+  },
+  setupcancel() {
+    go(state.before && state.before !== 'setup' ? state.before : 'user');
+  },
+  async setupsave() {
+    state.showPace = SU.pace;
+    storage.set('sc_pace_v1', SU.pace ? '1' : '0');
+    const ok = await saveSettings({
+      hvileSpeedKmh: SU.h,
+      dragSpeedKmh: SU.d,
+    });
+    if (ok) go(state.before && state.before !== 'setup' ? state.before : 'user');
+    else renderManKeys(true);
+  },
+  // editor
+  eddd() {
+    editor.dropdownOpen = !editor.dropdownOpen;
+    const dd = byId('e-dd');
+    dd.style.display = editor.dropdownOpen ? 'flex' : 'none';
+    if (editor.dropdownOpen)
+      dd.innerHTML =
+        workoutsByRecentUse(state.workouts)
+          .map(
+            (w) =>
+              '<button class="btn" data-act="eddpick" data-id="' +
+              w.id +
+              '" style="height:56px"><span style="font-size:24px;white-space:nowrap">' +
+              escapeHtml(w.name) +
+              '</span><span class="mut" style="font-size:20px;letter-spacing:normal">' +
+              formatDuration(computePlanStats(w, defaultSpeeds(state.user)).T) +
+              '</span></button>'
+          )
+          .join('') +
+        '<button class="btn" data-act="eddpick" data-id="0" style="height:56px"><span style="font-size:24px">+ Ny økt</span></button>';
+  },
+  eddpick(el) {
+    editor.dropdownOpen = false;
+    byId('e-dd').style.display = 'none';
+    const id = +el.dataset.id;
+    if (!id) {
+      loadDraft(createEmptyWorkout(), true);
+      return;
+    }
+    const m = state.workouts.find((w) => w.id === id);
+    if (m) loadDraft(m, false);
+  },
+  editcancel() {
+    leaveEdit();
+  },
+  editsave() {
+    saveEdit().then(() => {
+      if (state.screen === 'setup' && state.editFrom === 'velg') leaveEdit();
+    });
+  },
+  // hurtigtaster
+  kselect(el) {
+    K.t = el.dataset.t;
+    K.n = +el.dataset.n;
+    renderKeysEd();
+  },
+  keyscancel() {
+    go('setup');
+  },
+  async keyssave() {
+    const ok = await saveSettings({
+      speedQuickKeys: K.sk,
+      inclineQuickKeys: K.ik,
+    });
+    if (ok) go('setup');
+  },
+};
+Object.assign(ACT, EDITOR_ACTIONS);
+document.addEventListener('click', (e) => {
+  const inside = e.composedPath().some((n) => n && n.id === 'v-slots');
+  if (ddOpen && !inside) {
+    ddOpen = false;
+    if (state.screen === 'velg') renderSlots();
+  }
+  const nf = e.target.closest('[data-nf]');
+  if (nf) {
+    const d = numberFields[nf.dataset.nf];
+    if (d) d.step(+nf.dataset.d);
+    return;
+  }
+  const el = e.target.closest('[data-act]');
+  if (!el || el.disabled) return;
+  if (ddOpen && el.dataset.act !== 'moreopen' && el.dataset.act !== 'pick' && el.dataset.act !== 'newwk') {
+    ddOpen = false;
+    renderSlots();
+  }
+  const fn = ACT[el.dataset.act];
+  if (fn) fn(el, e);
+});
+byId('e-name').addEventListener('input', (e) => {
+  if (editor.draft) {
+    editor.draft.name = e.target.value.slice(0, 31);
+    setText('e-ddn', editor.draft.name);
+  }
+});
+
+// ===== Start =====
+function initApp() {
+  go('user');
+  loadCache();
+  bindDragAndDrop();
+  pollLoop();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initApp);
+else initApp();
+
+</script>
+</body>
+</html>

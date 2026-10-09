@@ -33,7 +33,7 @@ header{height:66px;border-bottom:1px solid #1f2328;display:flex;align-items:cent
 </head>
 <body>
 <div class="app">
-<header><div class="brand"><b>StrideControl</b><span>/ Service Console</span></div><div class="header-right"><span class="connected" id="connectionStatus">ESP32 tilkoblet</span></div></header>
+<header><div class="brand"><b>StrideControl</b><span>/ Service Console</span></div><div class="header-right"><a href="/" target="_blank" style="color:var(--blue);text-decoration:none;font-weight:600;font-size:13px;margin-right:8px">&rarr; Økter (Index)</a><a href="/tablet.html" target="_blank" style="color:var(--blue);text-decoration:none;font-weight:600;font-size:13px;margin-right:8px">&rarr; Tablet</a><a href="/simulator.html" target="_blank" style="color:var(--blue);text-decoration:none;font-weight:600;font-size:13px;margin-right:12px">&rarr; Simulator</a><span class="connected" id="connectionStatus">ESP32 tilkoblet</span></div></header>
 <div class="machinebar"><div><span>Maskin</span><b id="machineName">Sportsmaster T610</b></div><div><span>Sist lagret</span><b id="lastSavedAt">Ikke lagret i denne økten</b></div><div><span>Lagringsstatus</span><b id="storageStatus" class="good">Oppsett lastet</b></div></div>
 <nav class="nav"><button class="active" data-page="overview" onclick="showPage('overview')">Oversikt og test</button><button data-page="calibration" onclick="showPage('calibration')">Kalibrering</button><button data-page="maintenance" onclick="showPage('maintenance')">Vedlikehold</button><button data-page="profiles" onclick="showPage('profiles')">Brukerprofiler</button><button data-page="backup" onclick="showPage('backup')">Backup</button><button data-page="advanced" onclick="showPage('advanced')">Avansert</button></nav>
 
