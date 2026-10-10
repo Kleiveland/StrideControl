@@ -42,9 +42,14 @@ At the latest read-only inspection:
   * `VirtualRunnerAdapter`
   * `TreadmillSimulatorComposite`
 - Deterministic `ExternalStep` orchestration exists through `ApplicationOrchestrator`.
-- A dedicated simulator interface exists:
-  * `simulator.html` = physical treadmill and runner stimulation
-  * `index.html` = StrideControl runner experience
+- Web interfaces hosted from LittleFS:
+  * `index.html` = Responsive workout session companion for phone and PC (planning, history, export)
+  * `tablet.html` = Dedicated full-screen tablet training UI (live telemetry, quick keys, interval coach)
+  * `simulator.html` = Virtual treadmill and runner testbench stimulus panel (`STRIDECONTROL_TESTBENCH` only)
+  * `service.html` = PC hardware calibration, commissioning, and diagnostics console
+- Compile-time mDNS hostnames:
+  * Production (`esp32-s3-devkitc-1`): `http://sportsmaster.local`
+  * Testbench (`STRIDECONTROL_TESTBENCH`): `http://stridecontrol.local`
 - Simulator functionality is isolated behind:
   * `STRIDECONTROL_TESTBENCH`
 - Production and testbench builds are compile-time segregated.
@@ -307,7 +312,7 @@ When O1 enters `0x1F`, output O2 `0x00` for the first 1200 microseconds and `0xF
 | Speed- Relay | 38 | Solid-state or relay output, active low |
 | CSAFE TX / RX | 17 / 40 | 9600 baud serial interface |
 | I2C SDA / SCL | 47 / 48 | LSM6DSOX IMU and cadence |
-| E-Stop, reserved | 18 | Hardware safety monitor |
+| E-Stop Input | 18 | Active-low hardware line. Polled atomically by ConsoleInterface::isEmergencyStopActive() |
 
 #### 4.3.1 Hardware Profile and Conflict Resolution
 
@@ -318,6 +323,15 @@ The integrated GPIO allocation resolves historical prototype pin sharing:
 - `Speed- Relay` is mapped to **GPIO 38** (freeing GPIO 47 for `I2C SDA`).
 
 Any hardware profile using historical prototype assignments is incompatible with the integrated configuration and must not be enabled concurrently.
+
+#### 4.3.2 Emergency Stop Line (GPIO 18)
+
+The physical safety lanyard switch is directly monitored via GPIO 18 (active-low with internal pull-up). When dislodged:
+
+- `ConsoleInterface` asserts `isEmergencyStopActive() = true`.
+- Control runtimes suppress double-stop counting and prevent accidental session finalization.
+- Telemetry broadcasts root `estopActive: true` and `session.isEmergencyStopped: true`, displaying an immediate recovery modal across all web views.
+- On tether reset and physical restart, Interval Mode re-issues current step targets (since treadmill volatile memory is cleared by E-stop), preserving workout progress and step timing.
 
 ### 4.4 O2 Bus and Isolation
 
@@ -524,10 +538,15 @@ On watchdog or hardware failure, release relays, return O2 to input atomically, 
 
 Speed command range accepted by the console is 0.8 to 25.0 km/h. The user-facing range may be lower after calibration.
 
-The integer base is entered through O2 and confirmed before Enter. Fractional correction uses Speed+/- relays after controlled reconnect.
+Speed commands are planned through two execution paths:
 
-- 12.6 gives base 13, then four Speed- pulses
-- 12.4 gives base 12, then four Speed+ pulses
+1. **Relay Fast-Path (|Δ| ≤ 0.5 km/h):**
+   When the belt is already in motion and the requested speed adjustment is within ±0.5 km/h of the current command, O2 digit entry is bypassed entirely. The target is reached directly through sequential Speed+ or Speed- relay pulses (80 ms hold, 80 ms pause), eliminating console screen flashing and numeric re-entry latency.
+
+2. **Full Numeric Injection (|Δ| > 0.5 km/h):**
+   The nearest integer base is entered via O2 Instant Speed, numeric keys, and Enter under continuous baseline emulation. Fractional tenths are subsequently trimmed using Speed+/- relays after controlled bus release and settling:
+   - 12.6 km/h: Base 13 entered via O2, followed by four Speed- relay pulses.
+   - 12.4 km/h: Base 12 entered via O2, followed by four Speed+ relay pulses.
 
 Incline range is 0 to 15%, whole percentages only. Non-integer targets are rejected. There is no active Incline+/- output.
 
@@ -1367,15 +1386,21 @@ Responsibilities:
 - resolve inherited rest speed
 - generate executable timeline model
 
-WorkoutExpander owns no GUI state, storage, networking or treadmill control.
+#### 10.11.6 Runtime Safety and Interlock Rules
+
+- **QuickStart Motion Interlock:** Physical or simulated QuickStart commands are rejected if the belt is already in motion (`isBeltMoving() == true`). The console requires complete physical standstill before accepting a new start sequence.
+- **Free-Run Auto-Start:** When belt motion is detected while in manual mode, `WorkoutSession` automatically starts a new free-run session from `Idle`, `Completed`, or `Aborted` states without requiring manual reset.
+- **Atomic Workout Deletion:** `POST /api/v1/settings/workout/delete` safely removes a specified workout from LittleFS storage without corrupting adjacent user profiles or resetting firmware-owned `lastUsedTimestamp` records.
 
 ### 10.12 WebServerManager
 
 WebServerManager owns:
 
-- HTTP routing
-- WebSocket transport
-- JSON serialization
+- HTTP routing and LittleFS static asset delivery
+- Telemetry serialization and polling (`/api/v1/telemetry`)
+- Motion command dispatch (`/api/v1/control/*`)
+- Settings and workout persistence (`/api/v1/settings/*`, `/api/settings`)
+- Session history ingestion and retrieval (`/api/v1/history`)
 
 WebServerManager does not own UI logic, timeline generation, interval expansion, navigation state or workout execution logic.
 
@@ -1396,17 +1421,19 @@ WebServerManager does not own:
 - workout state
 - treadmill control
 
-Under `STRIDECONTROL_TESTBENCH` a separate simulator interface may be exposed.
+#### 10.12.1 Web Interface Topology
 
-Purpose:
-- Physical T610 stimulation
-- Runner-position stimulation
-- Diagnostic telemetry
+| Route | Source File | Target Display | Primary Responsibilities |
+|---|---|---|---|
+| `/` | `index.html` | Phone, Tablet, PC | Responsive session companion: profile switching, drag-and-drop interval builder, workout copy/delete, history telemetry charts, PNG summary card export. |
+| `/tablet.html` | `tablet.html` | Console-mounted tablet | Dedicated running console: real-time telemetry, 8+8 quick keys, live interval timeline, work-phase focus dimming, ramp cancellation. |
+| `/service.html` | `service.html` | Desktop browser | Hardware commissioning: speed sensor factor, dead time, IMU zero offset, piecewise `SpeedConfig` calibration table, maintenance counters. |
+| `/simulator.html` | `simulator.html` | Developer testbench | Virtual T610 stimulus: belt mechanics, runner footstrike dynamics, physical button inputs (`STRIDECONTROL_TESTBENCH` only). |
 
-```text
-index.html     = StrideControl product UI
-simulator.html = physical treadmill + runner stimulus panel
-```
+#### 10.12.2 Navigation and Tool Isolation Rule
+
+- **Developer & Service Pages:** `simulator.html` and `service.html` provide top-bar navigation links to each other, to `/` (`index.html`), and to `/tablet.html`.
+- **End-User Interfaces:** `index.html` and `tablet.html` contain **zero outbound links** to service or simulator interfaces. User-facing interfaces remain strictly isolated from diagnostic and developer utilities.
 
 ### 10.13 AI-Assisted Development Protocol
 
@@ -1502,9 +1529,20 @@ FTMS:
 
 ## 14. GUI Architecture and Interval Coach
 
-### 14.0 GUI Source of Truth
+### 14.0 Two-Tier GUI Architecture
 
-The approved Precision UI HTML implementation is the UX reference.
+StrideControl separates workout configuration and post-run analysis from in-run execution into two decoupled web applications:
+
+1. **Session Manager (`index.html`):**
+   - Companion interface accessible from phone, tablet, or desktop browser at `/`.
+   - Allows switching between existing runner profiles, copying workouts between runners, and building structured interval sessions (warmup, repeating work/rest groups, progressive speed delta, cooldown).
+   - Provides post-run history review with speed and heart-rate telemetry charts, summary statistics, and PNG card export.
+   - Preserves the active tab (e.g., History) when switching between runner profiles.
+
+2. **Tablet Running Console (`tablet.html`):**
+   - In-run console overlay designed for the tablet mounted over the treadmill console at `/tablet.html`.
+   - Focuses strictly on live workout execution: high-contrast telemetry readouts, 8+8 speed/incline quick-key arrays, live interval timeline with countdown, auto-prefire alerts, and ramp cancellation.
+   - Visual layout, interaction patterns, workflow, terminology and look-and-feel follow the Sportsmaster/COROS styling.
 
 The simulator page is not a UX reference.
 `simulator.html` exists solely for:
@@ -1512,17 +1550,7 @@ The simulator page is not a UX reference.
 - runner presence stimulation
 - diagnostics
 
-All workout UX, presets, interval workflows, and training interactions remain owned by the Precision UI.
-
-Visual layout, interaction patterns, workflow, terminology and look-and-feel shall be preserved.
-
-Production implementation may replace internal JavaScript logic, but must preserve:
-
-- screen layout
-- user flow
-- terminology
-- interaction model
-- visual appearance
+All workout UX, presets, interval workflows, and training interactions remain owned by the web presentation tier.
 
 The ESP32 firmware is the authoritative owner of application logic. The GUI is a presentation layer consuming authoritative state from firmware APIs.
 
@@ -1562,7 +1590,7 @@ Engaged when waking the tablet or when switching profiles at standstill:
 
 #### 14.3.3 Screens 3–7: Interval Mode Workflow
 - **Screen 3: Program Selection (Standstill):**
-  - Bottom program buttons show the 3 stored workouts from the active profile.
+  - Bottom program carousel surfaces stored workouts from the active profile (supporting up to 16 defined workouts per user).
   - Tapping previews the timeline and phase breakdown. The selected program displays a blue bottom border.
   - Starts when the runner physically presses `QUICK START` on the treadmill console, transitioning to Screen 4.
 - **Screen 4: Work Interval (Drag):**
@@ -1589,6 +1617,15 @@ Engaged when waking the tablet or when switching profiles at standstill:
 - Displays `ØKT SYNKRONISERT OG LAGRET`.
 - **`[ FERDIG ]`:** Resets local workout accumulators, closes the summary modal, and returns to launcher state.
 
+#### 14.3.5 Session History Synchronization
+- Upon workout completion (duration ≥ 2 minutes), `tablet.html` compiles a session summary and dispatches it to `POST /api/v1/history`.
+- Firmware retains up to 5 completed workouts per user in LittleFS (`/hist_<uid>.json`) using atomic temporary-file writes and renames.
+- `index.html` fetches summaries via `GET /api/v1/history?userId=<id>` for canvas graph rendering and image export.
+
+#### 14.3.6 Incline Ramp Cancellation
+- When an upcoming step targets a new incline and triggers pre-fire (`session.rampPreFireActive == true`), the UI surfaces an "Avbryt" action button while `session.rampCancelable == true`.
+- Tapping dispatches `POST /api/v1/control/workout/cancelramp`, aborting the upcoming incline shift without interrupting planned speed or step timing.
+
 ### 14.4 Configuration Modals (Screens 10–12)
 
 Accessible only at complete standstill (`speed == 0.0 km/h`):
@@ -1598,11 +1635,12 @@ Accessible only at complete standstill (`speed == 0.0 km/h`):
   - Bluetooth LE device scanning and pairing manager (`[ Koble til ]` / `[ Koble fra ]`) for heart-rate sensors.
   - `[ LAGRE ]` persists settings to `SettingsService`; `[ AVBRYT ]` discards changes.
 - **Screen 11: Session Builder (Interval Planner):**
-  - 3 tabs (`Økt 1`, `Økt 2`, `Økt 3`).
+  - Manages up to 16 custom workout definitions per profile.
   - Warmup / Cooldown toggles (`FAST` locks exact target speed; `FRITT` allows free manual speed adjustment).
   - Work duration mode toggle (`TID` vs `METER`).
   - Progressive workout steppers: Adjusting base speed or progressive delta auto-calculates final rep speed `(Base + (Reps - 1) * Delta)`.
-  - `[ LAGRE ØKT ]` persists workout parameters to the active user profile.
+  - Advanced structures support multi-stage repeating groups and arbitrary segment sequences.
+  - `[ LAGRE ØKT ]` persists workout parameters to the active user profile via `SettingsService`.
 - **Screen 12: Tablet Quick-Key Customization:**
   - Customization interface for the 8 speed and 8 incline buttons displayed on the tablet manual screen.
   - Tapping any button opens a value picker to configure that tablet quick key (e.g., setting a button to 15.5 km/h). Purely configures tablet web frontend presentation.
@@ -1629,86 +1667,112 @@ This is a separate PC-oriented HTML interface for:
 
 The page distinguishes defaults, stored, temporary, active, externally verified, automatically learned, and last-known-good values. It remains architecturally isolated from the tablet training UI.
 
-### 14.7 User Profile Schema
+### 14.7 System Settings and User Profile Schema
+
+Persistent user configuration, custom workout libraries, and quick-key assignments are serialized atomically to LittleFS at `/config/settings.json` via `SettingsService`. Session history is decoupled from settings and persisted independently in `/hist_<uid>.json` (retaining up to 5 completed sessions per runner) to eliminate configuration bloat and minimize flash write cycles during active workouts.
+
+#### Authoritative `SystemSettings` Schema (`/config/settings.json`)
 
 ```json
 {
+  "schemaVersion": 1,
   "users": [
     {
-      "name": "Christine",
-      "presets": {
-        "hvile": 5.0,
-        "drag": 12.0
-      },
-      "quick_keys": {
-        "speed": [5, 6, 7, 8, 9, 10, 11, 12],
-        "incline": [0, 1, 2, 3, 4, 6, 8, 10]
-      },
-      "active_workout_idx": 0,
+      "id": 1,
+      "name": "Bruker 1",
+      "hvileSpeedKmh": 6.0,
+      "dragSpeedKmh": 15.0,
+      "preferredHrMac": "",
+      "speedQuickKeys": [6.0, 8.0, 10.0, 12.0, 14.0, 15.0, 16.0, 18.0],
+      "inclineQuickKeys": [0, 1, 2, 3, 4, 5, 6, 8],
+      "selectedWorkoutId": 1,
+      "recentWorkoutIds": [2, 3],
       "workouts": [
-        { "name": "Kortintervall (45/15)", "warmup_m": 8, "work_m": 0.75, "rest_m": 0.25, "reps": 10, "cooldown_m": 5 },
-        { "name": "Terskel 4x4", "warmup_m": 10, "work_m": 4.0, "rest_m": 3.0, "reps": 4, "cooldown_m": 5 },
-        { "name": "Rolig Langjogg", "warmup_m": 0, "work_m": 45.0, "rest_m": 0, "reps": 1, "cooldown_m": 0 }
-      ],
-      "history": []
-    },
-    {
-      "name": "Jonas",
-      "presets": {
-        "hvile": 6.0,
-        "drag": 15.0
-      },
-      "quick_keys": {
-        "speed": [5, 6, 8, 10, 12, 14, 15, 16],
-        "incline": [0, 1, 2, 3, 4, 5, 6, 8]
-      },
-      "active_workout_idx": 0,
-      "workouts": [
-        { "name": "Kortintervall (45/15)", "warmup_m": 8, "work_m": 0.75, "rest_m": 0.25, "reps": 10, "cooldown_m": 5 },
-        { "name": "Terskel 4x4", "warmup_m": 10, "work_m": 4.0, "rest_m": 3.0, "reps": 4, "cooldown_m": 5 },
-        { "name": "Rolig Langjogg", "warmup_m": 0, "work_m": 45.0, "rest_m": 0, "reps": 1, "cooldown_m": 0 }
-      ],
-      "history": []
-    },
-    {
-      "name": "Julie",
-      "presets": {
-        "hvile": 5.5,
-        "drag": 13.0
-      },
-      "quick_keys": {
-        "speed": [5, 6, 7, 8, 10, 11, 12, 13],
-        "incline": [0, 1, 2, 3, 4, 6, 8, 10]
-      },
-      "active_workout_idx": 0,
-      "workouts": [
-        { "name": "Kortintervall (45/15)", "warmup_m": 8, "work_m": 0.75, "rest_m": 0.25, "reps": 10, "cooldown_m": 5 },
-        { "name": "Terskel 4x4", "warmup_m": 10, "work_m": 4.0, "rest_m": 3.0, "reps": 4, "cooldown_m": 5 },
-        { "name": "Rolig Langjogg", "warmup_m": 0, "work_m": 45.0, "rest_m": 0, "reps": 1, "cooldown_m": 0 }
-      ],
-      "history": []
-    },
-    {
-      "name": "Kristian",
-      "presets": {
-        "hvile": 6.0,
-        "drag": 16.0
-      },
-      "quick_keys": {
-        "speed": [4, 6, 8, 10, 12, 14, 16, 18],
-        "incline": [0, 1, 2, 4, 6, 8, 10, 12]
-      },
-      "active_workout_idx": 0,
-      "workouts": [
-        { "name": "Kortintervall (45/15)", "warmup_m": 8, "work_m": 0.75, "rest_m": 0.25, "reps": 10, "cooldown_m": 5 },
-        { "name": "Terskel 4x4", "warmup_m": 10, "work_m": 4.0, "rest_m": 3.0, "reps": 4, "cooldown_m": 5 },
-        { "name": "Rolig Langjogg", "warmup_m": 0, "work_m": 45.0, "rest_m": 0, "reps": 1, "cooldown_m": 0 }
-      ],
-      "history": []
+        {
+          "id": 1,
+          "name": "3-2-1 PYRAMIDE",
+          "lastUsedTimestamp": 1000,
+          "segments": [
+            {
+              "id": 1,
+              "type": "SINGLE_STEP",
+              "repetitions": 1,
+              "startSpeedKmh": 9.0,
+              "speedProgressionPerRepKmh": 0.0,
+              "steps": [
+                {
+                  "id": 1,
+                  "role": "WARMUP",
+                  "durationType": "TIME_SECONDS",
+                  "durationValue": 600,
+                  "speedMode": "FREE",
+                  "targetSpeedKmh": 9.0,
+                  "targetInclinePct": 0,
+                  "setIncline": false
+                }
+              ]
+            },
+            {
+              "id": 2,
+              "type": "REPEATING_GROUP",
+              "repetitions": 2,
+              "startSpeedKmh": 15.0,
+              "speedProgressionPerRepKmh": 0.0,
+              "steps": [
+                {
+                  "id": 2,
+                  "role": "WORK",
+                  "durationType": "TIME_SECONDS",
+                  "durationValue": 180,
+                  "speedMode": "FIXED",
+                  "targetSpeedKmh": 15.0,
+                  "targetInclinePct": 0,
+                  "setIncline": false
+                },
+                {
+                  "id": 3,
+                  "role": "REST",
+                  "durationType": "TIME_SECONDS",
+                  "durationValue": 90,
+                  "speedMode": "FREE",
+                  "targetSpeedKmh": 6.0,
+                  "targetInclinePct": 0,
+                  "setIncline": false
+                }
+              ]
+            },
+            {
+              "id": 3,
+              "type": "SINGLE_STEP",
+              "repetitions": 1,
+              "startSpeedKmh": 8.0,
+              "speedProgressionPerRepKmh": 0.0,
+              "steps": [
+                {
+                  "id": 7,
+                  "role": "COOLDOWN",
+                  "durationType": "TIME_SECONDS",
+                  "durationValue": 300,
+                  "speedMode": "FREE",
+                  "targetSpeedKmh": 8.0,
+                  "targetInclinePct": 0,
+                  "setIncline": false
+                }
+              ]
+            }
+          ]
+        }
+      ]
     }
   ]
 }
 ```
+
+#### Schema Constraints and Capabilities
+- **Capacity:** Supports up to 4 runner profiles (`MAX_USERS = 4`), each holding up to 16 workout definitions (`MAX_WORKOUTS_PER_USER = 16`).
+- **Segment Hierarchy:** Workouts contain up to 16 segments (`MAX_SEGMENTS_PER_WORKOUT = 16`), defined as either `SINGLE_STEP` or `REPEATING_GROUP` (up to 8 steps per group).
+- **Rep-Based Speed Progression:** Work steps support linear speed deltas across rep iterations (`speedProgressionPerRepKmh`), computed deterministically on step entry.
+- **Incline Coupling:** Each step can optionally define and command an authoritative target incline (`targetInclinePct`, `setIncline = true`), triggering pre-fire ramp sequences ahead of step transition.
 
 ---
 
@@ -1766,30 +1830,30 @@ Verified simulator workflows:
 - [ ] Final PCB/wiring revision
 - [ ] Production qualification
 
-### 15.3 Software and Integration Open Items
+### 15.3 Software and Integration Status
 
-- [ ] Confirm a known Git baseline and commit hash
+- [x] Confirm a known Git baseline and commit hash
 - [x] Add executable test infrastructure without permanent hooks
 - [x] Execute deterministic RunnerDynamics and interface-contract tests
-- [ ] Implement and test the separate SpeedCalibration library
-- [ ] Define and test automatic learning acceptance rules
+- [x] Implement and test the separate SpeedCalibration library (`SpeedCalibration` & `SpeedLearningTracker`)
+- [x] Define and test automatic learning acceptance rules
 - [ ] Implement PC-only external speed commissioning
 - [ ] Implement maximum-achievable-speed calibration
 - [ ] Define recorded-data format before physical capture
-- [ ] Implement Diagnostics core and SettingsService core
-- [ ] Implement InclineVerifier without control authority
-- [ ] Implement BleManager core and HeartRateClient
+- [x] Implement Diagnostics core and SettingsService core (`SettingsService` with atomic LittleFS persistence)
+- [x] Implement InclineVerifier without control authority
+- [x] Implement BleManager core and HeartRateClient (`BleManager` & `HeartRateClient`)
 - [x] ApplicationOrchestrator and ApplicationSnapshot integrated and verified in simulator pipeline
-- [ ] Implement SystemManager without duplicating subsystem state
+- [x] Implement SystemManager without duplicating subsystem state
 - [x] WorkoutSession integration path verified in simulator environment
-- [ ] Implement RscService and FtmsService
+- [x] Implement RscService and FtmsService (`BleServices`)
 - [ ] Implement recorded-data replay before aggressive tuning
-- [ ] Implement MaintenanceService with separate mechanical distance
-- [ ] Implement WorkoutDefinition persistence
-- [ ] Implement WorkoutExpander
+- [x] Implement MaintenanceService with separate mechanical distance
+- [x] Implement WorkoutDefinition persistence and structured JSON serialization
+- [x] Implement WorkoutExpander
 - [x] Testbench WebServer/API contracts established for simulator and telemetry integration
-- [ ] Serve existing Precision UI from LittleFS
-- [ ] Replace simulator with authoritative firmware state
+- [x] Serve existing Precision UI from LittleFS (`index.html`, `tablet.html`, `service.html`, `simulator.html`)
+- [x] Replace simulator with authoritative firmware state
 - [x] Simulator isolated from production build through STRIDECONTROL_TESTBENCH compile-time segregation
 - [ ] Perform recorded-data, HIL, and physical treadmill validation
 

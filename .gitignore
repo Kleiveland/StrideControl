@@ -13,6 +13,14 @@
 # Sensitive credentials
 include/secrets.h
 
-# Local scratch / analysis files
+# Local scratch, patches, backups, and analysis files
 step and presence analysis*
 scratch/
+tools/
+node_modules/
+*.patch
+*.py
+*.js
+backup*.json
+current_settings_after_test.json
+bisect_results.md
