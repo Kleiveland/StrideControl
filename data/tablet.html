@@ -206,7 +206,7 @@ input{font:inherit;color:inherit}
   <div class="keys8" id="r-keys" style="flex:none;height:96px;display:none"></div>
   <div class="strip" id="r-strip"><svg id="r-svg" width="1184" height="96"></svg></div>
   <div style="flex:none;display:flex;flex-direction:column;gap:14px">
-    <div class="grid2" id="a-drag" style="display:none"><div style="grid-column:2"><button class="hold btn" data-hold="cut" id="h-cut"><b></b><span class="t"><span class="sq"></span><span>Kutt drag</span></span><span class="h">Hold inne</span></button></div></div>
+    <div class="grid2" id="a-drag" style="display:none"><div style="grid-column:2"><button class="btn act guard" data-act="cutdrag"><span class="t"><span class="sq"></span><span>Kutt drag</span></span><span>&#8250;</span><i></i></button></div></div>
     <div class="grid2" id="a-rest" style="display:none"><div id="a-p30"><button class="btn act guard" data-act="plus30"><span class="t"><span class="sq"></span><span>Legg til 30 sek</span></span><span style="font-size:28px;color:var(--mut)">+0:30</span><i></i></button></div><div id="a-go" style="grid-column:2"><button class="btn act guard" data-act="gotodrag"><span class="t"><span class="sq r"></span><span>Gå til drag</span></span><span>&#8250;</span><i></i></button></div></div>
     <div class="grid2" id="a-ramp" style="display:none"><div style="grid-column:2"><button class="btn act guard" data-act="cancelramp"><span class="t"><span>Avbryt</span></span><i></i></button></div></div>
     <div class="grid2" id="a-pause" style="display:none"><div><button class="hold btn neu" data-hold="toman"><b></b><span class="t"><span class="sq g"></span><span>Gå til manuell</span></span><span class="h">Hold inne</span></button></div><div style="grid-column:2"><button class="hold btn" data-hold="fin" id="h-fin"><b></b><span class="t"><span class="sq r"></span><span>Avslutt økt</span></span><span class="h">Hold inne</span></button></div></div>
@@ -3525,7 +3525,6 @@ holdActions.end = () => {
     }
   }, 1800);
 };
-holdActions.cut = () => sendCommand('/api/v1/control/workout/cutdrag');
 holdActions.toman = () => setMode('man');
 holdActions.fin = () => {
   finalize();
@@ -3586,6 +3585,9 @@ const ACT = {
   },
   gotodrag() {
     sendCommand('/api/v1/control/workout/skiptodrag');
+  },
+  cutdrag() {
+    sendCommand('/api/v1/control/workout/cutdrag');
   },
   cancelramp() {
     sendCommand('/api/v1/control/workout/cancelramp');
